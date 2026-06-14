@@ -5,7 +5,7 @@ import { defineConfig } from 'vite'
 import vuetify from 'vite-plugin-vuetify'
 
 export default defineConfig({
-  base: process.env.VITE_BASE_PATH ?? '/',
+  base: '/',
   plugins: [
     vue(),
     vuetify({
