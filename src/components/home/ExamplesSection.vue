@@ -63,7 +63,6 @@ import {
   homeExamples,
   homeGalleryColumns,
   type HomeExample,
-  type HomeGalleryColumn,
 } from '@/data/home.content'
 import { useSectionReveal } from '@/composables/useSectionReveal'
 import { computed, ref } from 'vue'
@@ -73,7 +72,10 @@ interface ResolvedGallerySlot {
   example: HomeExample
 }
 
-interface ResolvedGalleryColumn extends HomeGalleryColumn {
+interface ResolvedGalleryColumn {
+  id: string
+  topRatio: number
+  bottomRatio: number
   slots: [ResolvedGallerySlot, ResolvedGallerySlot]
 }
 

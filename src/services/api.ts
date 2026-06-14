@@ -42,7 +42,7 @@ export const api = {
     return request<T>(endpoint, {
       method: 'PUT',
       body: JSON.stringify(body),
-    }),
+    })
   },
 
   delete<T>(endpoint: string): Promise<ApiResponse<T>> {
