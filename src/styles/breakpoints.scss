@@ -1,0 +1,20 @@
+// =============================================================================
+// Breakpoints
+// mobile:  0 – 767px
+// tablet:  768 – 1279px
+// desktop: 1280 – 1599px
+// wide:    1600px+
+// =============================================================================
+
+$breakpoint-mobile-max: 767px;
+$breakpoint-tablet-min: 768px;
+$breakpoint-tablet-max: 1279px;
+$breakpoint-desktop-min: 1280px;
+$breakpoint-desktop-max: 1599px;
+$breakpoint-wide-min: 1600px;
+
+// Legacy aliases (min-width based)
+$breakpoint-sm: $breakpoint-tablet-min;
+$breakpoint-md: $breakpoint-desktop-min;
+$breakpoint-lg: $breakpoint-wide-min;
+$breakpoint-xl: 1920px;

@@ -1,0 +1,47 @@
+@use 'variables' as *;
+
+// =============================================================================
+// Border Radius System
+// =============================================================================
+
+$radius-xs: 4px;
+$radius-sm: 8px;
+$radius-md: 12px;
+$radius-lg: 16px;
+$radius-xl: 24px;
+
+$radii: (
+  xs: $radius-xs,
+  sm: $radius-sm,
+  md: $radius-md,
+  lg: $radius-lg,
+  xl: $radius-xl,
+);
+
+:root {
+  --radius-xs: #{$radius-xs};
+  --radius-sm: #{$radius-sm};
+  --radius-md: #{$radius-md};
+  --radius-lg: #{$radius-lg};
+  --radius-xl: #{$radius-xl};
+}
+
+@each $name, $value in $radii {
+  .rounded-#{$name} {
+    border-radius: $value;
+  }
+
+  .rounded-t-#{$name} {
+    border-top-left-radius: $value;
+    border-top-right-radius: $value;
+  }
+
+  .rounded-b-#{$name} {
+    border-bottom-left-radius: $value;
+    border-bottom-right-radius: $value;
+  }
+}
+
+.rounded-full {
+  border-radius: 9999px;
+}

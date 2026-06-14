@@ -1,0 +1,189 @@
+@forward 'variables';
+@forward 'breakpoints';
+@forward 'spacing';
+@forward 'radius';
+@forward 'shadows';
+@forward 'typography';
+@use 'variables' as *;
+@use 'breakpoints' as *;
+@use 'spacing' as *;
+@use 'radius' as *;
+@use 'shadows' as *;
+@use 'typography' as *;
+
+$ease-out-editorial: cubic-bezier(0.25, 0.1, 0.25, 1);
+
+// =============================================================================
+// Responsive Mixins
+// =============================================================================
+
+@mixin mobile-only {
+  @media (max-width: $breakpoint-mobile-max) {
+    @content;
+  }
+}
+
+@mixin tablet-only {
+  @media (min-width: $breakpoint-tablet-min) and (max-width: $breakpoint-tablet-max) {
+    @content;
+  }
+}
+
+@mixin tablet-up {
+  @media (min-width: $breakpoint-tablet-min) {
+    @content;
+  }
+}
+
+@mixin desktop-only {
+  @media (min-width: $breakpoint-desktop-min) and (max-width: $breakpoint-desktop-max) {
+    @content;
+  }
+}
+
+@mixin desktop-up {
+  @media (min-width: $breakpoint-desktop-min) {
+    @content;
+  }
+}
+
+@mixin wide-up {
+  @media (min-width: $breakpoint-wide-min) {
+    @content;
+  }
+}
+
+// Legacy alias
+@mixin respond-to($breakpoint) {
+  @if $breakpoint == sm {
+    @include tablet-up {
+      @content;
+    }
+  } @else if $breakpoint == md {
+    @include desktop-up {
+      @content;
+    }
+  } @else if $breakpoint == lg {
+    @include wide-up {
+      @content;
+    }
+  } @else if $breakpoint == xl {
+    @media (min-width: $breakpoint-xl) {
+      @content;
+    }
+  }
+}
+
+// =============================================================================
+// Layout Mixins
+// =============================================================================
+
+@mixin page-container {
+  width: 100%;
+  margin-inline: auto;
+  padding-inline: $container-padding-mobile;
+
+  @include tablet-up {
+    padding-inline: $container-padding-tablet;
+  }
+
+  @include desktop-up {
+    padding-inline: $container-padding-desktop;
+  }
+
+  @include wide-up {
+    padding-inline: $container-padding-wide;
+  }
+}
+
+@mixin content-container {
+  width: 100%;
+  max-width: $container-max-width-mobile;
+  margin-inline: auto;
+
+  @include tablet-up {
+    max-width: $container-max-width-tablet;
+  }
+
+  @include desktop-up {
+    max-width: $container-max-width-desktop;
+  }
+
+  @include wide-up {
+    max-width: $container-max-width-wide;
+  }
+}
+
+@mixin container {
+  @include page-container;
+  @include content-container;
+}
+
+@mixin section-padding($size: md) {
+  @if $size == sm {
+    padding-block: $spacing-12;
+  } @else if $size == md {
+    padding-block: $spacing-16;
+  } @else if $size == lg {
+    padding-block: $spacing-20;
+  } @else {
+    padding-block: $spacing-16;
+  }
+
+  @include mobile-only {
+    @if $size == sm {
+      padding-block: $spacing-8;
+    } @else if $size == md {
+      padding-block: $spacing-12;
+    } @else if $size == lg {
+      padding-block: $spacing-16;
+    }
+  }
+}
+
+@mixin visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@mixin editorial-divider {
+  border: none;
+  border-top: 1px solid $divider;
+}
+
+@mixin focus-ring {
+  outline: 2px solid $state-focus-ring;
+  outline-offset: 2px;
+}
+
+@mixin section-reveal {
+  opacity: 0;
+  transform: translateY(12px);
+  transition:
+    opacity 280ms $ease-out-editorial,
+    transform 280ms $ease-out-editorial;
+
+  &.is-revealed {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@mixin hover-surface {
+  transition: background-color 0.2s ease;
+
+  &:hover {
+    background-color: $state-hover-bg;
+  }
+
+  &:active {
+    background-color: $state-active-bg;
+  }
+}

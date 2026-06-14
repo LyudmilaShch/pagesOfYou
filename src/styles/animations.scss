@@ -1,0 +1,85 @@
+@use 'variables' as *;
+
+// =============================================================================
+// Animations — subtle, editorial motion
+// =============================================================================
+
+$transition-fast: 150ms ease;
+$transition-base: 250ms ease;
+$transition-slow: 400ms ease;
+
+$ease-out-editorial: cubic-bezier(0.25, 0.1, 0.25, 1);
+$ease-in-out-editorial: cubic-bezier(0.45, 0, 0.55, 1);
+
+:root {
+  --transition-fast: #{$transition-fast};
+  --transition-base: #{$transition-base};
+  --transition-slow: #{$transition-slow};
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in $transition-slow $ease-out-editorial both;
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up $transition-slow $ease-out-editorial both;
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right $transition-slow $ease-out-editorial both;
+}
+
+.transition-base {
+  transition: all $transition-base $ease-in-out-editorial;
+}
+
+.transition-colors {
+  transition:
+    color $transition-base $ease-in-out-editorial,
+    background-color $transition-base $ease-in-out-editorial,
+    border-color $transition-base $ease-in-out-editorial;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

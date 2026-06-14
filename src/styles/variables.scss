@@ -1,0 +1,174 @@
+// Vuetify settings must be forwarded before any other rules
+@forward 'vuetify/settings' with (
+  $color-pack: false,
+  $body-font-family: (
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif,
+  ),
+  $heading-font-family: (
+    'Playfair Display',
+    'Georgia',
+    'Times New Roman',
+    serif,
+  ),
+  $border-radius-root: 8px,
+  $spacer: 4px,
+  $typography: (
+    'h1': (
+      'size': 3.125rem,
+      'weight': 400,
+      'line-height': 1.15,
+      'letter-spacing': -0.02em,
+      'font-family': ('Playfair Display', 'Georgia', 'Times New Roman', serif),
+      'text-transform': none,
+    ),
+    'h2': (
+      'size': 2.75rem,
+      'weight': 400,
+      'line-height': 1.15,
+      'letter-spacing': -0.02em,
+      'font-family': ('Playfair Display', 'Georgia', 'Times New Roman', serif),
+      'text-transform': none,
+    ),
+    'h3': (
+      'size': 2rem,
+      'weight': 400,
+      'line-height': 1.25,
+      'letter-spacing': -0.01em,
+      'font-family': ('Playfair Display', 'Georgia', 'Times New Roman', serif),
+      'text-transform': none,
+    ),
+    'h4': (
+      'size': 1.5rem,
+      'weight': 500,
+      'line-height': 1.25,
+      'letter-spacing': -0.01em,
+      'font-family': ('Playfair Display', 'Georgia', 'Times New Roman', serif),
+      'text-transform': none,
+    ),
+  ),
+);
+
+// =============================================================================
+// Design Tokens — Colors & Layout
+// Premium Editorial Design System
+// =============================================================================
+
+// --- Core palette ---
+$white: #ffffff;
+$black: #111111;
+
+$bg-primary: #f8f7f4;
+$bg-secondary: #e3ddd5;
+
+$text-primary: #111111;
+$text-secondary: #666666;
+
+$border-default: #d7d0c7;
+
+// --- Extended neutrals (derived from palette) ---
+$bg-tertiary: #eeeae4;
+$bg-muted: #f3f1ed;
+$bg-elevated: $white;
+$bg-inverse: $black;
+
+$text-muted: #8a8580;
+$text-disabled: #b0aaa2;
+$text-inverse: $white;
+
+$border-light: #e8e3dc;
+$border-strong: #c4bdb3;
+
+$divider: #e5e0d9;
+
+// --- Interactive states ---
+$state-hover-bg: rgba($black, 0.04);
+$state-hover-border: #c4bdb3;
+$state-active-bg: rgba($black, 0.08);
+$state-active-border: #b8b0a5;
+$state-focus-ring: rgba($black, 0.12);
+
+// --- White opacity tokens (on dark surfaces) ---
+$on-dark-border-subtle: rgba($white, 0.08);
+$on-dark-surface-soft: rgba($white, 0.35);
+$on-dark-surface-medium: rgba($white, 0.55);
+$on-dark-text-muted: rgba($white, 0.62);
+$on-dark-text-secondary: rgba($white, 0.78);
+$on-dark-text-body: rgba($white, 0.9);
+$on-dark-text-primary: rgba($white, 0.95);
+$on-dark-text-emphasis: rgba($white, 0.96);
+
+// --- Semantic aliases (legacy & component compatibility) ---
+$color-background: $bg-primary;
+$color-surface: $bg-elevated;
+$color-border: $border-default;
+$color-text-primary: $text-primary;
+$color-text-secondary: $text-secondary;
+$color-text-disabled: $text-disabled;
+
+// --- Typography families ---
+$font-family-display: 'Playfair Display', 'Georgia', 'Times New Roman', serif;
+$font-family-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+$font-family-base: $font-family-body;
+
+// --- Layout ---
+$header-height: 72px;
+$footer-height: 64px;
+
+$container-max-width-mobile: 100%;
+$container-max-width-tablet: 720px;
+$container-max-width-desktop: 1200px;
+$container-max-width-wide: 1440px;
+
+$container-padding-mobile: 16px;
+$container-padding-tablet: 24px;
+$container-padding-desktop: 32px;
+$container-padding-wide: 40px;
+
+// Legacy alias
+$container-max-width: $container-max-width-desktop;
+
+// --- CSS Custom Properties ---
+:root {
+  --color-white: #{$white};
+  --color-black: #{$black};
+
+  --color-bg-primary: #{$bg-primary};
+  --color-bg-secondary: #{$bg-secondary};
+  --color-bg-tertiary: #{$bg-tertiary};
+  --color-bg-muted: #{$bg-muted};
+  --color-bg-elevated: #{$bg-elevated};
+  --color-bg-inverse: #{$bg-inverse};
+
+  --color-text-primary: #{$text-primary};
+  --color-text-secondary: #{$text-secondary};
+  --color-text-muted: #{$text-muted};
+  --color-text-disabled: #{$text-disabled};
+  --color-text-inverse: #{$text-inverse};
+
+  --color-border: #{$border-default};
+  --color-border-light: #{$border-light};
+  --color-border-strong: #{$border-strong};
+  --color-divider: #{$divider};
+
+  --color-state-hover-bg: #{$state-hover-bg};
+  --color-state-hover-border: #{$state-hover-border};
+  --color-state-active-bg: #{$state-active-bg};
+  --color-state-active-border: #{$state-active-border};
+  --color-state-focus-ring: #{$state-focus-ring};
+
+  --color-on-dark-border-subtle: #{$on-dark-border-subtle};
+  --color-on-dark-surface-soft: #{$on-dark-surface-soft};
+  --color-on-dark-surface-medium: #{$on-dark-surface-medium};
+  --color-on-dark-text-muted: #{$on-dark-text-muted};
+  --color-on-dark-text-secondary: #{$on-dark-text-secondary};
+  --color-on-dark-text-body: #{$on-dark-text-body};
+  --color-on-dark-text-primary: #{$on-dark-text-primary};
+  --color-on-dark-text-emphasis: #{$on-dark-text-emphasis};
+
+  --font-family-display: #{$font-family-display};
+  --font-family-body: #{$font-family-body};
+}
