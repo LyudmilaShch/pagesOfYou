@@ -1,0 +1,1 @@
+import{_ as o,c as a,a as s,o as t}from"./index-DdNcPYgT.js";const n={},c={class:"page page--standalone"};function r(_,e){return t(),a("div",c,[...e[0]||(e[0]=[s("h1",null,"Страница не найдена",-1)])])}const l=o(n,[["render",r]]);export{l as default};
