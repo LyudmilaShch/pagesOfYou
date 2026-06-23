@@ -1,6 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
 import { routes } from '@/router/routes'
+import { useAdminAuthStore } from '@/features/admin/stores/admin-auth.store'
+import { useAuthStore } from '@/stores/auth.store'
 import { scrollToSection, scrollToTop, waitForSection } from '@/utils/scroll'
 
 export const router = createRouter({
@@ -16,8 +18,6 @@ export const router = createRouter({
         if (found) {
           scrollToSection(to.hash)
         }
-
-        // Prevent Vue Router from resetting scroll to top
         return false
       })
     }
@@ -25,4 +25,28 @@ export const router = createRouter({
     scrollToTop()
     return { top: 0 }
   },
+})
+
+router.beforeEach((to) => {
+  const authStore = useAuthStore()
+  const adminStore = useAdminAuthStore()
+
+  // ── Admin guard ──────────────────────────────────────────────────────────
+  if (to.meta.requiresAdmin && !adminStore.isAuthenticated) {
+    return { name: 'admin-login', query: { redirect: to.fullPath } }
+  }
+
+  // Already logged-in admin trying to access login page → redirect to dashboard
+  if (to.meta.requiresAdminGuest && adminStore.isAuthenticated) {
+    return { name: 'admin-dashboard' }
+  }
+
+  // ── User guard ───────────────────────────────────────────────────────────
+  if (to.meta.requiresAuth && !authStore.isAuthenticated) {
+    return { name: 'auth', query: { redirect: to.fullPath } }
+  }
+
+  if (to.meta.requiresGuest && authStore.isAuthenticated) {
+    return { name: 'account' }
+  }
 })

@@ -36,6 +36,9 @@
               role="listitem"
               tabindex="0"
               :aria-label="slot.example.title"
+              @click="handleCardClick(slot.image)"
+              @keydown.enter="handleCardClick(slot.image)"
+              @keydown.space.prevent="handleCardClick(slot.image)"
             >
               <div class="examples__cover">
                 <div
@@ -55,10 +58,14 @@
         </div>
       </div>
     </div>
+
+    <MagazineModal v-model="isMagazineOpen" :magazine="magazine" />
   </section>
 </template>
 
 <script setup lang="ts">
+import MagazineModal from '@/components/magazine/MagazineModal.vue'
+import { useMagazineModal } from '@/composables/useMagazineModal'
 import {
   homeExamples,
   homeGalleryColumns,
@@ -66,6 +73,8 @@ import {
 } from '@/data/home.content'
 import { useSectionReveal } from '@/composables/useSectionReveal'
 import { computed, ref } from 'vue'
+
+const GIRL_MAGAZINE_IMAGE = '/images/examples/girl.jpg'
 
 interface ResolvedGallerySlot {
   image: string
@@ -81,6 +90,7 @@ interface ResolvedGalleryColumn {
 
 const sectionRef = ref<HTMLElement | null>(null)
 const { isRevealed } = useSectionReveal(sectionRef)
+const { isOpen: isMagazineOpen, magazine, open: openMagazine } = useMagazineModal()
 
 const examplesById = new Map(homeExamples.map((example) => [example.id, example]))
 
@@ -94,16 +104,18 @@ const galleryColumns = computed<ResolvedGalleryColumn[]>(() =>
   })),
 )
 
-function getColumnStyle(column: ResolvedGalleryColumn) {
-  return {
-    '--col-top': column.topRatio,
-    '--col-bottom': column.bottomRatio,
-  }
-}
+const getColumnStyle = (column: ResolvedGalleryColumn) => ({
+  '--col-top': column.topRatio,
+  '--col-bottom': column.bottomRatio,
+})
 
-function getCoverImageStyle(image: string) {
-  return {
-    backgroundImage: `url('${image}')`,
+const getCoverImageStyle = (image: string) => ({
+  backgroundImage: `url('${image}')`,
+})
+
+const handleCardClick = (image: string) => {
+  if (image === GIRL_MAGAZINE_IMAGE) {
+    openMagazine()
   }
 }
 </script>

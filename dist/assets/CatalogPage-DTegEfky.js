@@ -1,1 +1,0 @@
-import{_ as a,c as o,a as t,o as s}from"./index-DdNcPYgT.js";const c={},n={class:"page"};function r(l,e){return s(),o("div",n,[...e[0]||(e[0]=[t("h1",null,"CatalogPage",-1)])])}const d=a(c,[["render",r]]);export{d as default};

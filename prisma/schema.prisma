@@ -1,0 +1,666 @@
+// =============================================================================
+// prisma/schema.prisma
+// Pages of You — SaaS для персонализированных журналов
+// Prisma 6+ / PostgreSQL / Cloudflare R2
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+// ENUMS
+// =============================================================================
+
+/// Роль пользователя в системе
+enum UserRole {
+  USER
+  ADMIN
+}
+
+/// Категория продукта — для масштабирования на новые типы изданий
+enum ProductCategory {
+  MAGAZINE   // персональный журнал
+  PHOTO_BOOK // фотокнига
+  ALBUM      // выпускной / свадебный альбом
+  CORPORATE  // корпоративное издание
+}
+
+/// Полный workflow жизненного цикла заказа
+enum OrderStatus {
+  /// Пользователь заполняет форму, ещё не отправил
+  DRAFT
+
+  /// Форма отправлена, ожидается оплата
+  SUBMITTED
+
+  /// Платёжная сессия создана, ждём подтверждения провайдера
+  PAYMENT_PENDING
+
+  /// Оплата подтверждена
+  PAID
+
+  /// Передан дизайнеру в работу
+  IN_DESIGN
+
+  /// Дизайнер отправил макет пользователю на проверку
+  DESIGN_REVIEW
+
+  /// Пользователь утвердил макет
+  APPROVED
+
+  /// Отправлен в типографию
+  PRINTING
+
+  /// Отправлен покупателю
+  SHIPPED
+
+  /// Доставлен покупателю
+  DELIVERED
+
+  /// Отменён (любой этап)
+  CANCELLED
+}
+
+/// Типы полей форм разворотов
+enum FieldType {
+  TEXT
+  TEXTAREA
+  RICH_TEXT
+  IMAGE
+  GALLERY
+  DATE
+  SELECT
+  NUMBER
+}
+
+/// Провайдеры оплаты
+enum PaymentProvider {
+  YUKASSA
+  TBANK
+  STRIPE
+}
+
+/// Статусы платежа
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+/// События в истории заказа (аудит-лог)
+enum OrderEventType {
+  DRAFT_CREATED
+  DRAFT_UPDATED
+  SUBMITTED
+  PAYMENT_INITIATED
+  PAYMENT_RECEIVED
+  PAYMENT_FAILED
+  PAYMENT_REFUNDED
+  ASSIGNED_TO_DESIGNER
+  DESIGN_COMPLETED
+  DESIGN_APPROVED
+  DESIGN_REVISION_REQUESTED
+  SENT_TO_PRINT
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  NOTE_ADDED
+  STATUS_CHANGED
+}
+
+// =============================================================================
+// DOMAIN: AUTH
+// =============================================================================
+
+model User {
+  id    String   @id @default(cuid())
+  phone String   @unique
+  name  String?
+  email String?  @unique
+  role  UserRole @default(USER)
+
+  isBlocked     Boolean   @default(false)
+  blockedAt     DateTime?
+  blockedReason String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  // Relations
+  otpCodes      OtpCode[]
+  orders        Order[]
+  uploadedFiles UploadedFile[]
+  orderEvents   OrderEvent[]   @relation("EventActor")
+
+  @@index([phone])
+  @@index([role, isBlocked])
+  @@index([deletedAt])
+  @@map("users")
+}
+
+model OtpCode {
+  id          String    @id @default(cuid())
+  /// null до первого входа (пользователь ещё не создан)
+  userId      String?
+  phone       String
+  /// bcrypt-хэш кода — никогда не хранить plaintext
+  code        String
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(3)
+  expiresAt   DateTime
+  usedAt      DateTime?
+  /// IP-адрес запроса — для аудита безопасности
+  ipAddress   String?
+  createdAt   DateTime  @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  // Поиск активного кода по номеру телефона (usedAt IS NULL)
+  @@index([phone, usedAt])
+  // Cron-job очистки истёкших кодов
+  @@index([expiresAt])
+  @@map("otp_codes")
+}
+
+// =============================================================================
+// DOMAIN: CATALOG  (управляется через Admin UI)
+// =============================================================================
+
+model MagazineType {
+  id              String          @id @default(cuid())
+  name            String
+  slug            String          @unique
+  description     String?         @db.Text
+  productCategory ProductCategory @default(MAGAZINE)
+
+  /// Гибкие теги для фильтрации и SEO: ["romantic", "for_mom", "birthday"]
+  /// После применения миграции добавить GIN-индекс:
+  /// CREATE INDEX ON magazine_types USING GIN (tags);
+  tags String[]
+
+  coverImage String?
+
+  /// Расширяемые атрибуты без изменения схемы:
+  /// { "recommendedPageCount": 20, "priceFrom": 2500, "maxPages": 40 }
+  metadata Json?
+
+  isActive  Boolean @default(true)
+  sortOrder Int     @default(0)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  // Relations
+  typeStyleLinks  MagazineTypeStyle[]
+  typeSpreadLinks MagazineTypeSpread[]
+  orders          Order[]
+
+  // Список для пользователей (отсортированный каталог)
+  @@index([isActive, sortOrder])
+  // Фильтрация по типу продукта в admin-панели
+  @@index([productCategory, isActive])
+  @@index([deletedAt])
+  @@map("magazine_types")
+}
+
+model MagazineStyle {
+  id           String  @id @default(cuid())
+  name         String
+  slug         String  @unique
+  description  String?
+  previewImage String?
+  isActive     Boolean @default(true)
+  sortOrder    Int     @default(0)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  // Relations
+  typeStyleLinks MagazineTypeStyle[]
+  spreadDesigns  SpreadDesign[]
+  orders         Order[]
+
+  @@index([isActive, sortOrder])
+  @@index([deletedAt])
+  @@map("magazine_styles")
+}
+
+/// Ограничивает доступные стили для конкретного типа журнала.
+/// Если все стили подходят всем типам — таблица остаётся пустой,
+/// и frontend показывает все активные стили.
+model MagazineTypeStyle {
+  id              String @id @default(cuid())
+  magazineTypeId  String
+  magazineStyleId String
+  sortOrder       Int    @default(0)
+
+  magazineType  MagazineType  @relation(fields: [magazineTypeId], references: [id])
+  magazineStyle MagazineStyle @relation(fields: [magazineStyleId], references: [id])
+
+  @@unique([magazineTypeId, magazineStyleId])
+  @@index([magazineTypeId, sortOrder])
+  @@map("magazine_type_styles")
+}
+
+/// Контентный блок разворота: "История знакомства", "Мудборд", "Письмо"
+model SpreadTemplate {
+  id          String  @id @default(cuid())
+  name        String
+  slug        String  @unique
+  description String?
+  isActive    Boolean @default(true)
+  sortOrder   Int     @default(0)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  // Relations
+  typeSpreadLinks MagazineTypeSpread[]
+  spreadDesigns   SpreadDesign[]
+  orderSpreads    OrderSpread[]
+
+  @@index([isActive, sortOrder])
+  @@index([deletedAt])
+  @@map("spread_templates")
+}
+
+/// Какие шаблоны разворотов доступны для конкретного типа журнала
+/// и в каком порядке они предлагаются пользователю на шаге 2
+model MagazineTypeSpread {
+  id               String  @id @default(cuid())
+  magazineTypeId   String
+  spreadTemplateId String
+  /// true = пользователь не может убрать этот разворот из журнала
+  isRequired       Boolean @default(false)
+  /// true = разворот выбран по умолчанию при открытии шага 2
+  isDefault        Boolean @default(false)
+  sortOrder        Int     @default(0)
+
+  magazineType   MagazineType   @relation(fields: [magazineTypeId], references: [id])
+  spreadTemplate SpreadTemplate @relation(fields: [spreadTemplateId], references: [id])
+
+  @@unique([magazineTypeId, spreadTemplateId])
+  // Загрузка доступных разворотов для типа журнала в правильном порядке
+  @@index([magazineTypeId, sortOrder])
+  @@map("magazine_type_spreads")
+}
+
+/// Конкретный вариант дизайна разворота для сочетания шаблон + стиль.
+/// SpreadTemplate "Мудборд" × MagazineStyle "Editorial" = N вариантов дизайна.
+model SpreadDesign {
+  id               String  @id @default(cuid())
+  spreadTemplateId String
+  styleId          String
+  name             String
+  previewImage     String?
+
+  /// Структура макета для canvas-редактора (future use).
+  /// Схема документа:
+  /// {
+  ///   "version": 1,
+  ///   "canvas": { "width": 2480, "height": 1754 },
+  ///   "elements": [
+  ///     {
+  ///       "id":       "elem_1",
+  ///       "type":     "image",        // image | text | shape
+  ///       "fieldKey": "cover_photo",  // ссылка на FieldDefinition.key
+  ///       "x": 0,    "y": 0,
+  ///       "width": 1240, "height": 1754,
+  ///       "rotation": 0,
+  ///       "zIndex":   1
+  ///     },
+  ///     {
+  ///       "id":       "elem_2",
+  ///       "type":     "text",
+  ///       "fieldKey": "headline",
+  ///       "x": 80,   "y": 60,
+  ///       "styles":   { "fontSize": 48, "fontFamily": "Playfair Display" }
+  ///     }
+  ///   ]
+  /// }
+  layoutJson Json?
+
+  /// Версия дизайна.
+  /// Инкрементируется при BREAKING CHANGE: изменение layoutJson или набора полей.
+  /// Non-breaking изменения (previewImage, name) редактируются на месте.
+  /// Черновики на устаревшей версии получают предупреждение в UI.
+  version Int @default(1)
+
+  isActive  Boolean @default(true)
+  sortOrder Int     @default(0)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  // Relations
+  spreadTemplate   SpreadTemplate    @relation(fields: [spreadTemplateId], references: [id])
+  style            MagazineStyle     @relation(fields: [styleId], references: [id])
+  fieldDefinitions FieldDefinition[]
+  orderSpreads     OrderSpread[]
+
+  // Поиск дизайнов для шага 2: шаблон + стиль + только активные
+  @@index([spreadTemplateId, styleId, isActive])
+  @@index([deletedAt])
+  @@map("spread_designs")
+}
+
+/// Определение поля формы, привязанного к конкретному варианту дизайна.
+/// Разные варианты дизайна одного шаблона могут иметь разные поля.
+model FieldDefinition {
+  id             String    @id @default(cuid())
+  spreadDesignId String
+  /// Машинный ключ — используется как идентификатор в layoutJson и PDF-шаблоне
+  key            String
+  /// Подпись поля в UI: "Заголовок разворота"
+  label          String
+  type           FieldType
+  placeholder    String?
+  helpText       String?
+  isRequired     Boolean   @default(false)
+  sortOrder      Int       @default(0)
+
+  /// Правила валидации (зависят от типа поля):
+  /// TEXT/TEXTAREA: { "minLength": 10, "maxLength": 500 }
+  /// IMAGE/GALLERY: { "maxFiles": 10, "accept": "image/jpeg,image/png", "maxSizeMb": 20 }
+  /// DATE:          { "minDate": "2000-01-01", "maxDate": "today" }
+  /// NUMBER:        { "min": 1, "max": 100 }
+  validationRules Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  spreadDesign SpreadDesign          @relation(fields: [spreadDesignId], references: [id])
+  options      FieldOption[]
+  fieldValues  OrderSpreadFieldValue[]
+
+  // key должен быть уникален внутри одного дизайна
+  @@unique([spreadDesignId, key])
+  // Рендер полей формы в правильном порядке
+  @@index([spreadDesignId, sortOrder])
+  @@map("field_definitions")
+}
+
+/// Варианты выбора для поля типа SELECT
+model FieldOption {
+  id                String @id @default(cuid())
+  fieldDefinitionId String
+  label             String // "Серьёзный и трогательный"
+  value             String // "serious_touching"
+  sortOrder         Int    @default(0)
+
+  fieldDefinition FieldDefinition @relation(fields: [fieldDefinitionId], references: [id], onDelete: Cascade)
+
+  @@index([fieldDefinitionId, sortOrder])
+  @@map("field_options")
+}
+
+// =============================================================================
+// DOMAIN: ORDERS
+// =============================================================================
+
+model Order {
+  id              String      @id @default(cuid())
+  userId          String
+  magazineTypeId  String
+  magazineStyleId String
+  status          OrderStatus @default(DRAFT)
+
+  totalPrice Decimal? @db.Decimal(10, 2)
+  currency   String   @default("RUB") @db.VarChar(3)
+
+  // -------------------------------------------------------------------------
+  // Версионирование: снапшоты каталога фиксируются при DRAFT → SUBMITTED.
+  //
+  // Пока статус DRAFT:
+  //   - FK указывают на живые записи каталога
+  //   - снапшоты = NULL
+  //
+  // При переходе в SUBMITTED (NestJS OrderService.submit()):
+  //   - снапшоты заполняются полным JSON каталожных сущностей
+  //   - PDF-генератор и дизайнер ВСЕГДА читают снапшоты, не живой каталог
+  //   - изменения каталога после SUBMIT не затрагивают заказ
+  // -------------------------------------------------------------------------
+  magazineTypeSnapshot  Json?
+  magazineStyleSnapshot Json?
+
+  // PDF
+  pdfUrl         String?
+  pdfGeneratedAt DateTime?
+  /// ID задачи в Bull/BullMQ — для трекинга статуса генерации
+  pdfJobId       String?
+
+  notes String? @db.Text
+
+  // Временны́е метки ключевых переходов — для аналитики и SLA
+  submittedAt DateTime?
+  paidAt      DateTime?
+  completedAt DateTime?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  // Relations
+  user          User          @relation(fields: [userId], references: [id])
+  magazineType  MagazineType  @relation(fields: [magazineTypeId], references: [id])
+  magazineStyle MagazineStyle @relation(fields: [magazineStyleId], references: [id])
+  spreads       OrderSpread[]
+  payments      Payment[]
+  events        OrderEvent[]
+
+  // Личный кабинет: заказы пользователя с фильтром по статусу
+  @@index([userId, status])
+  // Admin: очередь заказов по статусу и времени создания
+  @@index([status, createdAt])
+  // Личный кабинет без удалённых
+  @@index([userId, deletedAt])
+  @@index([deletedAt])
+  @@map("orders")
+}
+
+/// Выбранный разворот внутри заказа (шаг 2)
+model OrderSpread {
+  id               String @id @default(cuid())
+  orderId          String
+  spreadTemplateId String
+  spreadDesignId   String
+  sortOrder        Int    @default(0)
+
+  /// Снапшот фиксируется при SUBMIT.
+  /// Содержит: SpreadDesign + layoutJson + FieldDefinitions + FieldOptions.
+  /// Используется PDF-сервисом и designer-dashboard.
+  spreadDesignSnapshot Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  order          Order                  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  spreadTemplate SpreadTemplate         @relation(fields: [spreadTemplateId], references: [id])
+  spreadDesign   SpreadDesign           @relation(fields: [spreadDesignId], references: [id])
+  fieldValues    OrderSpreadFieldValue[]
+
+  // Загрузка разворотов заказа в правильном порядке
+  @@index([orderId, sortOrder])
+  @@map("order_spreads")
+}
+
+/// Значение поля формы, заполненного пользователем (шаг 3)
+model OrderSpreadFieldValue {
+  id                String  @id @default(cuid())
+  orderSpreadId     String
+  fieldDefinitionId String
+  /// Значение для типов TEXT, TEXTAREA, RICH_TEXT, DATE, SELECT, NUMBER
+  textValue         String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  orderSpread     OrderSpread     @relation(fields: [orderSpreadId], references: [id], onDelete: Cascade)
+  fieldDefinition FieldDefinition @relation(fields: [fieldDefinitionId], references: [id])
+  /// Файлы для типов IMAGE и GALLERY (M2M через FieldValueFile)
+  files           FieldValueFile[]
+
+  // Один экземпляр значения на каждое поле в каждом развороте
+  @@unique([orderSpreadId, fieldDefinitionId])
+  // Загрузка всех значений одного разворота
+  @@index([orderSpreadId])
+  @@map("order_spread_field_values")
+}
+
+// =============================================================================
+// DOMAIN: FILES
+// =============================================================================
+
+/// Загруженный файл в Cloudflare R2 / S3-compatible storage
+model UploadedFile {
+  id     String @id @default(cuid())
+  userId String
+
+  /// Путь в бакете: "uploads/{userId}/{uuid}.jpg"
+  /// Используется для formирования presigned URL и удаления
+  storageKey String @unique
+
+  /// Публичный CDN URL (Cloudflare R2 public bucket или CDN-домен)
+  url String
+
+  /// Превью (thumbnail) — генерируется воркером через sharp после загрузки
+  previewKey String?
+  previewUrl String?
+
+  originalName String?
+  mimeType     String
+  size         Int    // байты
+  width        Int?   // пиксели — заполняется после обработки
+  height       Int?   // пиксели — заполняется после обработки
+
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+
+  // Relations
+  user       User             @relation(fields: [userId], references: [id])
+  fieldFiles FieldValueFile[]
+
+  // Файлы пользователя (для просмотра в личном кабинете)
+  @@index([userId])
+  @@index([deletedAt])
+  @@map("uploaded_files")
+}
+
+/// M2M связь: один файл может использоваться в нескольких полях/разворотах.
+///
+/// Пример: одна фотография одновременно:
+///   - обложка (fieldKey = "cover_photo")
+///   - коллаж  (fieldKey = "gallery")
+///   - мудборд (fieldKey = "moodboard_images")
+///
+/// sortOrder задаёт порядок фотографий внутри GALLERY.
+model FieldValueFile {
+  id                      String @id @default(cuid())
+  orderSpreadFieldValueId String
+  uploadedFileId          String
+  sortOrder               Int    @default(0)
+
+  fieldValue   OrderSpreadFieldValue @relation(fields: [orderSpreadFieldValueId], references: [id], onDelete: Cascade)
+  uploadedFile UploadedFile          @relation(fields: [uploadedFileId], references: [id])
+
+  // Один файл не может быть прикреплён к одному полю дважды
+  @@unique([orderSpreadFieldValueId, uploadedFileId])
+  // Загрузка фото галереи в порядке sortOrder
+  @@index([orderSpreadFieldValueId, sortOrder])
+  // Поиск всех использований конкретного файла
+  @@index([uploadedFileId])
+  @@map("field_value_files")
+}
+
+// =============================================================================
+// DOMAIN: PAYMENTS
+// =============================================================================
+
+/// Платёжная транзакция.
+/// Один заказ может иметь несколько попыток оплаты.
+/// Структура не зависит от провайдера (ЮKassa / Т-Банк / Stripe).
+model Payment {
+  id       String          @id @default(cuid())
+  orderId  String
+  provider PaymentProvider
+  status   PaymentStatus   @default(PENDING)
+  amount   Decimal         @db.Decimal(10, 2)
+  currency String          @default("RUB") @db.VarChar(3)
+
+  /// ID платежа в системе провайдера.
+  /// Используется для обработки вебхуков и инициации возврата.
+  externalId String?
+
+  /// Полный ответ провайдера (для отладки, reconciliation, возвратов).
+  /// ЮKassa: { "id": "...", "status": "succeeded", "confirmation": {...} }
+  /// Stripe:  { "id": "pi_...", "payment_method": "...", ... }
+  metadata Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  order Order @relation(fields: [orderId], references: [id])
+
+  // Все платежи по заказу
+  @@index([orderId])
+  // Поиск по вебхуку от провайдера
+  @@index([externalId])
+  // Мониторинг и reconciliation по провайдеру
+  @@index([provider, status])
+  @@map("payments")
+}
+
+// =============================================================================
+// DOMAIN: ORDER EVENTS (Audit Log)
+// =============================================================================
+
+/// Неизменяемый лог событий заказа.
+/// Хранит полную историю: автоматические переходы и действия пользователей/adminов.
+///
+/// При росте таблицы > 10M записей — партиционировать по createdAt:
+/// PARTITION BY RANGE (created_at)
+model OrderEvent {
+  id      String         @id @default(cuid())
+  orderId String
+  /// null = системное событие (автоматика, вебхук, воркер)
+  actorId String?
+  type    OrderEventType
+  message String?
+
+  /// Контекст события:
+  /// STATUS_CHANGED:      { "from": "DRAFT", "to": "SUBMITTED" }
+  /// PAYMENT_RECEIVED:    { "paymentId": "pay_xxx", "amount": 2500, "provider": "YUKASSA" }
+  /// ASSIGNED_TO_DESIGNER: { "designerId": "user_xxx", "designerName": "Анна" }
+  /// SHIPPED:             { "trackingNumber": "RU123456789", "carrier": "CDEK" }
+  metadata Json?
+
+  createdAt DateTime @default(now())
+
+  // Relations
+  order Order @relation(fields: [orderId], references: [id])
+  actor User? @relation("EventActor", fields: [actorId], references: [id])
+
+  // Timeline заказа — всегда читается с сортировкой по времени
+  @@index([orderId, createdAt])
+  // Фильтрация событий по типу в admin-аналитике
+  @@index([type])
+  @@map("order_events")
+}

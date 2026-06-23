@@ -1,0 +1,21 @@
+version: '3.9'
+
+# Development override — only starts PostgreSQL.
+# Run NestJS locally with: npm run start:dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: pages_of_you_postgres_dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: pages_of_you
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_dev_data:

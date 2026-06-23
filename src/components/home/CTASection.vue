@@ -24,7 +24,7 @@
           color="primary"
           size="x-large"
           class="cta__btn text-button"
-          :to="{ name: 'catalog' }"
+          :to="{ name: 'create-order' }"
         >
           Создать журнал
         </v-btn>

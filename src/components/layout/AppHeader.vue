@@ -29,7 +29,7 @@
             color="primary"
             class="header__cta text-button"
             size="default"
-            :to="{ name: 'catalog' }"
+            :to="{ name: 'create-order' }"
           >
             Создать журнал
           </v-btn>
@@ -72,7 +72,7 @@
           color="primary"
           size="large"
           class="header__drawer-cta text-button"
-          :to="{ name: 'catalog' }"
+          :to="{ name: 'create-order' }"
           @click="closeMenu"
         >
           Создать журнал

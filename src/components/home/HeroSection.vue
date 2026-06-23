@@ -23,7 +23,7 @@
               color="primary"
               size="large"
               class="hero__btn text-button"
-              :to="{ name: 'catalog' }"
+              :to="{ name: 'create-order' }"
             >
               Создать журнал
             </v-btn>

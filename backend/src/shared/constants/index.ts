@@ -1,0 +1,5 @@
+export const STORAGE_PROVIDER = 'STORAGE_PROVIDER';
+export const PAYMENT_PROVIDER = 'PAYMENT_PROVIDER';
+
+export const DEFAULT_PAGE_SIZE = 20;
+export const MAX_PAGE_SIZE = 100;
