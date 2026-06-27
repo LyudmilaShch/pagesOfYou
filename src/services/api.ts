@@ -1,6 +1,7 @@
 import type { ApiError, ApiResponse } from '@/types/api.types'
+import { getApiBaseUrl } from '@/shared/config/api'
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
+const BASE_URL = getApiBaseUrl()
 
 async function request<T>(
   endpoint: string,

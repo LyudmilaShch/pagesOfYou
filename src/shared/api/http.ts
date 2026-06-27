@@ -1,6 +1,8 @@
 import axios from 'axios'
 import type { AxiosInstance, InternalAxiosRequestConfig } from 'axios'
 
+import { getApiBaseUrl } from '@/shared/config/api'
+
 const STORAGE_KEYS = {
   accessToken: 'accessToken',
   refreshToken: 'refreshToken',
@@ -20,7 +22,7 @@ function clearTokens(): void {
 }
 
 export const http: AxiosInstance = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000/api',
+  baseURL: getApiBaseUrl(),
   timeout: 15_000,
   headers: { 'Content-Type': 'application/json' },
 })
@@ -89,7 +91,7 @@ http.interceptors.response.use(
 
     try {
       const { data } = await axios.post(
-        `${import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000/api'}/auth/refresh`,
+        `${getApiBaseUrl()}/auth/refresh`,
         { refreshToken: storedRefreshToken },
       )
 

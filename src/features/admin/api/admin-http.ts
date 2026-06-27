@@ -5,6 +5,8 @@
 import axios from 'axios'
 import type { AxiosInstance, InternalAxiosRequestConfig } from 'axios'
 
+import { getApiBaseUrl } from '@/shared/config/api'
+
 export const ADMIN_TOKEN_KEY = 'adminAccessToken'
 
 export function getAdminToken(): string | null {
@@ -17,7 +19,7 @@ export function clearAdminToken(): void {
 }
 
 export const adminHttp: AxiosInstance = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000/api',
+  baseURL: getApiBaseUrl(),
   timeout: 15_000,
   headers: { 'Content-Type': 'application/json' },
 })
