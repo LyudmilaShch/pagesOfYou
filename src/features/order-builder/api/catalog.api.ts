@@ -5,6 +5,7 @@
  * sorted by sortOrder ASC (server-side).
  */
 
+import { resolveAssetUrl } from '@/shared/config/assets'
 import { http } from '@/shared/api/http'
 import type { BackendResponse } from '@/types/api.types'
 import type { MagazineType } from '../types/magazine-type'
@@ -34,7 +35,7 @@ function toDomain(item: CatalogMagazineType): MagazineType {
     id: item.id,
     name: item.name,
     description: item.description ?? '',
-    image: item.coverImage ?? '',
+    image: resolveAssetUrl(item.coverImage) ?? '',
     basePrice: toNum(item.basePrice),
     oldPrice: toNum(item.oldPrice),
     badgeType: item.badgeType as MagazineType['badgeType'],

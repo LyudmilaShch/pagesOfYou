@@ -8,5 +8,8 @@ export const appConfig = registerAs('app', () => ({
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean),
-  backendUrl: process.env.BACKEND_URL ?? `http://localhost:${process.env.PORT ?? '3000'}`,
+  backendUrl:
+    process.env.BACKEND_URL?.trim() ||
+    process.env.RENDER_EXTERNAL_URL?.trim() ||
+    `http://localhost:${process.env.PORT ?? '3000'}`,
 }));

@@ -16,8 +16,28 @@ const ADMIN_EMAIL = 'admin@example.com';
 const ADMIN_PASSWORD = 'admin123';
 const BCRYPT_ROUNDS = 10;
 
+async function normalizeCoverImages(): Promise<void> {
+  const types = await prisma.magazineType.findMany({
+    where: { coverImage: { not: null } },
+    select: { id: true, coverImage: true },
+  });
+
+  for (const type of types) {
+    const match = type.coverImage?.match(/\/uploads\/[^\s?#]+/i);
+    if (match && type.coverImage !== match[0]) {
+      await prisma.magazineType.update({
+        where: { id: type.id },
+        data: { coverImage: match[0] },
+      });
+      console.log(`✅ Normalized coverImage for magazine type ${type.id}`);
+    }
+  }
+}
+
 async function main() {
   console.log('🌱 Seeding database...');
+
+  await normalizeCoverImages();
 
   const existing = await prisma.user.findUnique({ where: { email: ADMIN_EMAIL } });
 

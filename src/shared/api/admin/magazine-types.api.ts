@@ -1,4 +1,5 @@
 import { adminHttp } from '@/features/admin/api/admin-http'
+import { resolveAssetUrl } from '@/shared/config/assets'
 import type { BackendResponse } from '@/types/api.types'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -58,6 +59,13 @@ export interface CreateMagazineTypePayload {
 
 export type UpdateMagazineTypePayload = Partial<CreateMagazineTypePayload>
 
+function withResolvedCoverImage(item: AdminMagazineType): AdminMagazineType {
+  return {
+    ...item,
+    coverImage: resolveAssetUrl(item.coverImage),
+  }
+}
+
 // ── API object ───────────────────────────────────────────────────────────────
 
 export const adminMagazineTypesApi = {
@@ -66,14 +74,17 @@ export const adminMagazineTypesApi = {
       '/admin/magazine-types',
       { params: query },
     )
-    return data.data
+    return {
+      ...data.data,
+      items: data.data.items.map(withResolvedCoverImage),
+    }
   },
 
   async getOne(id: string): Promise<AdminMagazineType> {
     const { data } = await adminHttp.get<BackendResponse<AdminMagazineType>>(
       `/admin/magazine-types/${id}`,
     )
-    return data.data
+    return withResolvedCoverImage(data.data)
   },
 
   async create(payload: CreateMagazineTypePayload): Promise<AdminMagazineType> {
@@ -81,7 +92,7 @@ export const adminMagazineTypesApi = {
       '/admin/magazine-types',
       payload,
     )
-    return data.data
+    return withResolvedCoverImage(data.data)
   },
 
   async update(id: string, payload: UpdateMagazineTypePayload): Promise<AdminMagazineType> {
@@ -89,7 +100,7 @@ export const adminMagazineTypesApi = {
       `/admin/magazine-types/${id}`,
       payload,
     )
-    return data.data
+    return withResolvedCoverImage(data.data)
   },
 
   async remove(id: string): Promise<void> {

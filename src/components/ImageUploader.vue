@@ -111,6 +111,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { resolveAssetUrl } from '@/shared/config/assets'
 import { uploadAdminImage } from '@/shared/api/admin/uploads.api'
 
 // ── Props & emits ─────────────────────────────────────────────────────────────
@@ -141,10 +142,14 @@ const MAX_SIZE = 5 * 1024 * 1024 // 5 MB
 
 // ── Computed ──────────────────────────────────────────────────────────────────
 
-/** Priority: local blob preview → server URL from modelValue */
-const displayUrl = computed<string | null>(
-  () => localPreviewUrl.value ?? (props.modelValue || null),
-)
+/** Priority: local blob preview → resolved server URL from modelValue */
+const displayUrl = computed<string | null>(() => {
+  if (localPreviewUrl.value) {
+    return localPreviewUrl.value
+  }
+
+  return resolveAssetUrl(props.modelValue)
+})
 
 // When parent resets modelValue to null (new form opened), clear local state
 watch(
