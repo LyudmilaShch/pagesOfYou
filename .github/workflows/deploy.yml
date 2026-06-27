@@ -33,7 +33,7 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL || 'https://api.pagesofyou.x-ui-tonk.pro/api' }}
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL || 'https://pagesofyou.onrender.com/api' }}
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
