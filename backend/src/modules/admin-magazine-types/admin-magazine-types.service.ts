@@ -4,7 +4,9 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../database';
+import { resolveAssetUrl, toStoredAssetPath } from '../../common/utils/asset-url.util';
 import type { CreateMagazineTypeDto } from './dto/create-magazine-type.dto';
 import type { UpdateMagazineTypeDto } from './dto/update-magazine-type.dto';
 import type { GetMagazineTypesQueryDto } from './dto/get-magazine-types-query.dto';
@@ -21,7 +23,10 @@ export interface PaginatedMagazineTypes {
 export class AdminMagazineTypesService {
   private readonly logger = new Logger(AdminMagazineTypesService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+  ) {}
 
   // ── List ────────────────────────────────────────────────────────────────────
 
@@ -45,7 +50,7 @@ export class AdminMagazineTypesService {
     ]);
 
     return {
-      items,
+      items: items.map((item) => this.withResolvedCoverImage(item)),
       total,
       page,
       limit,
@@ -64,7 +69,7 @@ export class AdminMagazineTypesService {
       throw new NotFoundException(`Magazine type with id "${id}" not found.`);
     }
 
-    return item;
+    return this.withResolvedCoverImage(item);
   }
 
   // ── Create ──────────────────────────────────────────────────────────────────
@@ -77,7 +82,7 @@ export class AdminMagazineTypesService {
         name: dto.name,
         slug: dto.slug,
         description: dto.description,
-        coverImage: dto.coverImage,
+        coverImage: toStoredAssetPath(dto.coverImage),
         basePrice: dto.basePrice ?? null,
         oldPrice: dto.oldPrice ?? null,
         badgeType: dto.badgeType ?? null,
@@ -90,7 +95,7 @@ export class AdminMagazineTypesService {
     });
 
     this.logger.log(`Magazine type created: ${item.id} (${item.slug})`);
-    return item;
+    return this.withResolvedCoverImage(item);
   }
 
   // ── Update ──────────────────────────────────────────────────────────────────
@@ -108,7 +113,9 @@ export class AdminMagazineTypesService {
         ...(dto.name !== undefined && { name: dto.name }),
         ...(dto.slug !== undefined && { slug: dto.slug }),
         ...(dto.description !== undefined && { description: dto.description }),
-        ...(dto.coverImage !== undefined && { coverImage: dto.coverImage }),
+        ...(dto.coverImage !== undefined && {
+          coverImage: toStoredAssetPath(dto.coverImage),
+        }),
         ...(dto.basePrice !== undefined && { basePrice: dto.basePrice }),
         ...(dto.oldPrice !== undefined && { oldPrice: dto.oldPrice ?? null }),
         ...(dto.badgeType !== undefined && { badgeType: dto.badgeType ?? null }),
@@ -121,7 +128,7 @@ export class AdminMagazineTypesService {
     });
 
     this.logger.log(`Magazine type updated: ${item.id}`);
-    return item;
+    return this.withResolvedCoverImage(item);
   }
 
   // ── Soft Delete ─────────────────────────────────────────────────────────────
@@ -138,6 +145,20 @@ export class AdminMagazineTypesService {
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
+
+  private backendUrl(): string {
+    return (
+      this.config.get<string>('app.backendUrl') ??
+      `http://localhost:${process.env.PORT ?? 3000}`
+    );
+  }
+
+  private withResolvedCoverImage<T extends { coverImage: string | null }>(item: T): T {
+    return {
+      ...item,
+      coverImage: resolveAssetUrl(item.coverImage, this.backendUrl()),
+    };
+  }
 
   private async assertSlugUnique(slug: string, excludeId?: string): Promise<void> {
     const existing = await this.prisma.magazineType.findUnique({
