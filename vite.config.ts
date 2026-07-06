@@ -5,7 +5,8 @@ import { defineConfig } from 'vite'
 import vuetify from 'vite-plugin-vuetify'
 
 export default defineConfig({
-  base: process.env.GITHUB_ACTIONS === 'true' ? '/pagesOfYou/' : '/',
+  // Custom domain (CNAME) serves from site root — not /pagesOfYou/
+  base: '/',
   plugins: [
     vue(),
     vuetify({
