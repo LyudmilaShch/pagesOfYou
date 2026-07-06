@@ -28,8 +28,9 @@
         </header>
 
         <!-- Error state -->
-        <div v-if="store.loadError" class="create-order__error">
+        <div v-if="store.loadError || store.orderError" class="create-order__error">
           <v-alert
+            v-if="store.loadError"
             type="error"
             variant="tonal"
             rounded="lg"
@@ -46,6 +47,16 @@
                 Повторить
               </v-btn>
             </template>
+          </v-alert>
+
+          <v-alert
+            v-if="store.orderError"
+            type="error"
+            variant="tonal"
+            rounded="lg"
+            class="mb-6"
+          >
+            {{ store.orderError }}
           </v-alert>
         </div>
 
@@ -94,7 +105,8 @@
           color="primary"
           size="large"
           class="create-order__btn-next"
-          :disabled="!store.selectedMagazineType"
+          :disabled="!store.selectedMagazineType || store.isLoadingOrder"
+          :loading="store.isLoadingOrder"
           @click="handleNext"
         >
           Продолжить
@@ -116,6 +128,7 @@ const store = useOrderBuilderStore()
 const router = useRouter()
 
 onMounted(() => {
+  store.orderError = null
   store.fetchMagazineTypes()
 })
 
@@ -123,6 +136,8 @@ async function handleNext(): Promise<void> {
   if (!store.selectedMagazineType) {
     return
   }
+
+  store.orderError = null
 
   try {
     await store.loadLocalDraft(store.selectedMagazineType.id)

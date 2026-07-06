@@ -63,6 +63,7 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
 
   function selectMagazineType(type: MagazineType): void {
     selectedMagazineType.value = type
+    orderError.value = null
   }
 
   function clearSelection(): void {
@@ -76,7 +77,7 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
   ): JournalPage[] {
     const catalog = groupTemplatesByPageType(templates)
 
-    if (catalog.cover.length === 0 || catalog.backCover.length === 0) {
+    if (catalog.cover.length === 0) {
       throw new Error('MISSING_COVER_TEMPLATES')
     }
 
@@ -136,8 +137,8 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
       }
 
       const catalog = groupTemplatesByPageType(pages)
-      if (catalog.cover.length === 0 || catalog.backCover.length === 0) {
-        orderError.value = 'Для журнала нужны шаблоны обложки и задней обложки.'
+      if (catalog.cover.length === 0) {
+        orderError.value = 'Для журнала нужен шаблон обложки.'
         throw new Error(orderError.value)
       }
 
@@ -170,7 +171,7 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
       if (!orderError.value) {
         orderError.value =
           err instanceof Error && err.message === 'MISSING_COVER_TEMPLATES'
-            ? 'Для журнала нужны шаблоны обложки и задней обложки.'
+            ? 'Для журнала нужен шаблон обложки.'
             : 'Не удалось загрузить страницы журнала.'
       }
       throw new Error(orderError.value)
