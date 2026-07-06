@@ -8,6 +8,7 @@ backend/dist
 
 # Environment variables — contain secrets
 .env
+.env.development
 .env.local
 .env.*.local
 backend/.env

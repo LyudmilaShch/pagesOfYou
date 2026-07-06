@@ -27,9 +27,12 @@ import { AdminJwtGuard } from '../admin-auth/guards/admin-jwt.guard';
 import { AdminRoleGuard } from '../admin-auth/guards/admin-role.guard';
 import { Public } from '../../common/decorators/public.decorator';
 import { AdminUploadsService } from './admin-uploads.service';
+import {
+  MAX_IMAGE_UPLOAD_SIZE_BYTES,
+  MAX_IMAGE_UPLOAD_SIZE_MB,
+} from '../../shared/constants/upload.constants';
 
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
 
 @Public()
 @ApiTags('Admin — Uploads')
@@ -54,7 +57,11 @@ export class AdminUploadsController {
     schema: {
       type: 'object',
       properties: {
-        file: { type: 'string', format: 'binary', description: 'JPG, PNG or WebP ≤ 5 MB' },
+        file: {
+          type: 'string',
+          format: 'binary',
+          description: `JPG, PNG or WebP ≤ ${MAX_IMAGE_UPLOAD_SIZE_MB} MB`,
+        },
       },
       required: ['file'],
     },
@@ -98,7 +105,7 @@ export class AdminUploadsController {
           );
         }
       },
-      limits: { fileSize: MAX_FILE_SIZE },
+      limits: { fileSize: MAX_IMAGE_UPLOAD_SIZE_BYTES },
     }),
   )
   uploadImage(@UploadedFile() file: Express.Multer.File) {

@@ -51,4 +51,66 @@ export const catalogApi = {
     )
     return data.data.map(toDomain)
   },
+
+  async getMagazinePages(magazineTypeId: string): Promise<CatalogMagazinePage[]> {
+    const { data } = await http.get<BackendResponse<CatalogMagazinePage[]>>(
+      `/catalog/magazine-types/by-id/${magazineTypeId}/pages`,
+    )
+
+    return data.data.map((page) => ({
+      ...page,
+      previewImage: resolveAssetUrl(page.previewImage),
+    }))
+  },
+
+  async getDefaultSpreads(magazineTypeId: string): Promise<CatalogDefaultSpread[]> {
+    const { data } = await http.get<BackendResponse<CatalogDefaultSpread[]>>(
+      `/catalog/magazine-types/by-id/${magazineTypeId}/default-spreads`,
+    )
+
+    return data.data.map((spread) => ({
+      ...spread,
+      magazinePage: {
+        ...spread.magazinePage,
+        previewImage: resolveAssetUrl(spread.magazinePage.previewImage),
+      },
+      rightMagazinePage: spread.rightMagazinePage
+        ? {
+            ...spread.rightMagazinePage,
+            previewImage: resolveAssetUrl(spread.rightMagazinePage.previewImage),
+          }
+        : null,
+    }))
+  },
+}
+
+export interface CatalogMagazinePage {
+  id: string
+  name: string
+  description: string | null
+  pageType: string
+  sortOrder: number
+  previewImage: string | null
+  canvasData: unknown
+  isRequired: boolean
+}
+
+export interface CatalogDefaultSpread {
+  id: string
+  sortOrder: number
+  layoutMode: string
+  magazinePageId: string
+  rightMagazinePageId: string | null
+  magazinePage: {
+    id: string
+    name: string
+    pageType: string
+    previewImage: string | null
+  }
+  rightMagazinePage: {
+    id: string
+    name: string
+    pageType: string
+    previewImage: string | null
+  } | null
 }

@@ -136,10 +136,16 @@ export class AdminMagazineTypesService {
   async remove(id: string) {
     await this.findOne(id);
 
-    await this.prisma.magazineType.update({
-      where: { id },
-      data: { deletedAt: new Date(), isActive: false },
-    });
+    await this.prisma.$transaction([
+      this.prisma.magazinePage.updateMany({
+        where: { magazineTypeId: id, deletedAt: null },
+        data: { deletedAt: new Date() },
+      }),
+      this.prisma.magazineType.update({
+        where: { id },
+        data: { deletedAt: new Date(), isActive: false },
+      }),
+    ]);
 
     this.logger.log(`Magazine type soft-deleted: ${id}`);
   }

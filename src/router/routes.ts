@@ -1,12 +1,23 @@
 import type { RouteRecordRaw } from 'vue-router'
 
 export const routes: RouteRecordRaw[] = [
-  // ── Admin Portal ────────────────────────────────────────────────────────────
   {
     path: '/admin/login',
     name: 'admin-login',
     component: () => import('@/features/admin/pages/AdminLoginPage.vue'),
     meta: { requiresAdminGuest: true },
+  },
+  {
+    path: '/admin/magazine-types/:magazineTypeId/pages/:pageId/editor',
+    component: () => import('@/modules/editor/layouts/EditorLayout.vue'),
+    meta: { requiresAdmin: true },
+    children: [
+      {
+        path: '',
+        name: 'admin-magazine-page-editor',
+        component: () => import('@/modules/editor/pages/MagazinePageEditorPage.vue'),
+      },
+    ],
   },
   {
     path: '/admin',
@@ -22,11 +33,15 @@ export const routes: RouteRecordRaw[] = [
         name: 'admin-dashboard',
         component: () => import('@/features/admin/pages/AdminDashboardPage.vue'),
       },
-      // Placeholder routes for future sections
       {
         path: 'magazine-types',
         name: 'admin-magazine-types',
         component: () => import('@/features/admin/pages/AdminMagazineTypesPage.vue'),
+      },
+      {
+        path: 'magazine-types/:id/edit',
+        name: 'admin-magazine-type-edit',
+        component: () => import('@/features/admin/pages/AdminMagazineTypeEditPage.vue'),
       },
       {
         path: 'magazine-styles',
@@ -45,7 +60,6 @@ export const routes: RouteRecordRaw[] = [
       },
     ],
   },
-  // ── Client routes ────────────────────────────────────────────────────────────
   {
     path: '/',
     component: () => import('@/layouts/MainLayout.vue'),
@@ -66,6 +80,11 @@ export const routes: RouteRecordRaw[] = [
     path: '/order/create',
     name: 'create-order',
     component: () => import('@/features/order-builder/pages/CreateOrderPage.vue'),
+  },
+  {
+    path: '/order/create/fill',
+    name: 'create-order-fill',
+    component: () => import('@/features/order-builder/pages/FillOrderPage.vue'),
   },
   {
     path: '/auth',

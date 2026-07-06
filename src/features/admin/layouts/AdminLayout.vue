@@ -80,6 +80,8 @@
     <main class="admin-main">
       <router-view />
     </main>
+
+    <ErrorMessageModalHost />
   </div>
 </template>
 
@@ -87,6 +89,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 
+import ErrorMessageModalHost from '@/components/ui/ErrorMessageModalHost.vue'
 import { useAdminAuthStore } from '../stores/admin-auth.store'
 
 const store = useAdminAuthStore()

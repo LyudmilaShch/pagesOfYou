@@ -119,10 +119,17 @@ onMounted(() => {
   store.fetchMagazineTypes()
 })
 
-function handleNext(): void {
-  if (!store.selectedMagazineType) return
-  // Step 2 route — to be created later
-  router.push({ name: 'create-order-style' })
+async function handleNext(): Promise<void> {
+  if (!store.selectedMagazineType) {
+    return
+  }
+
+  try {
+    await store.loadLocalDraft(store.selectedMagazineType.id)
+    await router.push({ name: 'create-order-fill' })
+  } catch {
+    // orderError is set in the store
+  }
 }
 </script>
 

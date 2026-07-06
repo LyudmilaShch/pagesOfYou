@@ -88,6 +88,27 @@ enum BadgeType {
   LIMITED  // Ограниченная серия
 }
 
+/// Тип страницы в конструкторе журналов
+enum PageType {
+  COVER
+  PAGE
+  SPREAD
+  BACK_COVER
+}
+
+/// Как пользователь собрал разворот из шаблонов
+enum JournalSpreadLayout {
+  SPREAD       // один шаблон типа SPREAD
+  SPLIT_PAGES  // левая и правая страницы — отдельные шаблоны PAGE
+}
+
+/// Тип значения placeholder'а пользователя
+enum PlaceholderValueType {
+  TEXT
+  PHOTO
+  DATE
+}
+
 /// Провайдеры оплаты
 enum PaymentProvider {
   YUKASSA
@@ -236,9 +257,11 @@ model MagazineType {
   deletedAt DateTime?
 
   // Relations
-  typeStyleLinks  MagazineTypeStyle[]
+  typeStyleLinks MagazineTypeStyle[]
   typeSpreadLinks MagazineTypeSpread[]
-  orders          Order[]
+  pages             MagazinePage[]
+  defaultSpreads    MagazineDefaultSpread[]
+  orders            Order[]
 
   // Список для пользователей (отсортированный каталог)
   @@index([isActive, sortOrder])
@@ -402,6 +425,118 @@ model FieldOption {
 }
 
 // =============================================================================
+// DOMAIN: PAGE BUILDER  (MagazinePage — pages belong to MagazineType)
+// =============================================================================
+
+/// Страница журнала — часть конкретного товара (MagazineType).
+/// Дизайн хранится в canvasData (собственная JSON-модель, не Konva).
+model MagazinePage {
+  id             String   @id @default(cuid())
+  magazineTypeId String
+  name           String
+  description    String?  @db.Text
+  pageType       PageType @default(PAGE)
+  sortOrder      Int      @default(0)
+  previewImage   String?
+
+  /// { version: 1, elements: PageElement[] }
+  canvasData Json
+
+  isRequired Boolean @default(false)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  magazineType          MagazineType  @relation(fields: [magazineTypeId], references: [id], onDelete: Cascade)
+  journalPages          JournalPage[] @relation("JournalPagePrimaryTemplate")
+  journalPagesAsRight   JournalPage[] @relation("JournalPageRightTemplate")
+  defaultSpreads        MagazineDefaultSpread[] @relation("DefaultSpreadPrimary")
+  defaultSpreadsAsRight MagazineDefaultSpread[] @relation("DefaultSpreadRight")
+
+  @@index([magazineTypeId, sortOrder])
+  @@index([magazineTypeId, deletedAt])
+  @@map("magazine_pages")
+}
+
+/// Шаблон разворота по умолчанию для нового журнала пользователя
+model MagazineDefaultSpread {
+  id             String @id @default(cuid())
+  magazineTypeId String
+  sortOrder      Int    @default(0)
+
+  layoutMode          JournalSpreadLayout @default(SPREAD)
+  magazinePageId      String
+  rightMagazinePageId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  magazineType      MagazineType  @relation(fields: [magazineTypeId], references: [id], onDelete: Cascade)
+  magazinePage      MagazinePage  @relation("DefaultSpreadPrimary", fields: [magazinePageId], references: [id])
+  rightMagazinePage MagazinePage? @relation("DefaultSpreadRight", fields: [rightMagazinePageId], references: [id])
+
+  @@unique([magazineTypeId, sortOrder])
+  @@index([magazineTypeId])
+  @@index([magazinePageId])
+  @@index([rightMagazinePageId])
+  @@map("magazine_default_spreads")
+}
+
+/// Конкретная страница журнала пользователя (экземпляр в заказе)
+model JournalPage {
+  id             String @id @default(cuid())
+  orderId        String
+  magazinePageId String
+  sortOrder      Int    @default(0)
+
+  /// Роль слота в журнале пользователя: обложка, разворот или задняя обложка
+  slotType PageType @default(SPREAD)
+
+  /// Только для slotType = SPREAD: целый разворот или две отдельные страницы
+  layoutMode JournalSpreadLayout?
+
+  /// Правая страница при layoutMode = SPLIT_PAGES
+  rightMagazinePageId String?
+
+  /// Снимок страницы на момент создания
+  pageSnapshot Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  order             Order              @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  magazinePage      MagazinePage       @relation("JournalPagePrimaryTemplate", fields: [magazinePageId], references: [id])
+  rightMagazinePage MagazinePage?      @relation("JournalPageRightTemplate", fields: [rightMagazinePageId], references: [id])
+  placeholderValues PlaceholderValue[]
+
+  @@index([orderId, sortOrder])
+  @@index([magazinePageId])
+  @@index([rightMagazinePageId])
+  @@map("journal_pages")
+}
+
+/// Данные пользователя для placeholder'а (отдельно от дизайна шаблона)
+model PlaceholderValue {
+  id            String               @id @default(cuid())
+  journalPageId String
+  /// id элемента из canvasData.elements
+  elementId     String
+  valueType     PlaceholderValueType
+  textValue     String?              @db.Text
+  jsonValue     Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  journalPage JournalPage @relation(fields: [journalPageId], references: [id], onDelete: Cascade)
+
+  @@unique([journalPageId, elementId])
+  @@index([journalPageId])
+  @@map("placeholder_values")
+}
+
+// =============================================================================
 // DOMAIN: ORDERS
 // =============================================================================
 
@@ -409,7 +544,7 @@ model Order {
   id              String      @id @default(cuid())
   userId          String
   magazineTypeId  String
-  magazineStyleId String
+  magazineStyleId String?
   status          OrderStatus @default(DRAFT)
 
   totalPrice Decimal? @db.Decimal(10, 2)
@@ -435,7 +570,8 @@ model Order {
   // Relations
   user          User          @relation(fields: [userId], references: [id])
   magazineType  MagazineType  @relation(fields: [magazineTypeId], references: [id])
-  magazineStyle MagazineStyle @relation(fields: [magazineStyleId], references: [id])
+  magazineStyle MagazineStyle? @relation(fields: [magazineStyleId], references: [id])
+  journalPages  JournalPage[]
   spreads       OrderSpread[]
   payments      Payment[]
   events        OrderEvent[]

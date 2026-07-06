@@ -15,12 +15,25 @@ export function resolveAssetUrl(url: string | null | undefined): string | null {
   const trimmed = url.trim()
 
   if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(trimmed)) {
+    const uploadsPath = trimmed.match(/(\/uploads\/.*)$/i)?.[1]
+    if (uploadsPath) {
+      return uploadsPath
+    }
+
     const path = trimmed.replace(/^https?:\/\/[^/]+/i, '')
     return `${base}${path.startsWith('/') ? path : `/${path}`}`
   }
 
+  if (/^https?:\/\//i.test(trimmed)) {
+    const uploadsPath = trimmed.match(/(\/uploads\/.*)$/i)?.[1]
+    if (uploadsPath) {
+      return uploadsPath
+    }
+    return trimmed
+  }
+
   if (trimmed.startsWith('/uploads/') || trimmed.startsWith('uploads/')) {
-    return `${base}${trimmed.startsWith('/') ? trimmed : `/${trimmed}`}`
+    return trimmed.startsWith('/') ? trimmed : `/${trimmed}`
   }
 
   return trimmed

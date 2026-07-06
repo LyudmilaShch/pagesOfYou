@@ -1,14 +1,20 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../../database';
+import { toStoredAssetPath, resolveAssetUrl } from '../../common/utils/asset-url.util';
 import { R2StorageProvider } from './providers/r2-storage.provider';
+import {
+  MAX_IMAGE_UPLOAD_SIZE_BYTES,
+  MAX_IMAGE_UPLOAD_SIZE_MB,
+} from '../../shared/constants/upload.constants';
 
 export interface RequestUploadUrlDto {
   /** Original file name — stored for display purposes */
   originalName: string;
   /** MIME type, e.g. "image/jpeg" */
   mimeType: string;
-  /** File size in bytes — validated against 20 MB limit */
+  /** File size in bytes — validated against upload limit */
   size: number;
 }
 
@@ -21,7 +27,6 @@ export interface UploadUrlResponse {
   storageKey: string;
 }
 
-const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024; // 20 MB
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
 @Injectable()
@@ -31,6 +36,7 @@ export class FilesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: R2StorageProvider,
+    private readonly config: ConfigService,
   ) {}
 
   /**
@@ -38,8 +44,8 @@ export class FilesService {
    * Does NOT create a DB record yet.
    */
   async requestUploadUrl(userId: string, dto: RequestUploadUrlDto): Promise<UploadUrlResponse> {
-    if (dto.size > MAX_FILE_SIZE_BYTES) {
-      throw new Error(`File size exceeds the limit of ${MAX_FILE_SIZE_BYTES / 1024 / 1024} MB`);
+    if (dto.size > MAX_IMAGE_UPLOAD_SIZE_BYTES) {
+      throw new Error(`File size exceeds the limit of ${MAX_IMAGE_UPLOAD_SIZE_MB} MB`);
     }
 
     if (!ALLOWED_MIME_TYPES.includes(dto.mimeType)) {
@@ -116,5 +122,38 @@ export class FilesService {
       where: { userId, deletedAt: null },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  /** Local disk upload for order photos (MVP without R2). */
+  registerLocalUpload(userId: string, file: Express.Multer.File | undefined) {
+    if (!file) {
+      throw new BadRequestException('File is required.');
+    }
+
+    const backendUrl =
+      this.config.get<string>('app.backendUrl') ??
+      `http://localhost:${process.env.PORT ?? 3000}`;
+
+    const normalized = file.path.replace(/\\/g, '/');
+    const uploadsIdx = normalized.indexOf('uploads/');
+    const publicPath =
+      uploadsIdx !== -1 ? normalized.slice(uploadsIdx) : `uploads/order-photos/${file.filename}`;
+
+    const url = `${backendUrl}/${publicPath}`;
+    const storedPath = toStoredAssetPath(url) ?? publicPath;
+
+    return this.prisma.uploadedFile.create({
+      data: {
+        userId,
+        storageKey: storedPath,
+        url: storedPath,
+        originalName: file.originalname,
+        mimeType: file.mimetype,
+        size: file.size,
+      },
+    }).then((record) => ({
+      ...record,
+      url: resolveAssetUrl(record.url, backendUrl) ?? record.url,
+    }));
   }
 }

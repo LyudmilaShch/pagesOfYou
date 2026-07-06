@@ -406,12 +406,14 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { useMagazineTypesStore } from '../stores/magazine-types.store'
 import type { AdminMagazineType } from '@/shared/api/admin/magazine-types.api'
 import ImageUploader from '@/components/ImageUploader.vue'
 import type { BadgeType } from '@/shared/api/admin/magazine-types.api'
 
 const store = useMagazineTypesStore()
+const router = useRouter()
 
 // ── Table options ────────────────────────────────────────────────────────────
 
@@ -518,24 +520,7 @@ function openCreate() {
 }
 
 function openEdit(item: AdminMagazineType) {
-  Object.assign(form, {
-    name: item.name,
-    slug: item.slug,
-    description: item.description ?? '',
-    coverImage: item.coverImage ?? null,
-    basePrice: item.basePrice != null ? Number(item.basePrice) : null,
-    oldPrice: item.oldPrice != null ? Number(item.oldPrice) : null,
-    badgeType: item.badgeType ?? null,
-    badgeText: item.badgeText ?? '',
-    isActive: item.isActive,
-    sortOrder: item.sortOrder,
-    seoTitle: item.seoTitle ?? '',
-    seoDescription: item.seoDescription ?? '',
-  })
-  formErrors.name = ''
-  formErrors.slug = ''
-  formDialog.editId = item.id
-  formDialog.open = true
+  void router.push({ name: 'admin-magazine-type-edit', params: { id: item.id } })
 }
 
 function autoSlug() {
@@ -576,8 +561,11 @@ async function submitForm() {
       await store.updateMagazineType(formDialog.editId, payload)
       notify('Тип журнала обновлён', 'success')
     } else {
-      await store.createMagazineType(payload)
+      const created = await store.createMagazineType(payload)
       notify('Тип журнала создан', 'success')
+      formDialog.open = false
+      void router.push({ name: 'admin-magazine-type-edit', params: { id: created.id } })
+      return
     }
 
     formDialog.open = false

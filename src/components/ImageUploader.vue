@@ -89,7 +89,7 @@
       >
         Выберите файл
       </v-btn>
-      <p class="img-uploader__zone-hint">JPG, PNG, WebP · до 5 МБ</p>
+      <p class="img-uploader__zone-hint">JPG, PNG, WebP · до {{ maxUploadSizeLabel }}</p>
     </div>
 
     <!-- Validation error shown below the zone -->
@@ -111,8 +111,15 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { resolveAssetUrl } from '@/shared/config/assets'
 import { uploadAdminImage } from '@/shared/api/admin/uploads.api'
+import { useErrorMessageModal } from '@/shared/composables/useErrorMessageModal'
+import {
+  formatMaxImageUploadSizeLabel,
+  getMaxImageUploadSizeErrorMessage,
+  MAX_IMAGE_UPLOAD_SIZE_BYTES,
+} from '@/shared/constants/upload.constants'
+import { resolveAssetUrl } from '@/shared/config/assets'
+import { getUploadErrorMessage } from '@/shared/utils/api-error.util'
 
 // ── Props & emits ─────────────────────────────────────────────────────────────
 
@@ -127,6 +134,8 @@ const emit = defineEmits<{
   (e: 'update:modelValue', url: string | null): void
 }>()
 
+const { showErrorMessageModal } = useErrorMessageModal()
+
 // ── State ─────────────────────────────────────────────────────────────────────
 
 const fileInputRef = ref<HTMLInputElement | null>(null)
@@ -138,7 +147,7 @@ const validationError = ref<string | null>(null)
 const isDragging = ref(false)
 
 const ALLOWED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp']
-const MAX_SIZE = 5 * 1024 * 1024 // 5 MB
+const maxUploadSizeLabel = formatMaxImageUploadSizeLabel()
 
 // ── Computed ──────────────────────────────────────────────────────────────────
 
@@ -192,8 +201,8 @@ function processFile(file: File) {
     validationError.value = 'Неподдерживаемый формат. Используйте JPG, PNG или WebP.'
     return
   }
-  if (file.size > MAX_SIZE) {
-    validationError.value = 'Файл слишком большой. Максимум 5 МБ.'
+  if (file.size > MAX_IMAGE_UPLOAD_SIZE_BYTES) {
+    validationError.value = getMaxImageUploadSizeErrorMessage()
     return
   }
 
@@ -214,10 +223,9 @@ async function startUpload(file: File) {
     localPreviewUrl.value = url
     emit('update:modelValue', url)
   } catch (err: unknown) {
-    const msg =
-      (err as { response?: { data?: { message?: string } } })?.response?.data?.message ??
-      'Ошибка загрузки. Попробуйте ещё раз.'
+    const msg = getUploadErrorMessage(err)
     uploadError.value = msg
+    showErrorMessageModal(msg, 'Не удалось загрузить изображение')
     // Keep the local blob preview so user sees what they tried to upload
   } finally {
     uploading.value = false
