@@ -153,7 +153,7 @@ import {
   resolvePhotoRenderFitMode,
   type PhotoScaleCorner,
 } from '../../utils/photo-crop.util'
-import { getPhotoBorderDrawNodes, type PhotoBorderDrawNode } from '../../utils/element-stroke.util'
+import { getPhotoBorderDrawNodes } from '../../utils/element-stroke.util'
 
 import {
   applyOuterTopLeftPosition,
@@ -246,7 +246,7 @@ function getTransformNode(): Konva.Group | null {
 function getActiveTransformerAnchor(node: Konva.Node): string | null {
   const stage = node.getStage()
   const transformers = stage?.find(
-    (item) => item.getClassName() === 'Transformer',
+    (item: Konva.Node) => item.getClassName() === 'Transformer',
   ) as Konva.Transformer[] | undefined
 
   const transformer = transformers?.find((item) => item.nodes().includes(node))

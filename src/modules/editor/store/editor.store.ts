@@ -79,6 +79,7 @@ const HISTORY_DEBOUNCE_MS = 500
 const MIN_ZOOM = 0.25
 const MAX_ZOOM = 4
 
+let elementDuplicateCounter = 0
 
 function cloneElementForDuplicate(element: PageElement, zIndex: number): PageElement {
   elementDuplicateCounter += 1

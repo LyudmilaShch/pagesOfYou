@@ -112,6 +112,8 @@ import { applyTextLayoutToElement } from '@/modules/editor/utils/text-auto-size.
 
 import { loadHtmlImage } from '@/modules/editor/utils/load-image.util'
 
+import { getPhotoBorderDrawNodes } from '@/modules/editor/utils/element-stroke.util'
+
 import { resolveAssetUrl } from '@/shared/config/assets'
 
 import {
@@ -481,6 +483,8 @@ const backgroundRectConfig = computed(() => {
 
 const photoRectConfig = computed(() => getPhotoPlaceholderRectConfig(renderElement.value))
 
+const photoBorderDrawNodes = computed(() => getPhotoBorderDrawNodes(renderElement.value))
+
 const photoIconLines = computed(() => getPhotoPlaceholderIconLines(renderElement.value))
 
 const photoEmptyHintConfig = computed(() => getPhotoPlaceholderEmptyHintConfig(renderElement.value))
@@ -522,6 +526,8 @@ provide(EDITOR_ELEMENT_VISUALS_KEY, {
   backgroundRectConfig,
 
   photoRectConfig,
+
+  photoBorderDrawNodes,
 
   photoUrl,
 

@@ -30,10 +30,7 @@ import {
   type PhotoScaleCorner,
 } from '../../utils/photo-crop.util'
 import { getPhotoPlaceholderCheckerPattern } from '../../utils/photo-placeholder-pattern.util'
-import {
-  getElementPivotSize,
-  getElementTransformNodeId,
-} from '../../utils/element-pivot.util'
+import { getElementTransformNodeId } from '../../utils/element-pivot.util'
 
 export { resolveKonvaFontStyle }
 
@@ -60,6 +57,7 @@ export function getElementOuterGroupConfig(element: PageElement): KonvaGroupConf
     opacity: element.opacity,
     visible: element.visible,
     draggable: !element.locked,
+    rotation: 0,
     name: 'editor-element',
   }
 }

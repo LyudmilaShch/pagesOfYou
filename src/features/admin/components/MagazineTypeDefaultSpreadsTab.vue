@@ -187,7 +187,13 @@ function buildDefaultSpreads(): EditableSpread[] {
     return []
   }
 
-  return Array.from({ length: MIN_JOURNAL_SPREADS }, () => toEditableSpread(spreadDefault))
+  return Array.from({ length: MIN_JOURNAL_SPREADS }, () =>
+    toEditableSpread({
+      layoutMode: spreadDefault.layoutMode,
+      magazinePageId: spreadDefault.magazinePageId,
+      rightMagazinePageId: spreadDefault.rightMagazinePageId ?? undefined,
+    }),
+  )
 }
 
 async function load(): Promise<void> {

@@ -55,7 +55,6 @@ const stageConfig = computed(() => ({
 }))
 
 const pageGroupConfig = computed(() => {
-  const padding = 4
   const scaledWidth = pageWidth.value * pageScale.value
   const scaledHeight = pageHeight.value * pageScale.value
 

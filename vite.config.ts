@@ -5,7 +5,7 @@ import { defineConfig } from 'vite'
 import vuetify from 'vite-plugin-vuetify'
 
 export default defineConfig({
-  base: '/',
+  base: process.env.GITHUB_ACTIONS === 'true' ? '/pagesOfYou/' : '/',
   plugins: [
     vue(),
     vuetify({

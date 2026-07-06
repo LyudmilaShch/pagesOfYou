@@ -1020,7 +1020,7 @@
             :show-fill="!isLineElement"
             :optional-stroke="!isLineElement"
             :stroke-width-label="isLineElement ? 'Толщина' : 'Толщина'"
-            @patch="patchElement"
+            @patch="(patch) => patchElement(patch as ElementPatch)"
           />
 
         </div>

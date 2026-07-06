@@ -4,7 +4,7 @@ import { defineStore } from 'pinia'
 import { catalogApi, type CatalogMagazinePage } from '../api/catalog.api'
 import { ordersApi, type SetJournalPageTemplatePayload } from '../api/orders.api'
 import { MIN_JOURNAL_SPREADS } from '../constants/journal.constants'
-import { normalizeCanvasData } from '@/modules/editor/models/canvas-data.model'
+import { normalizeCanvasData, type CanvasData } from '@/modules/editor/models/canvas-data.model'
 import type { MagazineType } from '../types/magazine-type'
 import type { JournalPage, OrderDetail, PlaceholderInput } from '../types/order.types'
 import {
