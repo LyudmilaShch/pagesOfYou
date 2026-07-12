@@ -86,14 +86,13 @@
             <v-rect
               v-for="sheet in spreadPageSheets"
               :key="`shadow-${sheet.key}`"
-              :config="buildSpreadSheetShadowConfig(sheet, pageBackgroundColor)"
+              :config="buildSpreadSheetShadowConfig(sheet, getSpreadSheetShadowColor(sheet.key))"
             />
 
             <v-group :config="spreadPageClipConfig">
-              <v-rect
-                v-for="sheet in spreadPageSheets"
-                :key="`bg-${sheet.key}`"
-                :config="buildSpreadSheetBackgroundConfig(sheet, pageBackgroundColor)"
+              <SpreadPageBackgroundLayers
+                :canvas="normalizedCanvas"
+                :page-height="pageHeight"
               />
 
               <v-line
@@ -106,8 +105,6 @@
                   listening: false,
                 }"
               />
-
-              <v-line :config="spreadFoldLineConfig" />
             </v-group>
 
             <v-group>
@@ -117,13 +114,18 @@
                 :element="element"
               />
             </v-group>
+
+            <v-line :config="spreadFoldLineConfig" />
           </template>
 
           <template v-else>
             <v-rect :config="pageShadowConfig" />
 
             <v-group :config="pageClipConfig">
-              <v-rect :config="pageBackgroundConfig" />
+              <SpreadPageBackgroundLayers
+                :canvas="normalizedCanvas"
+                :page-height="pageHeight"
+              />
 
               <v-line
                 v-for="line in gridLines"
@@ -206,6 +208,8 @@ import type Konva from 'konva'
 import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
 
 import EditorElementNode from '@/modules/editor/components/canvas/EditorElementNode.vue'
+import SpreadPageBackgroundLayers from '@/modules/editor/components/canvas/SpreadPageBackgroundLayers.vue'
+import { normalizeCanvasData } from '@/modules/editor/models/canvas-data.model'
 import EditorPhotoCropOverlay from '@/modules/editor/components/canvas/EditorPhotoCropOverlay.vue'
 import EditorPrintCropWarning from '@/modules/editor/components/canvas/EditorPrintCropWarning.vue'
 import EditorTextEditOverlay from '@/modules/editor/components/canvas/EditorTextEditOverlay.vue'
@@ -230,7 +234,6 @@ import { buildGridLines } from '@/modules/editor/utils/snap.util'
 import { buildPrintSafeZoneOverlay } from '@/modules/editor/utils/print-safe-zone.util'
 import {
   buildSpreadGridLines,
-  buildSpreadSheetBackgroundConfig,
   buildSpreadSheetShadowConfig,
   buildSpreadFoldLineConfig,
   getSpreadPageSheets,
@@ -277,9 +280,11 @@ let photoDragDepth = 0
 
 const sortedTemplateElements = computed(() => sortElementsByZIndex(props.canvasData.elements))
 
-const pageWidth = computed(() => props.canvasData.pageWidth ?? A4_PAGE_WIDTH)
-const pageHeight = computed(() => props.canvasData.pageHeight ?? A4_PAGE_HEIGHT)
-const pageBackgroundColor = computed(() => props.canvasData.backgroundColor ?? '#FFFFFF')
+const normalizedCanvas = computed(() => normalizeCanvasData(props.canvasData))
+
+const pageWidth = computed(() => normalizedCanvas.value.pageWidth ?? A4_PAGE_WIDTH)
+const pageHeight = computed(() => normalizedCanvas.value.pageHeight ?? A4_PAGE_HEIGHT)
+const pageBackgroundColor = computed(() => normalizedCanvas.value.backgroundColor ?? '#FFFFFF')
 
 const canvasStore = createOrderCanvasContext(
   props.fillSession,
@@ -298,6 +303,19 @@ const layoutPageWidth = computed(() => getSpreadVisualWidth(pageWidth.value, pag
 const spreadPageSheets = computed(() =>
   isSpreadLayout.value ? getSpreadPageSheets(pageHeight.value) : [],
 )
+
+function getSpreadSheetShadowColor(sheetKey: 'left' | 'right'): string {
+  if (normalizedCanvas.value.spreadBackgroundMode === 'per-page') {
+    const sideBackground =
+      sheetKey === 'left'
+        ? normalizedCanvas.value.leftPageBackground
+        : normalizedCanvas.value.rightPageBackground
+
+    return sideBackground?.backgroundColor ?? pageBackgroundColor.value
+  }
+
+  return pageBackgroundColor.value
+}
 
 const spreadPageClipConfig = computed(() => ({
   clip: {
@@ -384,15 +402,6 @@ const pageShadowConfig = computed(() => ({
   shadowBlur: 16,
   shadowOffsetY: 6,
   shadowOpacity: 0.3,
-}))
-
-const pageBackgroundConfig = computed(() => ({
-  name: 'page-background',
-  x: 0,
-  y: 0,
-  width: pageWidth.value,
-  height: pageHeight.value,
-  fill: pageBackgroundColor.value,
 }))
 
 const gridLines = computed(() => {

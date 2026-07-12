@@ -15,7 +15,6 @@ export type LibraryElementType =
   | 'shape-line'
   | 'shape-rectangle'
   | 'shape-circle'
-  | 'background'
 
 export interface LibraryElementDefinition {
   type: LibraryElementType
@@ -66,12 +65,6 @@ export const LIBRARY_ELEMENTS: LibraryElementDefinition[] = [
     label: 'Круг',
     icon: 'mdi-circle-outline',
     description: 'Круглая форма',
-  },
-  {
-    type: 'background',
-    label: 'Фон',
-    icon: 'mdi-format-color-fill',
-    description: 'Цветной блок на странице',
   },
 ]
 
@@ -213,13 +206,6 @@ export function createElementFromLibrary(
         fill: 'transparent',
         stroke: DEFAULT_SHAPE_STROKE,
         strokeWidth: 2,
-      }
-
-    case 'background':
-      return {
-        ...baseElement(type, 'Фон', { x: 0, y: 0 }, { width: pageWidth, height: pageHeight }, 0),
-        color: '#F3F1ED',
-        locked: true,
       }
   }
 }

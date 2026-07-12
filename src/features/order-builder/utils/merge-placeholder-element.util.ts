@@ -121,9 +121,7 @@ export function mergeElementWithPlaceholderValue(
 
   if (template.type === 'photo-placeholder') {
     const photo = template as PhotoPlaceholder
-    const userUrl = typeof json.url === 'string' ? json.url : undefined
-    const hasUserRecord =
-      Boolean(saved) || Boolean(local?.jsonValue && Object.keys(local.jsonValue).length > 0)
+    const userUrl = typeof json.url === 'string' ? json.url.trim() : undefined
 
     return {
       ...photo,
@@ -139,7 +137,8 @@ export function mergeElementWithPlaceholderValue(
             height: pickNumber(json.size.height, photo.size.height),
           }
         : photo.size,
-      defaultImageUrl: hasUserRecord ? (userUrl ?? null) : userUrl ?? photo.defaultImageUrl,
+      defaultImageUrl:
+        userUrl !== undefined ? userUrl || null : photo.defaultImageUrl ?? null,
       cropX: pickNumber(json.cropX, photo.cropX ?? 0),
       cropY: pickNumber(json.cropY, photo.cropY ?? 0),
       imageScale: pickNumber(json.imageScale, photo.imageScale ?? 1),
@@ -153,8 +152,7 @@ export function mergeElementWithPlaceholderValue(
   if (
     template.type === 'shape-rectangle' ||
     template.type === 'shape-circle' ||
-    template.type === 'shape-line' ||
-    template.type === 'background'
+    template.type === 'shape-line'
   ) {
     const shape = template as ShapeElement
 
@@ -173,13 +171,9 @@ export function mergeElementWithPlaceholderValue(
           }
         : template.size,
       rotation: pickNumber(json.rotation, template.rotation),
-      ...(template.type !== 'background'
-        ? {
-            fill: typeof json.fill === 'string' ? json.fill : shape.fill,
-            stroke: typeof json.stroke === 'string' ? json.stroke : shape.stroke,
-            strokeWidth: pickNumber(json.strokeWidth, shape.strokeWidth),
-          }
-        : {}),
+      fill: typeof json.fill === 'string' ? json.fill : shape.fill,
+      stroke: typeof json.stroke === 'string' ? json.stroke : shape.stroke,
+      strokeWidth: pickNumber(json.strokeWidth, shape.strokeWidth),
     }
   }
 

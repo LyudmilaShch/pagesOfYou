@@ -10,12 +10,10 @@ export type {
 } from './text-placeholder.model'
 export type { TitlePlaceholder, SubtitlePlaceholder } from './title-placeholder.model'
 export type { ShapeElement } from './shape-element.model'
-export type { BackgroundElement } from './background-element.model'
 export type { EditorDocument } from './page-template.model'
 export type { CanvasData } from './canvas-data.model'
 export { CANVAS_DATA_VERSION, createEmptyCanvasData, normalizeCanvasData } from './canvas-data.model'
 
-import type { BackgroundElement } from './background-element.model'
 import type { PhotoPlaceholder } from './photo-placeholder.model'
 import type { ShapeElement } from './shape-element.model'
 import type {
@@ -30,7 +28,6 @@ export type PageElement =
   | TitlePlaceholder
   | SubtitlePlaceholder
   | ShapeElement
-  | BackgroundElement
 
 export function isTextElement(
   element: PageElement,

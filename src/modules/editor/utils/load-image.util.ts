@@ -3,15 +3,7 @@ export function loadHtmlImage(url: string): Promise<HTMLImageElement> {
     const image = new Image()
 
     image.onload = () => resolve(image)
-
-    image.onerror = () => {
-      const fallback = new Image()
-      fallback.onload = () => resolve(fallback)
-      fallback.onerror = () => reject(new Error(`Failed to load image: ${url}`))
-      fallback.src = url
-    }
-
-    image.crossOrigin = 'anonymous'
+    image.onerror = () => reject(new Error(`Failed to load image: ${url}`))
     image.src = url
   })
 }

@@ -4,6 +4,9 @@ import {
   A4_SPREAD_PAGE_WIDTH,
 } from '@/modules/editor/constants/page.constants'
 import {
+  DEFAULT_PAGE_BACKGROUND_IMAGE_FIT,
+} from '@/modules/editor/models/page-background.model'
+import {
   createEmptyCanvasData,
   createSpreadCanvasData,
   normalizeCanvasData,
@@ -62,6 +65,14 @@ export function mergePageCanvasesIntoSpread(
     pageWidth: A4_SPREAD_PAGE_WIDTH,
     pageHeight: A4_SPREAD_PAGE_HEIGHT,
     backgroundColor: leftCanvas.backgroundColor ?? rightCanvas.backgroundColor ?? '#FFFFFF',
+    backgroundImageUrl: leftCanvas.backgroundImageUrl ?? rightCanvas.backgroundImageUrl ?? null,
+    backgroundImageFit:
+      leftCanvas.backgroundImageFit ??
+      rightCanvas.backgroundImageFit ??
+      DEFAULT_PAGE_BACKGROUND_IMAGE_FIT,
+    backgroundImageCropX: leftCanvas.backgroundImageCropX ?? rightCanvas.backgroundImageCropX ?? 0,
+    backgroundImageCropY: leftCanvas.backgroundImageCropY ?? rightCanvas.backgroundImageCropY ?? 0,
+    backgroundImageScale: leftCanvas.backgroundImageScale ?? rightCanvas.backgroundImageScale ?? 1,
     elements: [...leftElements, ...rightElements],
   }
 }

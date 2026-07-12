@@ -8,7 +8,6 @@ export type PageElementType =
   | 'shape-rectangle'
   | 'shape-circle'
   | 'shape-line'
-  | 'background'
 
 export interface PageElementBase {
   id: string

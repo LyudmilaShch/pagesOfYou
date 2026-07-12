@@ -101,11 +101,121 @@
 
 
 
+        <div v-if="store.isSpreadPage" class="editor-properties__spread-bg">
+          <div class="editor-properties__spread-bg-mode" role="group" aria-label="Режим фона разворота">
+            <button
+              v-for="option in spreadBackgroundModeOptions"
+              :key="option.value"
+              type="button"
+              class="editor-properties__spread-bg-mode-btn"
+              :class="{
+                'editor-properties__spread-bg-mode-btn--active':
+                  store.spreadBackgroundMode === option.value,
+              }"
+              :title="option.title"
+              :aria-pressed="store.spreadBackgroundMode === option.value"
+              @click="updateSpreadBackgroundMode(option.value)"
+            >
+              <v-icon size="16">{{ option.icon }}</v-icon>
+              <span>{{ option.shortTitle }}</span>
+            </button>
+          </div>
+
+          <div
+            v-if="store.spreadBackgroundMode === 'per-page'"
+            class="editor-properties__spread-bg-pages"
+            role="tablist"
+            aria-label="Страница для редактирования фона"
+          >
+            <button
+              v-for="option in spreadBackgroundSideOptions"
+              :key="option.value"
+              type="button"
+              role="tab"
+              class="editor-properties__spread-bg-page"
+              :class="{
+                'editor-properties__spread-bg-page--active':
+                  store.activeSpreadBackgroundSide === option.value,
+              }"
+              :title="option.title"
+              :aria-selected="store.activeSpreadBackgroundSide === option.value"
+              @click="updateActiveSpreadBackgroundSide(option.value)"
+            >
+              <span
+                class="editor-properties__spread-bg-page-preview"
+                :style="getSpreadPagePreviewStyle(option.value)"
+              />
+              <span class="editor-properties__spread-bg-page-label">{{ option.shortTitle }}</span>
+            </button>
+          </div>
+
+          <p v-else class="editor-properties__spread-bg-hint">
+            Один фон на обе страницы
+          </p>
+        </div>
+
+
+
         <EditorColorPicker
-          :model-value="store.backgroundColor"
+          :model-value="editablePageBackground.backgroundColor"
           label="Цвет фона"
           fallback="#FFFFFF"
           @update:model-value="updateBackgroundColor"
+        />
+
+        <div v-if="editablePageBackground.backgroundImageUrl" class="editor-properties__image-preview">
+          <img :src="pageBackgroundImagePreviewUrl" alt="Фоновое изображение страницы" />
+
+          <v-btn
+            size="small"
+            variant="text"
+            color="error"
+            @click="removePageBackgroundImage"
+          >
+            Удалить
+          </v-btn>
+        </div>
+
+        <v-btn
+          variant="outlined"
+          size="small"
+          prepend-icon="mdi-image-plus-outline"
+          :loading="uploadingPageBackgroundImage"
+          @click="triggerPageBackgroundInput"
+        >
+          {{ editablePageBackground.backgroundImageUrl ? 'Заменить изображение' : 'Загрузить изображение' }}
+        </v-btn>
+
+        <input
+          ref="pageBackgroundInputRef"
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          hidden
+          @change="onPageBackgroundSelected"
+        />
+
+        <v-btn
+          v-if="editablePageBackground.backgroundImageUrl"
+          variant="outlined"
+          size="small"
+          prepend-icon="mdi-crop"
+          :disabled="store.previewMode"
+          @click="handleStartPageBackgroundCrop"
+        >
+          Кадрировать
+        </v-btn>
+
+        <v-select
+          v-if="editablePageBackground.backgroundImageUrl"
+          :model-value="editablePageBackground.backgroundImageFit"
+          :items="pageBackgroundFitOptions"
+          item-title="title"
+          item-value="value"
+          label="Масштабирование"
+          variant="outlined"
+          density="compact"
+          hide-details
+          @update:model-value="updatePageBackgroundFit"
         />
 
       </div>
@@ -996,21 +1106,6 @@
 
 
 
-        <div v-if="isBackgroundElement" class="editor-properties__section">
-
-          <p class="editor-properties__section-title">Фоновый блок</p>
-
-          <EditorColorPicker
-            :model-value="backgroundElement.color"
-            label="Цвет"
-            fallback="#FFFFFF"
-            @update:model-value="patchElement({ color: $event })"
-          />
-
-        </div>
-
-
-
         <div v-if="isShapeElement" class="editor-properties__section">
 
           <p class="editor-properties__section-title">{{ isLineElement ? 'Линия' : 'Фигура' }}</p>
@@ -1092,7 +1187,7 @@ import { storeToRefs } from 'pinia'
 
 import { uploadAdminImage } from '@/shared/api/admin/uploads.api'
 
-import { resolveAssetUrl } from '@/shared/config/assets'
+import { resolveAssetUrl, toStoredAssetPath } from '@/shared/config/assets'
 import { useErrorMessageModal } from '@/shared/composables/useErrorMessageModal'
 import { getUploadErrorMessage } from '@/shared/utils/api-error.util'
 
@@ -1109,6 +1204,12 @@ import {
 import type { ElementPatch } from '../store/editor.store'
 
 import { useEditorStore } from '../store/editor.store'
+import {
+  PAGE_BACKGROUND_IMAGE_FIT_OPTIONS,
+  SPREAD_BACKGROUND_MODE_OPTIONS,
+  SPREAD_BACKGROUND_SIDE_OPTIONS,
+} from '../models/page-background.model'
+import type { PageBackgroundImageFit, SpreadBackgroundMode, SpreadBackgroundSide } from '../models/page-background.model'
 import EditorShapeStrokeFields from './EditorShapeStrokeFields.vue'
 import EditorColorPicker from './EditorColorPicker.vue'
 import EditorBorderFields from './EditorBorderFields.vue'
@@ -1181,6 +1282,39 @@ const imageInputRef = ref<HTMLInputElement | null>(null)
 
 const uploadingImage = ref(false)
 
+const pageBackgroundInputRef = ref<HTMLInputElement | null>(null)
+
+const uploadingPageBackgroundImage = ref(false)
+
+const pageBackgroundFitOptions = PAGE_BACKGROUND_IMAGE_FIT_OPTIONS
+const spreadBackgroundModeOptions = SPREAD_BACKGROUND_MODE_OPTIONS
+const spreadBackgroundSideOptions = SPREAD_BACKGROUND_SIDE_OPTIONS
+
+const editablePageBackground = computed(() => store.editablePageBackground)
+
+function getSpreadPagePreviewStyle(side: SpreadBackgroundSide): Record<string, string> {
+  const settings = side === 'left' ? store.leftPageBackground : store.rightPageBackground
+  const styles: Record<string, string> = {
+    backgroundColor: settings.backgroundColor,
+  }
+
+  if (settings.backgroundImageUrl) {
+    const url = resolveAssetUrl(settings.backgroundImageUrl)
+
+    if (url) {
+      styles.backgroundImage = `url("${url}")`
+      styles.backgroundSize = 'cover'
+      styles.backgroundPosition = 'center'
+    }
+  }
+
+  return styles
+}
+
+const pageBackgroundImagePreviewUrl = computed(
+  () => resolveAssetUrl(editablePageBackground.value.backgroundImageUrl) ?? '',
+)
+
 const horizontalGapDraft = ref('')
 const verticalGapDraft = ref('')
 const horizontalGapFocused = ref(false)
@@ -1224,8 +1358,6 @@ const pagePresetItems = PAGE_SIZE_PRESETS.map((preset, index) => ({
 const isTextElement = computed(() => selected.value && isTextPlaceholderElement(selected.value))
 
 const isPhotoElement = computed(() => selected.value && isPhotoPlaceholderElement(selected.value))
-
-const isBackgroundElement = computed(() => selected.value?.type === 'background')
 
 const isShapeElement = computed(
 
@@ -1278,8 +1410,6 @@ const hasAdvancedTextSpacing = computed(() => {
 })
 
 const photoElement = computed(() => selected.value as import('../models/photo-placeholder.model').PhotoPlaceholder)
-
-const backgroundElement = computed(() => selected.value as import('../models/background-element.model').BackgroundElement)
 
 const shapeElement = computed(() => selected.value as import('../models/shape-element.model').ShapeElement)
 
@@ -1541,6 +1671,14 @@ function updatePageSize(axis: 'width' | 'height', value: string | number | null 
 
 
 
+function updateSpreadBackgroundMode(value: SpreadBackgroundMode): void {
+  store.setSpreadBackgroundMode(value)
+}
+
+function updateActiveSpreadBackgroundSide(value: SpreadBackgroundSide): void {
+  store.setActiveSpreadBackgroundSide(value)
+}
+
 function updateBackgroundColor(value: string | null | undefined): void {
 
   if (!value?.trim()) {
@@ -1553,6 +1691,67 @@ function updateBackgroundColor(value: string | null | undefined): void {
 
   store.updatePageSettings({ backgroundColor: value.trim() })
 
+}
+
+
+
+function triggerPageBackgroundInput(): void {
+  pageBackgroundInputRef.value?.click()
+}
+
+
+
+function removePageBackgroundImage(): void {
+  store.stopPageBackgroundCropEditing()
+  store.updatePageSettings({
+    backgroundImageUrl: null,
+    backgroundImageCropX: 0,
+    backgroundImageCropY: 0,
+    backgroundImageScale: 1,
+  })
+}
+
+
+
+function handleStartPageBackgroundCrop(): void {
+  store.startPageBackgroundCropEditing()
+}
+
+
+
+function updatePageBackgroundFit(value: PageBackgroundImageFit): void {
+  store.updatePageSettings({ backgroundImageFit: value })
+}
+
+
+
+async function onPageBackgroundSelected(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+
+  if (!file) {
+    return
+  }
+
+  uploadingPageBackgroundImage.value = true
+
+  try {
+    const { url } = await uploadAdminImage(file)
+    store.updatePageSettings({
+      backgroundImageUrl: toStoredAssetPath(url) ?? url,
+      backgroundImageCropX: 0,
+      backgroundImageCropY: 0,
+      backgroundImageScale: 1,
+    })
+  } catch (error) {
+    showErrorMessageModal(
+      getUploadErrorMessage(error),
+      'Не удалось загрузить фоновое изображение',
+    )
+  } finally {
+    uploadingPageBackgroundImage.value = false
+    input.value = ''
+  }
 }
 
 
@@ -1607,7 +1806,12 @@ async function onImageSelected(event: Event): Promise<void> {
 
     const { url } = await uploadAdminImage(file)
 
-    patchElement({ defaultImageUrl: url, cropX: 0, cropY: 0, imageScale: 1 })
+    patchElement({
+      defaultImageUrl: toStoredAssetPath(url) ?? url,
+      cropX: 0,
+      cropY: 0,
+      imageScale: 1,
+    })
 
   } catch (error) {
 
@@ -1770,6 +1974,118 @@ function handleRemove(): void {
   font-size: $font-size-body-sm;
   line-height: 1.45;
   color: $text-secondary;
+}
+
+.editor-properties__spread-bg {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-2;
+  margin-bottom: $spacing-3;
+  padding: $spacing-3;
+  border: 1px solid $border-light;
+  border-radius: $radius-md;
+  background: $bg-elevated;
+}
+
+.editor-properties__spread-bg-mode {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: $spacing-2;
+}
+
+.editor-properties__spread-bg-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: $spacing-1;
+  min-height: 32px;
+  padding: $spacing-1 $spacing-2;
+  border: 1px solid $border-light;
+  border-radius: $radius-sm;
+  background: $bg-primary;
+  font-size: $font-size-caption;
+  font-weight: $font-weight-medium;
+  color: $text-secondary;
+  cursor: pointer;
+  transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease;
+
+  &:hover {
+    background: $state-hover-bg;
+    border-color: $border-default;
+    color: $text-primary;
+  }
+
+  &--active {
+    background: $bg-primary;
+    border-color: $border-strong;
+    color: $text-primary;
+    box-shadow: inset 0 0 0 1px $border-strong;
+  }
+}
+
+.editor-properties__spread-bg-pages {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid $border-light;
+  border-radius: $radius-sm;
+  background: $bg-primary;
+}
+
+.editor-properties__spread-bg-page {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: $spacing-1;
+  padding: $spacing-2;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 0.18s ease;
+
+  & + & {
+    border-left: 1px dashed $border-default;
+  }
+
+  &:hover {
+    background: $state-hover-bg;
+  }
+
+  &--active {
+    background: rgba($text-primary, 0.04);
+
+    .editor-properties__spread-bg-page-label {
+      color: $text-primary;
+      font-weight: $font-weight-medium;
+    }
+  }
+}
+
+.editor-properties__spread-bg-page-preview {
+  display: block;
+  width: 100%;
+  aspect-ratio: 595 / 842;
+  border: 1px solid $border-light;
+  border-radius: $radius-xs;
+  overflow: hidden;
+}
+
+.editor-properties__spread-bg-page-label {
+  font-size: $font-size-caption;
+  text-align: center;
+  color: $text-muted;
+}
+
+.editor-properties__spread-bg-hint {
+  margin: 0;
+  font-size: $font-size-caption;
+  line-height: 1.4;
+  color: $text-muted;
+  text-align: center;
 }
 
 

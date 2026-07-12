@@ -1,6 +1,6 @@
 <template>
   <div
-    v-if="element && frameStyle"
+    v-if="cropSession && frameStyle"
     class="editor-photo-crop"
     :style="frameStyle"
   >
@@ -30,7 +30,10 @@ import {
 } from '@/features/order-builder/canvas/order-canvas.types'
 
 import { resolveAssetUrl } from '@/shared/config/assets'
+import { A4_PAGE_WIDTH } from '../../constants/page.constants'
 import type { PhotoPlaceholder } from '../../models/photo-placeholder.model'
+import type { PageBackgroundImageFit } from '../../models/page-background.model'
+import { getPageBackgroundCropState } from '../../models/page-background.model'
 import { useElementCanvasStore } from '../../composables/use-element-canvas-store'
 import { useEditorStore } from '../../store/editor.store'
 import {
@@ -46,13 +49,32 @@ import { spreadLogicalXToVisual } from '../../utils/spread.util'
 const props = defineProps<{
   pageOffset: { x: number; y: number }
   pageScale: number
+  layoutPageWidth?: number
 }>()
+
+interface CropSession {
+  mode: 'photo' | 'page-background'
+  frameWidth: number
+  frameHeight: number
+  frameX: number
+  frameY: number
+  borderRadius: number
+  rotation: number
+  fitMode: PageBackgroundImageFit | 'contain'
+  cropX: number
+  cropY: number
+  imageScale: number
+  imageUrl: string | null
+}
 
 const orderCanvas = inject<OrderCanvasContext | null>(ORDER_CANVAS_CONTEXT_KEY, null)
 const editorStore = useEditorStore()
 const store = useElementCanvasStore()
 const photoCropEditingElementId = computed(() =>
   orderCanvas ? orderCanvas.photoCropEditingElementId : editorStore.photoCropEditingElementId,
+)
+const pageBackgroundCropEditing = computed(
+  () => false,
 )
 
 const viewportRef = ref<HTMLElement | null>(null)
@@ -65,8 +87,68 @@ const panState = ref<{
   cropY: number
 } | null>(null)
 
-const element = computed(() => {
+const cropSession = computed((): CropSession | null => {
+  if (pageBackgroundCropEditing.value) {
+    const background = editorStore.editablePageBackground
+    const target = editorStore.pageBackgroundCropTarget
+    const imageUrl = background.backgroundImageUrl
+    if (!imageUrl) {
+      return null
+    }
+
+    const frameWidth =
+      target === 'left' || target === 'right'
+        ? A4_PAGE_WIDTH
+        : props.layoutPageWidth ?? editorStore.pageWidth
+    const frameX =
+      target === 'right' ? A4_PAGE_WIDTH : 0
+
+    return {
+      mode: 'page-background',
+      frameWidth,
+      frameHeight: editorStore.pageHeight,
+      frameX,
+      frameY: 0,
+      borderRadius: 0,
+      rotation: 0,
+      fitMode: background.backgroundImageFit,
+      cropX: background.backgroundImageCropX,
+      cropY: background.backgroundImageCropY,
+      imageScale: background.backgroundImageScale,
+      imageUrl,
+    }
+  }
+
   if (!photoCropEditingElementId.value) {
+    return null
+  }
+
+  const found = store.elements.find((item) => item.id === photoCropEditingElementId.value)
+  if (!found || found.type !== 'photo-placeholder') {
+    return null
+  }
+
+  const photo = found as PhotoPlaceholder
+  const url = getPlaceholderPhotoUrl(photo, photo.defaultImageUrl)
+
+  return {
+    mode: 'photo',
+    frameWidth: photo.size.width,
+    frameHeight: photo.size.height,
+    frameX: photo.position.x,
+    frameY: photo.position.y,
+    borderRadius: photo.borderRadius,
+    rotation: photo.rotation,
+    fitMode: resolvePhotoRenderFitMode(photo.fitMode),
+    cropX: photo.cropX,
+    cropY: photo.cropY,
+    imageScale: photo.imageScale,
+    imageUrl: url,
+  }
+})
+
+const photoElement = computed(() => {
+  if (cropSession.value?.mode !== 'photo' || !photoCropEditingElementId.value) {
     return null
   }
 
@@ -79,52 +161,56 @@ const element = computed(() => {
 })
 
 const imageSrc = computed(() => {
-  if (!element.value) {
-    return null
-  }
-
-  const url = getPlaceholderPhotoUrl(element.value, element.value.defaultImageUrl)
+  const url = cropSession.value?.imageUrl
   return url ? resolveAssetUrl(url) : null
 })
 
 const frameStyle = computed(() => {
-  if (!element.value) {
+  if (!cropSession.value) {
     return null
   }
 
+  const session = cropSession.value
   const scale = props.pageScale
-  const visualX = spreadLogicalXToVisual(
-    element.value.position.x,
-    store.pageWidth,
-    store.pageHeight,
-    element.value.size.width,
-  )
+  const visualX =
+    session.mode === 'photo'
+      ? spreadLogicalXToVisual(
+          session.frameX,
+          store.pageWidth,
+          store.pageHeight,
+          session.frameWidth,
+        )
+      : session.frameX
 
   return {
     left: `${props.pageOffset.x + visualX * scale}px`,
-    top: `${props.pageOffset.y + element.value.position.y * scale}px`,
-    width: `${element.value.size.width * scale}px`,
-    height: `${element.value.size.height * scale}px`,
-    borderRadius: element.value.borderRadius ? `${element.value.borderRadius * scale}px` : undefined,
-    transform: element.value.rotation
-      ? `rotate(${element.value.rotation}deg)`
-      : undefined,
+    top: `${props.pageOffset.y + session.frameY * scale}px`,
+    width: `${session.frameWidth * scale}px`,
+    height: `${session.frameHeight * scale}px`,
+    borderRadius: session.borderRadius ? `${session.borderRadius * scale}px` : undefined,
+    transform: session.rotation ? `rotate(${session.rotation}deg)` : undefined,
     transformOrigin: 'top left',
   }
 })
 
 const imageStyle = computed(() => {
-  if (!element.value || imageNaturalSize.value.width <= 0) {
+  if (!cropSession.value || imageNaturalSize.value.width <= 0) {
     return undefined
   }
 
+  const session = cropSession.value
+  const crop =
+    session.mode === 'photo'
+      ? getPhotoCropState(photoElement.value ?? { cropX: 0, cropY: 0, imageScale: 1 })
+      : getPageBackgroundCropState(session)
+
   const layout = computePhotoImageLayout(
-    element.value.size.width,
-    element.value.size.height,
+    session.frameWidth,
+    session.frameHeight,
     imageNaturalSize.value.width,
     imageNaturalSize.value.height,
-    resolvePhotoRenderFitMode(element.value.fitMode),
-    getPhotoCropState(element.value),
+    resolvePhotoRenderFitMode(session.fitMode),
+    crop,
   )
 
   if (!layout) {
@@ -146,11 +232,11 @@ const imageStyle = computed(() => {
 })
 
 watch(
-  [imageSrc, () => element.value?.id],
+  [imageSrc, () => cropSession.value?.mode, () => photoElement.value?.id],
   () => {
     imageNaturalSize.value = { width: 0, height: 0 }
 
-    if (!imageSrc.value || !element.value) {
+    if (!imageSrc.value || !cropSession.value) {
       return
     }
 
@@ -160,7 +246,15 @@ watch(
         width: image.naturalWidth,
         height: image.naturalHeight,
       }
-      store.registerPhotoImageDimensions(element.value!.id, imageNaturalSize.value)
+
+      if (cropSession.value?.mode === 'page-background') {
+        editorStore.registerPageBackgroundImageDimensions(imageNaturalSize.value)
+        return
+      }
+
+      if (photoElement.value) {
+        store.registerPhotoImageDimensions(photoElement.value.id, imageNaturalSize.value)
+      }
     }
     image.src = imageSrc.value
   },
@@ -171,15 +265,22 @@ function applyCropPatch(
   patch: Partial<{ cropX: number; cropY: number; imageScale: number }>,
   options?: { live?: boolean },
 ): void {
-  if (!element.value) {
+  if (!cropSession.value) {
     return
   }
 
-  store.updatePhotoCrop(element.value.id, patch, options)
+  if (cropSession.value.mode === 'page-background') {
+    editorStore.updatePageBackgroundCrop(patch, options)
+    return
+  }
+
+  if (photoElement.value) {
+    store.updatePhotoCrop(photoElement.value.id, patch, options)
+  }
 }
 
 function handlePanMove(event: MouseEvent): void {
-  if (!panState.value || !element.value) {
+  if (!panState.value || !cropSession.value) {
     return
   }
 
@@ -204,7 +305,7 @@ function handlePanEnd(): void {
 }
 
 function handlePanStart(event: MouseEvent): void {
-  if (!element.value || event.button !== 0) {
+  if (!cropSession.value || event.button !== 0) {
     return
   }
 
@@ -212,8 +313,8 @@ function handlePanStart(event: MouseEvent): void {
   panState.value = {
     startX: event.clientX,
     startY: event.clientY,
-    cropX: element.value.cropX,
-    cropY: element.value.cropY,
+    cropX: cropSession.value.cropX,
+    cropY: cropSession.value.cropY,
   }
 
   window.addEventListener('mousemove', handlePanMove)
@@ -221,17 +322,17 @@ function handlePanStart(event: MouseEvent): void {
 }
 
 function handleWheel(event: WheelEvent): void {
-  if (!element.value || imageNaturalSize.value.width <= 0) {
+  if (!cropSession.value || imageNaturalSize.value.width <= 0) {
     return
   }
 
   const step = event.deltaY > 0 ? -0.08 : 0.08
   const nextScale = Math.max(
     MIN_PHOTO_IMAGE_SCALE,
-    Math.min(MAX_PHOTO_IMAGE_SCALE, element.value.imageScale + step),
+    Math.min(MAX_PHOTO_IMAGE_SCALE, cropSession.value.imageScale + step),
   )
 
-  if (Math.abs(nextScale - element.value.imageScale) < 0.001) {
+  if (Math.abs(nextScale - cropSession.value.imageScale) < 0.001) {
     return
   }
 
@@ -239,16 +340,21 @@ function handleWheel(event: WheelEvent): void {
 }
 
 function handleKeydown(event: KeyboardEvent): void {
-  if (event.key === 'Escape' && photoCropEditingElementId.value) {
+  if (event.key === 'Escape' && cropSession.value) {
     event.preventDefault()
+    if (cropSession.value.mode === 'page-background') {
+      editorStore.stopPageBackgroundCropEditing()
+      return
+    }
+
     store.stopPhotoCropEditing()
   }
 }
 
 watch(
-  photoCropEditingElementId,
-  (id) => {
-    if (id) {
+  cropSession,
+  (session) => {
+    if (session) {
       window.addEventListener('keydown', handleKeydown)
       return
     }

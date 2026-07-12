@@ -4,6 +4,7 @@
  */
 
 import { normalizeCanvasElements } from '../utils/normalize-text-placeholder.util';
+import { migrateLegacyBackgroundElements } from '../utils/migrate-legacy-background.util';
 
 export interface CanvasPosition {
   x: number;
@@ -22,8 +23,7 @@ export type CanvasElementType =
   | 'subtitle-placeholder'
   | 'shape-rectangle'
   | 'shape-circle'
-  | 'shape-line'
-  | 'background';
+  | 'shape-line';
 
 export interface CanvasElementBase {
   id: string;
@@ -83,22 +83,33 @@ export interface CanvasShapeElement extends CanvasElementBase {
   strokeWidth: number;
 }
 
-export interface CanvasBackgroundElement extends CanvasElementBase {
-  type: 'background';
-  color: string;
-}
-
 export type CanvasElement =
   | CanvasPhotoPlaceholder
   | CanvasTextPlaceholder
-  | CanvasShapeElement
-  | CanvasBackgroundElement;
+  | CanvasShapeElement;
+
+export interface PageBackgroundSettings {
+  backgroundColor?: string;
+  backgroundImageUrl?: string | null;
+  backgroundImageFit?: 'cover' | 'fill';
+  backgroundImageCropX?: number;
+  backgroundImageCropY?: number;
+  backgroundImageScale?: number;
+}
 
 export interface CanvasData {
   version: 1;
   pageWidth?: number;
   pageHeight?: number;
   backgroundColor?: string;
+  backgroundImageUrl?: string | null;
+  backgroundImageFit?: 'cover' | 'fill';
+  backgroundImageCropX?: number;
+  backgroundImageCropY?: number;
+  backgroundImageScale?: number;
+  spreadBackgroundMode?: 'spread' | 'per-page';
+  leftPageBackground?: PageBackgroundSettings;
+  rightPageBackground?: PageBackgroundSettings;
   elements: CanvasElement[];
 }
 
@@ -108,6 +119,74 @@ export const A4_PAGE_WIDTH = 595;
 export const A4_PAGE_HEIGHT = 842;
 export const A4_SPREAD_PAGE_WIDTH = A4_PAGE_WIDTH * 2;
 export const A4_SPREAD_PAGE_HEIGHT = A4_PAGE_HEIGHT;
+
+function normalizePageBackgroundImageFit(
+  value: unknown,
+): 'cover' | 'fill' {
+  if (value === 'fill') {
+    return 'fill';
+  }
+
+  return 'cover';
+}
+
+function normalizeSpreadBackgroundMode(value: unknown): 'spread' | 'per-page' {
+  if (value === 'per-page') {
+    return 'per-page';
+  }
+
+  return 'spread';
+}
+
+function normalizePageBackgroundSettings(
+  partial: PageBackgroundSettings | null | undefined,
+  fallback: PageBackgroundSettings,
+): PageBackgroundSettings {
+  const source = partial ?? {};
+  const crop = normalizePageBackgroundCrop({
+    backgroundImageCropX: source.backgroundImageCropX ?? fallback.backgroundImageCropX,
+    backgroundImageCropY: source.backgroundImageCropY ?? fallback.backgroundImageCropY,
+    backgroundImageScale: source.backgroundImageScale ?? fallback.backgroundImageScale,
+  });
+
+  return {
+    backgroundColor:
+      typeof source.backgroundColor === 'string'
+        ? source.backgroundColor
+        : fallback.backgroundColor,
+    backgroundImageUrl:
+      typeof source.backgroundImageUrl === 'string'
+        ? source.backgroundImageUrl
+        : source.backgroundImageUrl === null
+          ? null
+          : fallback.backgroundImageUrl,
+    backgroundImageFit: normalizePageBackgroundImageFit(
+      source.backgroundImageFit ?? fallback.backgroundImageFit,
+    ),
+    backgroundImageCropX: crop.cropX,
+    backgroundImageCropY: crop.cropY,
+    backgroundImageScale: crop.imageScale,
+  };
+}
+
+function isSpreadCanvas(pageWidth: number, pageHeight: number): boolean {
+  return pageWidth === A4_SPREAD_PAGE_WIDTH && pageHeight === A4_SPREAD_PAGE_HEIGHT;
+}
+
+function normalizePageBackgroundCrop(data: Partial<CanvasData>): {
+  cropX: number;
+  cropY: number;
+  imageScale: number;
+} {
+  return {
+    cropX: typeof data.backgroundImageCropX === 'number' ? data.backgroundImageCropX : 0,
+    cropY: typeof data.backgroundImageCropY === 'number' ? data.backgroundImageCropY : 0,
+    imageScale:
+      typeof data.backgroundImageScale === 'number' && data.backgroundImageScale > 0
+        ? data.backgroundImageScale
+        : 1,
+  };
+}
 
 export function createDefaultCanvasData(): CanvasData {
   return {
@@ -125,6 +204,7 @@ export function createSpreadCanvasData(): CanvasData {
     pageWidth: A4_SPREAD_PAGE_WIDTH,
     pageHeight: A4_SPREAD_PAGE_HEIGHT,
     backgroundColor: '#FFFFFF',
+    spreadBackgroundMode: 'spread',
     elements: [],
   };
 }
@@ -143,15 +223,55 @@ export function normalizeCanvasData(raw: unknown): CanvasData {
   }
 
   const data = raw as Partial<CanvasData>;
-
-  return {
-    version: 1,
-    pageWidth: typeof data.pageWidth === 'number' ? data.pageWidth : 595,
-    pageHeight: typeof data.pageHeight === 'number' ? data.pageHeight : 842,
+  const rawElements = Array.isArray(data.elements) ? (data.elements as CanvasElement[]) : [];
+  const migrated = migrateLegacyBackgroundElements(rawElements, data.backgroundColor);
+  const backgroundCrop = normalizePageBackgroundCrop(data);
+  const pageWidth = typeof data.pageWidth === 'number' ? data.pageWidth : 595;
+  const pageHeight = typeof data.pageHeight === 'number' ? data.pageHeight : 842;
+  const spread = isSpreadCanvas(pageWidth, pageHeight);
+  const rootBackground: PageBackgroundSettings = {
     backgroundColor:
-      typeof data.backgroundColor === 'string' ? data.backgroundColor : '#FFFFFF',
-    elements: Array.isArray(data.elements)
-      ? normalizeCanvasElements(data.elements as CanvasElement[])
-      : [],
+      typeof migrated.backgroundColor === 'string' ? migrated.backgroundColor : '#FFFFFF',
+    backgroundImageUrl:
+      typeof data.backgroundImageUrl === 'string'
+        ? data.backgroundImageUrl
+        : data.backgroundImageUrl === null
+          ? null
+          : undefined,
+    backgroundImageFit: normalizePageBackgroundImageFit(data.backgroundImageFit),
+    backgroundImageCropX: backgroundCrop.cropX,
+    backgroundImageCropY: backgroundCrop.cropY,
+    backgroundImageScale: backgroundCrop.imageScale,
   };
+
+  const normalized: CanvasData = {
+    version: 1,
+    pageWidth,
+    pageHeight,
+    backgroundColor: rootBackground.backgroundColor,
+    backgroundImageUrl: rootBackground.backgroundImageUrl,
+    backgroundImageFit: rootBackground.backgroundImageFit,
+    backgroundImageCropX: rootBackground.backgroundImageCropX,
+    backgroundImageCropY: rootBackground.backgroundImageCropY,
+    backgroundImageScale: rootBackground.backgroundImageScale,
+    elements: normalizeCanvasElements(migrated.elements),
+  };
+
+  if (spread) {
+    const spreadBackgroundMode = normalizeSpreadBackgroundMode(data.spreadBackgroundMode);
+    normalized.spreadBackgroundMode = spreadBackgroundMode;
+
+    if (spreadBackgroundMode === 'per-page') {
+      normalized.leftPageBackground = normalizePageBackgroundSettings(
+        data.leftPageBackground,
+        rootBackground,
+      );
+      normalized.rightPageBackground = normalizePageBackgroundSettings(
+        data.rightPageBackground,
+        rootBackground,
+      );
+    }
+  }
+
+  return normalized;
 }

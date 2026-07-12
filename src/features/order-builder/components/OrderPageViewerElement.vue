@@ -277,6 +277,7 @@ const pageContentClipConfig = computed(() =>
     {
       position: layoutElement.value.position,
       size: layoutElement.value.size,
+      type: layoutElement.value.type,
     },
     props.pageWidth,
     props.pageHeight,
@@ -286,7 +287,7 @@ const pageContentClipConfig = computed(() =>
 
 
 const useSpreadSplit = computed(() =>
-
+  layoutElement.value.type !== 'shape-line' &&
   elementSpansSpreadFold(
 
     {

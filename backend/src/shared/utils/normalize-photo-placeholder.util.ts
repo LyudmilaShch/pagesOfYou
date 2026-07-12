@@ -1,4 +1,5 @@
 import type { CanvasElement, CanvasPhotoPlaceholder } from '../types/canvas-data.types';
+import { toStoredAssetPath } from '../../common/utils/asset-url.util';
 
 const STROKE_LINE_STYLES = new Set(['solid', 'dashed']);
 const STROKE_POSITIONS = new Set(['center', 'inside', 'outside']);
@@ -10,6 +11,10 @@ type LegacyCanvasPhotoPlaceholder = CanvasPhotoPlaceholder & {
     style?: 'solid' | 'dashed';
     position?: 'center' | 'inside' | 'outside';
   }>;
+  url?: string | null;
+  imageUrl?: string | null;
+  image?: string | null;
+  src?: string | null;
 };
 
 function normalizePhotoStrokeStyle(value: unknown): 'solid' | 'dashed' {
@@ -30,6 +35,24 @@ function normalizePhotoStrokeWidth(value: unknown, fallback = 0): number {
   }
 
   return Math.max(0, Math.round(value));
+}
+
+function resolveStoredDefaultImageUrl(photo: LegacyCanvasPhotoPlaceholder): string | null {
+  const candidates = [
+    photo.defaultImageUrl,
+    photo.url,
+    photo.imageUrl,
+    photo.image,
+    photo.src,
+  ];
+
+  for (const value of candidates) {
+    if (typeof value === 'string' && value.trim()) {
+      return toStoredAssetPath(value) ?? value.trim();
+    }
+  }
+
+  return null;
 }
 
 function resolveInitialPhotoStroke(photo: LegacyCanvasPhotoPlaceholder) {
@@ -65,6 +88,7 @@ export function normalizePhotoPlaceholderElement(element: CanvasElement): Canvas
 
   return {
     ...photo,
+    defaultImageUrl: resolveStoredDefaultImageUrl(photo),
     ...stroke,
     cropX: typeof photo.cropX === 'number' ? photo.cropX : 0,
     cropY: typeof photo.cropY === 'number' ? photo.cropY : 0,

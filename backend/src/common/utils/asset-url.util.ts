@@ -1,6 +1,38 @@
+function normalizeUploadAssetPath(path: string): string {
+  const normalized = path.startsWith('/') ? path : `/${path}`;
+  return normalized.replace(/^\/api(?=\/uploads\/)/i, '');
+}
+
+function stripApiSubdomain(origin: string): string {
+  try {
+    const url = new URL(origin);
+    if (url.hostname.startsWith('api.')) {
+      url.hostname = url.hostname.slice(4);
+      return url.origin;
+    }
+  } catch {
+    // ignore invalid URL
+  }
+
+  return origin;
+}
+
+/** Origin for static /uploads/* — may differ from the API host (e.g. apex vs api. subdomain). */
+export function getUploadsBaseUrl(backendUrl: string): string {
+  const explicit =
+    process.env.ASSETS_URL?.trim() || process.env.UPLOADS_BASE_URL?.trim();
+
+  if (explicit) {
+    return explicit.replace(/\/$/, '').replace(/\/api$/i, '');
+  }
+
+  const base = backendUrl.replace(/\/$/, '').replace(/\/api$/i, '');
+  return stripApiSubdomain(base);
+}
+
 /**
  * Resolve stored asset URLs for the current environment.
- * Handles relative paths and stale localhost URLs from local admin uploads.
+ * Handles relative paths, stale localhost URLs, and legacy absolute api.* URLs.
  */
 export function resolveAssetUrl(
   storedUrl: string | null | undefined,
@@ -10,20 +42,12 @@ export function resolveAssetUrl(
     return null;
   }
 
-  const base = backendUrl.replace(/\/$/, '');
   const trimmed = storedUrl.trim();
+  const uploadMatch = trimmed.match(/\/uploads\/[^\s?#]+/i);
 
-  const isLocalhost =
-    /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(trimmed);
-
-  if (isLocalhost) {
-    const path = trimmed.replace(/^https?:\/\/[^/]+/i, '');
-    return `${base}${path.startsWith('/') ? path : `/${path}`}`;
-  }
-
-  if (trimmed.startsWith('/uploads/') || trimmed.startsWith('uploads/')) {
-    const path = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
-    return `${base}${path}`;
+  if (uploadMatch) {
+    const path = normalizeUploadAssetPath(uploadMatch[0]);
+    return `${getUploadsBaseUrl(backendUrl)}${path}`;
   }
 
   return trimmed;

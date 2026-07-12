@@ -265,12 +265,21 @@ export function getSpreadHorizontalGuideExtent(
 
 /** Page clip in element-local coordinates (content clipped, handles stay visible). */
 export function getElementPageClipConfig(
-  element: { position: { x: number; y: number }; size: { width: number } },
+  element: {
+    position: { x: number; y: number }
+    size: { width: number }
+    type?: string
+  },
   pageWidth: number,
   pageHeight: number,
 ): {
   clip?: { x: number; y: number; width: number; height: number }
 } {
+  // Lines are rotated inside a zero-height box — axis-aligned page clips cut them off.
+  if (element.type === 'shape-line') {
+    return {}
+  }
+
   const clipTop = -element.position.y
 
   if (!isSpreadCanvas(pageWidth, pageHeight)) {
@@ -369,6 +378,7 @@ export function buildSpreadFoldLineConfig(pageHeight: number) {
     strokeWidth: 1,
     dash: [...SPREAD_FOLD_LINE_DASH],
     listening: false,
+    strokeScaleEnabled: false,
   }
 }
 

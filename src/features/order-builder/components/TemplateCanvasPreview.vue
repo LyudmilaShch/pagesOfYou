@@ -3,7 +3,10 @@
     <v-stage v-if="stageReady" :config="stageConfig">
       <v-layer>
         <v-group :config="pageGroupConfig">
-          <v-rect :config="pageBackgroundConfig" />
+          <SpreadPageBackgroundLayers
+            :canvas="canvas"
+            :page-height="pageHeight"
+          />
           <TemplateCanvasPreviewElement
             v-for="element in visibleElements"
             :key="element.id"
@@ -19,6 +22,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import { normalizeCanvasData } from '@/modules/editor/models/canvas-data.model'
+import SpreadPageBackgroundLayers from '@/modules/editor/components/canvas/SpreadPageBackgroundLayers.vue'
 import TemplateCanvasPreviewElement from './TemplateCanvasPreviewElement.vue'
 
 const props = defineProps<{
@@ -66,15 +70,6 @@ const pageGroupConfig = computed(() => {
     listening: false,
   }
 })
-
-const pageBackgroundConfig = computed(() => ({
-  x: 0,
-  y: 0,
-  width: pageWidth.value,
-  height: pageHeight.value,
-  fill: canvas.value.backgroundColor ?? '#FFFFFF',
-  listening: false,
-}))
 
 const visibleElements = computed(() =>
   [...canvas.value.elements]

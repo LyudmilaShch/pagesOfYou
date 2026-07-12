@@ -12,9 +12,17 @@
   >
     <!-- Cover image (3:4 ratio) -->
     <div class="magazine-card__cover">
-      <div
+      <img
+        v-if="coverImageUrl"
         class="magazine-card__image"
-        :style="{ backgroundImage: `url('${type.image}')` }"
+        :src="coverImageUrl"
+        :alt="type.name"
+        loading="lazy"
+        decoding="async"
+      />
+      <div
+        v-else
+        class="magazine-card__image magazine-card__image--placeholder"
         role="img"
         :aria-label="type.name"
       />
@@ -67,6 +75,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { resolveAssetUrl } from '@/shared/config/assets'
 import type { MagazineType, BadgeType } from '../types/magazine-type'
 
 interface Props {
@@ -76,6 +85,8 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), { isSelected: false })
 defineEmits<{ select: [type: MagazineType] }>()
+
+const coverImageUrl = computed(() => resolveAssetUrl(props.type.image))
 
 // ── Badge ─────────────────────────────────────────────────────────────────────
 
@@ -172,10 +183,15 @@ function formatPrice(value: number): string {
   &__image {
     position: absolute;
     inset: 0;
-    background-size: cover;
-    background-position: center top;
-    background-repeat: no-repeat;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center top;
     transition: transform 400ms $ease-out-editorial;
+
+    &--placeholder {
+      background-color: $bg-tertiary;
+    }
   }
 
   @media (hover: hover) {

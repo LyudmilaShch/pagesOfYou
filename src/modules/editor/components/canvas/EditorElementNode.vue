@@ -154,6 +154,7 @@ import {
   type PhotoScaleCorner,
 } from '../../utils/photo-crop.util'
 import { getPhotoBorderDrawNodes } from '../../utils/element-stroke.util'
+import { isPageBackgroundCropTransformerTarget } from '../../utils/canvas-background.util'
 
 import {
   applyOuterTopLeftPosition,
@@ -316,6 +317,7 @@ const pageContentClipConfig = computed(() =>
     {
       position: displayPosition.value,
       size: props.element.size,
+      type: props.element.type,
     },
     store.pageWidth,
     store.pageHeight,
@@ -325,6 +327,7 @@ const pageContentClipConfig = computed(() =>
 const useSpreadSplit = computed(
   () =>
     store.isSpreadPage &&
+    props.element.type !== 'shape-line' &&
     elementSpansSpreadFold(
       {
         position: displayPosition.value,
@@ -814,6 +817,14 @@ function handleSelect(event: Konva.KonvaEventObject<MouseEvent | TouchEvent>): v
 
   if (isPhotoRepositionChildTarget(event.target)) {
     return
+  }
+
+  if (editorStore.pageBackgroundCropEditing) {
+    if (isPageBackgroundCropTransformerTarget(event.target)) {
+      return
+    }
+
+    editorStore.stopPageBackgroundCropEditing()
   }
 
   if (photoDimElementId.value === props.element.id) {

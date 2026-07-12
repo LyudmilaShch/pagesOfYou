@@ -112,14 +112,16 @@
             <v-rect
               v-for="sheet in spreadPageSheets"
               :key="`shadow-${sheet.key}`"
-              :config="buildSpreadSheetShadowConfig(sheet, store.backgroundColor)"
+              :config="buildSpreadSheetShadowConfig(sheet, getSpreadSheetShadowColor(sheet.key))"
             />
 
             <v-group :config="spreadPageClipConfig">
-              <v-rect
-                v-for="sheet in spreadPageSheets"
-                :key="`bg-${sheet.key}`"
-                :config="buildSpreadSheetBackgroundConfig(sheet, store.backgroundColor)"
+              <SpreadPageBackgroundLayers
+                v-if="renderCanvasData"
+                :canvas="renderCanvasData"
+                :page-height="store.pageHeight"
+                :crop-editing-key="store.pageBackgroundCropEditingKey"
+                @background-dblclick="handlePageBackgroundDblClick"
               />
 
               <v-line
@@ -132,8 +134,6 @@
                   listening: false,
                 }"
               />
-
-              <v-line :config="spreadFoldLineConfig" />
             </v-group>
 
             <v-group>
@@ -143,13 +143,21 @@
                 :element="element"
               />
             </v-group>
+
+            <v-line :config="spreadFoldLineConfig" />
           </template>
 
           <template v-else>
             <v-rect :config="pageShadowConfig" />
 
             <v-group :config="pageClipConfig">
-              <v-rect :config="pageBackgroundConfig" />
+              <SpreadPageBackgroundLayers
+                v-if="renderCanvasData"
+                :canvas="renderCanvasData"
+                :page-height="store.pageHeight"
+                :crop-editing-key="store.pageBackgroundCropEditingKey"
+                @background-dblclick="handlePageBackgroundDblClick"
+              />
 
               <v-line
                 v-for="line in gridLines"
@@ -209,6 +217,8 @@
 
           <v-rect v-if="marqueeRectConfig" :config="marqueeRectConfig" />
 
+          <PageBackgroundCropLayer v-if="store.pageBackgroundCropEditing && !store.previewMode" />
+
           <v-transformer
             v-if="!store.previewMode"
             ref="transformerRef"
@@ -230,6 +240,7 @@
       v-if="!store.previewMode"
       :page-offset="pageOffset"
       :page-scale="pageScale"
+      :layout-page-width="layoutPageWidth"
     />
 
     <EditorPrintCropWarning
@@ -261,7 +272,6 @@ import { buildGridLines } from '../../utils/snap.util'
 import { buildPrintSafeZoneOverlay } from '../../utils/print-safe-zone.util'
 import {
   buildSpreadGridLines,
-  buildSpreadSheetBackgroundConfig,
   buildSpreadSheetShadowConfig,
   buildSpreadFoldLineConfig,
   getSpreadPageSheets,
@@ -285,8 +295,11 @@ import {
   stagePointerToPageCoords,
   type PagePointer,
 } from '../../utils/marquee-selection.util'
-import { isPageBackgroundTarget } from '../../utils/canvas-background.util'
+import { isPageBackgroundCropTransformerTarget, isPageBackgroundTarget } from '../../utils/canvas-background.util'
+import type { PageBackgroundCropTarget } from '../../utils/canvas-background.util'
 import EditorElementNode from './EditorElementNode.vue'
+import SpreadPageBackgroundLayers from './SpreadPageBackgroundLayers.vue'
+import PageBackgroundCropLayer from './PageBackgroundCropLayer.vue'
 import EditorTextEditOverlay from './EditorTextEditOverlay.vue'
 import EditorPhotoCropOverlay from './EditorPhotoCropOverlay.vue'
 import EditorPrintCropWarning from './EditorPrintCropWarning.vue'
@@ -322,6 +335,26 @@ const layoutPageWidth = computed(() =>
 const spreadPageSheets = computed(() =>
   store.isSpreadPage ? getSpreadPageSheets(store.pageHeight) : [],
 )
+
+const renderCanvasData = computed(() => store.document?.canvasData ?? null)
+
+function getSpreadSheetShadowColor(sheetKey: 'left' | 'right'): string {
+  if (store.spreadBackgroundMode === 'per-page') {
+    return sheetKey === 'left'
+      ? store.leftPageBackground.backgroundColor
+      : store.rightPageBackground.backgroundColor
+  }
+
+  return store.backgroundColor
+}
+
+function handlePageBackgroundDblClick(layerKey: PageBackgroundCropTarget): void {
+  if (store.previewMode) {
+    return
+  }
+
+  store.startPageBackgroundCropEditing(layerKey)
+}
 
 const spreadPageClipConfig = computed(() => ({
   clip: {
@@ -472,15 +505,6 @@ const pageShadowConfig = computed(() => ({
   shadowOffsetX: 0,
   shadowOffsetY: 8,
   shadowOpacity: 0.35,
-}))
-
-const pageBackgroundConfig = computed(() => ({
-  name: 'page-background',
-  x: 0,
-  y: 0,
-  width: store.pageWidth,
-  height: store.pageHeight,
-  fill: store.backgroundColor,
 }))
 
 const transformerConfig = computed(() => {
@@ -705,6 +729,14 @@ function handleStagePointerDown(event: Konva.KonvaEventObject<MouseEvent | Touch
     return
   }
 
+  if (store.pageBackgroundCropEditing) {
+    if (isPageBackgroundCropTransformerTarget(event.target)) {
+      return
+    }
+
+    store.stopPageBackgroundCropEditing()
+  }
+
   if (isEditorElementTarget(event.target)) {
     return
   }
@@ -882,12 +914,27 @@ function handlePhotoRepositionWheel(event: WheelEvent): void {
   store.zoomPhotoReposition(step, pointer ?? undefined)
 }
 
+function handlePageBackgroundCropWheel(event: WheelEvent): void {
+  const stage = stageRef.value?.getNode()
+  const pageGroup = stage ? getPageGroup(stage) : null
+  const pointer = stage && pageGroup ? stagePointerToPageCoords(stage, pageGroup) : null
+  const step = event.deltaY > 0 ? -PHOTO_REPOSITION_WHEEL_ZOOM_STEP : PHOTO_REPOSITION_WHEEL_ZOOM_STEP
+
+  store.zoomPageBackgroundCrop(step, pointer ?? undefined)
+}
+
 function handleWheel(event: Konva.KonvaEventObject<WheelEvent>): void {
   if (store.previewMode) {
     return
   }
 
   const nativeEvent = event.evt
+
+  if (store.pageBackgroundCropEditing) {
+    nativeEvent.preventDefault()
+    handlePageBackgroundCropWheel(nativeEvent)
+    return
+  }
 
   if (store.photoDimElementId) {
     nativeEvent.preventDefault()
@@ -926,7 +973,7 @@ async function syncTransformer(): Promise<void> {
     return
   }
 
-  if (store.textEditingElementId || store.photoCropEditingElementId || store.photoDimElementId) {
+  if (store.textEditingElementId || store.photoCropEditingElementId || store.pageBackgroundCropEditing || store.photoDimElementId) {
     transformer.nodes([])
     transformer.getLayer()?.batchDraw()
     return
@@ -973,6 +1020,7 @@ watch(
     store.elements,
     store.previewMode,
     store.photoCropEditingElementId,
+    store.pageBackgroundCropEditing,
     store.photoDimElementId,
   ],
   () => {
@@ -990,9 +1038,10 @@ function handleCanvasKeydown(event: KeyboardEvent): void {
     return
   }
 
-  if (store.photoCropEditingElementId) {
+  if (store.photoCropEditingElementId || store.pageBackgroundCropEditing) {
     event.preventDefault()
     store.stopPhotoCropEditing()
+    store.stopPageBackgroundCropEditing()
     return
   }
 

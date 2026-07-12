@@ -30,8 +30,23 @@ export function getPlaceholderPhotoUrl(
     return userUrl.trim()
   }
 
-  if (element.type === 'photo-placeholder') {
-    return (element as PhotoPlaceholder).defaultImageUrl?.trim() || null
+  if (element.type !== 'photo-placeholder') {
+    return null
+  }
+
+  const photo = element as PhotoPlaceholder & Record<string, unknown>
+  const candidates = [
+    photo.defaultImageUrl,
+    photo.url,
+    photo.imageUrl,
+    photo.image,
+    photo.src,
+  ]
+
+  for (const value of candidates) {
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim()
+    }
   }
 
   return null

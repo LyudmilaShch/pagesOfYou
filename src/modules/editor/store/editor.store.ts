@@ -9,6 +9,23 @@ import {
   DEFAULT_PAGE_BACKGROUND,
   DEFAULT_SNAP_GRID_SIZE,
 } from '../constants/page.constants'
+import { DEFAULT_PAGE_BACKGROUND_IMAGE_FIT, DEFAULT_SPREAD_BACKGROUND_MODE } from '../models/page-background.model'
+import type {
+  PageBackgroundImageFit,
+  PageBackgroundSettings,
+  SpreadBackgroundMode,
+  SpreadBackgroundSide,
+} from '../models/page-background.model'
+import {
+  createDefaultPageBackgroundSettings,
+  getPageBackgroundCropState,
+  normalizePageBackgroundSettings,
+  normalizeSpreadBackgroundMode,
+} from '../models/page-background.model'
+import {
+  createPerPageBackgroundsFromRoot,
+  getRootPageBackgroundSettings,
+} from '../utils/spread-background.util'
 import {
   getPageCenterPosition,
   snapCoordinate as snapCoordinateUtil,
@@ -31,6 +48,7 @@ import { createElementFromLibrary } from '../factories/create-element.factory'
 import type { LibraryElementType } from '../factories/create-element.factory'
 import type { AdminMagazinePage } from '@/shared/api/admin/magazine-pages.api'
 import { adminMagazinePagesApi } from '@/shared/api/admin/magazine-pages.api'
+import { toStoredAssetPath } from '@/shared/config/assets'
 import type { PageElement } from '../models'
 import type { EditorDocument } from '../models/page-template.model'
 import { normalizeCanvasData } from '../models/canvas-data.model'
@@ -65,12 +83,28 @@ export interface PageSettingsPatch {
   width?: number
   height?: number
   backgroundColor?: string
+  backgroundImageUrl?: string | null
+  backgroundImageFit?: PageBackgroundImageFit
+  backgroundImageCropX?: number
+  backgroundImageCropY?: number
+  backgroundImageScale?: number
+  spreadBackgroundMode?: SpreadBackgroundMode
 }
+
+type PageBackgroundEditTarget = 'spread' | SpreadBackgroundSide
 
 interface CanvasSnapshot {
   width: number
   height: number
   backgroundColor: string
+  backgroundImageUrl: string | null
+  backgroundImageFit: PageBackgroundImageFit
+  backgroundImageCropX: number
+  backgroundImageCropY: number
+  backgroundImageScale: number
+  spreadBackgroundMode: SpreadBackgroundMode
+  leftPageBackground: PageBackgroundSettings
+  rightPageBackground: PageBackgroundSettings
   elements: PageElement[]
 }
 
@@ -110,6 +144,9 @@ export const useEditorStore = defineStore('editor', () => {
   const printSafeZoneEnabled = ref(false)
   const textEditingElementId = ref<string | null>(null)
   const photoCropEditingElementId = ref<string | null>(null)
+  const pageBackgroundCropEditing = ref(false)
+  const pageBackgroundCropTarget = ref<PageBackgroundEditTarget>('spread')
+  const activeSpreadBackgroundSide = ref<SpreadBackgroundSide>('left')
   const photoDimElementId = ref<string | null>(null)
   const photoDropTargetId = ref<string | null>(null)
   const liveDragPositions = ref<Record<string, Position>>({})
@@ -173,6 +210,55 @@ export const useEditorStore = defineStore('editor', () => {
   const backgroundColor = computed(
     () => document.value?.backgroundColor ?? DEFAULT_PAGE_BACKGROUND,
   )
+  const backgroundImageUrl = computed(() => document.value?.backgroundImageUrl ?? null)
+  const backgroundImageFit = computed(
+    () => document.value?.backgroundImageFit ?? DEFAULT_PAGE_BACKGROUND_IMAGE_FIT,
+  )
+  const backgroundImageCropX = computed(() => document.value?.backgroundImageCropX ?? 0)
+  const backgroundImageCropY = computed(() => document.value?.backgroundImageCropY ?? 0)
+  const backgroundImageScale = computed(() => document.value?.backgroundImageScale ?? 1)
+  const spreadBackgroundMode = computed(
+    () => document.value?.spreadBackgroundMode ?? DEFAULT_SPREAD_BACKGROUND_MODE,
+  )
+  const leftPageBackground = computed(
+    () =>
+      document.value?.leftPageBackground ??
+      createDefaultPageBackgroundSettings(document.value?.backgroundColor),
+  )
+  const rightPageBackground = computed(
+    () =>
+      document.value?.rightPageBackground ??
+      createDefaultPageBackgroundSettings(document.value?.backgroundColor),
+  )
+
+  const editablePageBackgroundTarget = computed((): PageBackgroundEditTarget => {
+    if (!isSpreadPage.value || spreadBackgroundMode.value === 'spread') {
+      return 'spread'
+    }
+
+    return activeSpreadBackgroundSide.value
+  })
+
+  const editablePageBackground = computed((): PageBackgroundSettings => {
+    if (!document.value) {
+      return createDefaultPageBackgroundSettings()
+    }
+
+    return readPageBackgroundSettings(editablePageBackgroundTarget.value)
+  })
+
+  const pageBackgroundCropEditingKey = computed((): PageBackgroundEditTarget | null =>
+    pageBackgroundCropEditing.value ? pageBackgroundCropTarget.value : null,
+  )
+
+  const pageBackgroundCropSettings = computed((): PageBackgroundSettings => {
+    if (!document.value) {
+      return createDefaultPageBackgroundSettings()
+    }
+
+    return readPageBackgroundSettings(pageBackgroundCropTarget.value)
+  })
+
   const templateName = computed(() => document.value?.name ?? 'Страница')
 
   const isSpreadPage = computed(() => isSpreadPageType(document.value?.pageType))
@@ -205,6 +291,102 @@ export const useEditorStore = defineStore('editor', () => {
   const canUndo = computed(() => historyPast.value.length > 0 || debouncedHistorySnapshot !== null)
   const canRedo = computed(() => historyFuture.value.length > 0)
 
+  function getPageBackgroundEditTarget(): PageBackgroundEditTarget {
+    return editablePageBackgroundTarget.value
+  }
+
+  function readPageBackgroundSettings(target: PageBackgroundEditTarget): PageBackgroundSettings {
+    if (!document.value) {
+      return createDefaultPageBackgroundSettings()
+    }
+
+    if (target === 'spread') {
+      return normalizePageBackgroundSettings({
+        backgroundColor: document.value.backgroundColor,
+        backgroundImageUrl: document.value.backgroundImageUrl,
+        backgroundImageFit: document.value.backgroundImageFit,
+        backgroundImageCropX: document.value.backgroundImageCropX,
+        backgroundImageCropY: document.value.backgroundImageCropY,
+        backgroundImageScale: document.value.backgroundImageScale,
+      })
+    }
+
+    return normalizePageBackgroundSettings(
+      target === 'left'
+        ? document.value.leftPageBackground
+        : document.value.rightPageBackground,
+    )
+  }
+
+  function writePageBackgroundSettings(
+    target: PageBackgroundEditTarget,
+    settings: PageBackgroundSettings,
+  ): void {
+    if (!document.value) {
+      return
+    }
+
+    if (target === 'spread') {
+      document.value.backgroundColor = settings.backgroundColor
+      document.value.backgroundImageUrl = settings.backgroundImageUrl
+      document.value.backgroundImageFit = settings.backgroundImageFit
+      document.value.backgroundImageCropX = settings.backgroundImageCropX
+      document.value.backgroundImageCropY = settings.backgroundImageCropY
+      document.value.backgroundImageScale = settings.backgroundImageScale
+      return
+    }
+
+    if (target === 'left') {
+      document.value.leftPageBackground = settings
+      return
+    }
+
+    document.value.rightPageBackground = settings
+  }
+
+  function applyPageBackgroundPatch(
+    target: PageBackgroundEditTarget,
+    patch: PageSettingsPatch,
+  ): void {
+    if (!document.value) {
+      return
+    }
+
+    const current = readPageBackgroundSettings(target)
+    const next = normalizePageBackgroundSettings(
+      {
+        backgroundColor: patch.backgroundColor ?? current.backgroundColor,
+        backgroundImageUrl:
+          patch.backgroundImageUrl !== undefined
+            ? patch.backgroundImageUrl
+            : current.backgroundImageUrl,
+        backgroundImageFit: patch.backgroundImageFit ?? current.backgroundImageFit,
+        backgroundImageCropX:
+          patch.backgroundImageCropX !== undefined
+            ? patch.backgroundImageCropX
+            : current.backgroundImageCropX,
+        backgroundImageCropY:
+          patch.backgroundImageCropY !== undefined
+            ? patch.backgroundImageCropY
+            : current.backgroundImageCropY,
+        backgroundImageScale:
+          patch.backgroundImageScale !== undefined
+            ? patch.backgroundImageScale
+            : current.backgroundImageScale,
+      },
+      current,
+    )
+
+    if (patch.backgroundImageUrl !== undefined && patch.backgroundImageUrl) {
+      next.backgroundImageCropX = 0
+      next.backgroundImageCropY = 0
+      next.backgroundImageScale = 1
+    }
+
+    writePageBackgroundSettings(target, next)
+    syncCanvasMeta()
+  }
+
   function createSnapshot(): CanvasSnapshot {
     if (!document.value) {
       throw new Error('Editor document is not loaded')
@@ -215,6 +397,14 @@ export const useEditorStore = defineStore('editor', () => {
         width: document.value.width,
         height: document.value.height,
         backgroundColor: document.value.backgroundColor,
+        backgroundImageUrl: document.value.backgroundImageUrl,
+        backgroundImageFit: document.value.backgroundImageFit,
+        backgroundImageCropX: document.value.backgroundImageCropX,
+        backgroundImageCropY: document.value.backgroundImageCropY,
+        backgroundImageScale: document.value.backgroundImageScale,
+        spreadBackgroundMode: document.value.spreadBackgroundMode,
+        leftPageBackground: document.value.leftPageBackground,
+        rightPageBackground: document.value.rightPageBackground,
         elements: document.value.canvasData.elements,
       }),
     ) as CanvasSnapshot
@@ -286,6 +476,19 @@ export const useEditorStore = defineStore('editor', () => {
     document.value.width = snapshot.width
     document.value.height = snapshot.height
     document.value.backgroundColor = snapshot.backgroundColor
+    document.value.backgroundImageUrl = snapshot.backgroundImageUrl
+    document.value.backgroundImageFit = snapshot.backgroundImageFit
+    document.value.backgroundImageCropX = snapshot.backgroundImageCropX
+    document.value.backgroundImageCropY = snapshot.backgroundImageCropY
+    document.value.backgroundImageScale = snapshot.backgroundImageScale
+    document.value.spreadBackgroundMode =
+      snapshot.spreadBackgroundMode ?? DEFAULT_SPREAD_BACKGROUND_MODE
+    document.value.leftPageBackground =
+      snapshot.leftPageBackground ??
+      createPerPageBackgroundsFromRoot(document.value.canvasData).leftPageBackground
+    document.value.rightPageBackground =
+      snapshot.rightPageBackground ??
+      createPerPageBackgroundsFromRoot(document.value.canvasData).rightPageBackground
     document.value.canvasData.elements = snapshot.elements
     syncCanvasMeta()
 
@@ -306,6 +509,20 @@ export const useEditorStore = defineStore('editor', () => {
     document.value.canvasData.pageWidth = document.value.width
     document.value.canvasData.pageHeight = document.value.height
     document.value.canvasData.backgroundColor = document.value.backgroundColor
+    document.value.canvasData.backgroundImageUrl = document.value.backgroundImageUrl
+    document.value.canvasData.backgroundImageFit = document.value.backgroundImageFit
+    document.value.canvasData.backgroundImageCropX = document.value.backgroundImageCropX
+    document.value.canvasData.backgroundImageCropY = document.value.backgroundImageCropY
+    document.value.canvasData.backgroundImageScale = document.value.backgroundImageScale
+    document.value.canvasData.spreadBackgroundMode = document.value.spreadBackgroundMode
+
+    if (document.value.spreadBackgroundMode === 'per-page') {
+      document.value.canvasData.leftPageBackground = document.value.leftPageBackground
+      document.value.canvasData.rightPageBackground = document.value.rightPageBackground
+    } else {
+      delete document.value.canvasData.leftPageBackground
+      delete document.value.canvasData.rightPageBackground
+    }
   }
 
   function loadFromApi(page: AdminMagazinePage): void {
@@ -316,6 +533,22 @@ export const useEditorStore = defineStore('editor', () => {
       canvasData.pageHeight = A4_SPREAD_PAGE_HEIGHT
     }
 
+    const rootBackground = getRootPageBackgroundSettings(canvasData)
+    const spreadMode = normalizeSpreadBackgroundMode(canvasData.spreadBackgroundMode)
+    const perPageBackgrounds =
+      spreadMode === 'per-page'
+        ? {
+            leftPageBackground: normalizePageBackgroundSettings(
+              canvasData.leftPageBackground,
+              rootBackground,
+            ),
+            rightPageBackground: normalizePageBackgroundSettings(
+              canvasData.rightPageBackground,
+              rootBackground,
+            ),
+          }
+        : createPerPageBackgroundsFromRoot(canvasData)
+
     document.value = {
       magazineTypeId: page.magazineTypeId,
       magazinePageId: page.id,
@@ -323,9 +556,19 @@ export const useEditorStore = defineStore('editor', () => {
       pageType: page.pageType,
       width: canvasData.pageWidth ?? A4_PAGE_WIDTH,
       height: canvasData.pageHeight ?? A4_PAGE_HEIGHT,
-      backgroundColor: canvasData.backgroundColor ?? DEFAULT_PAGE_BACKGROUND,
+      backgroundColor: rootBackground.backgroundColor,
+      backgroundImageUrl: rootBackground.backgroundImageUrl,
+      backgroundImageFit: rootBackground.backgroundImageFit,
+      backgroundImageCropX: rootBackground.backgroundImageCropX,
+      backgroundImageCropY: rootBackground.backgroundImageCropY,
+      backgroundImageScale: rootBackground.backgroundImageScale,
+      spreadBackgroundMode: isSpreadPageType(page.pageType) ? spreadMode : DEFAULT_SPREAD_BACKGROUND_MODE,
+      leftPageBackground: perPageBackgrounds.leftPageBackground,
+      rightPageBackground: perPageBackgrounds.rightPageBackground,
       canvasData,
     }
+    activeSpreadBackgroundSide.value = 'left'
+    pageBackgroundCropTarget.value = 'spread'
     selectedElementIds.value = []
     liveDragPositions.value = {}
     previewMode.value = false
@@ -338,6 +581,8 @@ export const useEditorStore = defineStore('editor', () => {
         recalculateTextElementSize(element.id)
       }
     }
+
+    syncCanvasMeta()
   }
 
   function updatePageSettings(patch: PageSettingsPatch): void {
@@ -345,7 +590,9 @@ export const useEditorStore = defineStore('editor', () => {
       return
     }
 
-    if (isSpreadPageType(document.value.pageType)) {
+    const isSpread = isSpreadPageType(document.value.pageType)
+
+    if (isSpread && (patch.width !== undefined || patch.height !== undefined)) {
       return
     }
 
@@ -357,12 +604,84 @@ export const useEditorStore = defineStore('editor', () => {
     if (patch.height !== undefined) {
       document.value.height = Math.max(100, patch.height)
     }
+
+    if (patch.spreadBackgroundMode !== undefined && isSpread) {
+      setSpreadBackgroundMode(patch.spreadBackgroundMode, { recordHistory: false })
+      return
+    }
+
+    const backgroundPatch: PageSettingsPatch = {}
     if (patch.backgroundColor !== undefined) {
-      document.value.backgroundColor = patch.backgroundColor
+      backgroundPatch.backgroundColor = patch.backgroundColor
+    }
+    if (patch.backgroundImageUrl !== undefined) {
+      backgroundPatch.backgroundImageUrl = patch.backgroundImageUrl
+    }
+    if (patch.backgroundImageFit !== undefined) {
+      backgroundPatch.backgroundImageFit = patch.backgroundImageFit
+    }
+    if (patch.backgroundImageCropX !== undefined) {
+      backgroundPatch.backgroundImageCropX = patch.backgroundImageCropX
+    }
+    if (patch.backgroundImageCropY !== undefined) {
+      backgroundPatch.backgroundImageCropY = patch.backgroundImageCropY
+    }
+    if (patch.backgroundImageScale !== undefined) {
+      backgroundPatch.backgroundImageScale = patch.backgroundImageScale
+    }
+
+    if (Object.keys(backgroundPatch).length > 0) {
+      applyPageBackgroundPatch(getPageBackgroundEditTarget(), backgroundPatch)
     }
 
     syncCanvasMeta()
     isDirty.value = true
+  }
+
+  function setSpreadBackgroundMode(
+    mode: SpreadBackgroundMode,
+    options?: { recordHistory?: boolean },
+  ): void {
+    if (!document.value || !isSpreadPageType(document.value.pageType)) {
+      return
+    }
+
+    const currentMode = document.value.spreadBackgroundMode
+    if (currentMode === mode) {
+      return
+    }
+
+    if (options?.recordHistory !== false) {
+      pushHistoryImmediate()
+    }
+
+    if (mode === 'per-page') {
+      const perPage = createPerPageBackgroundsFromRoot(document.value.canvasData)
+      document.value.leftPageBackground = perPage.leftPageBackground
+      document.value.rightPageBackground = perPage.rightPageBackground
+    } else {
+      const leftBackground = document.value.leftPageBackground
+      document.value.backgroundColor = leftBackground.backgroundColor
+      document.value.backgroundImageUrl = leftBackground.backgroundImageUrl
+      document.value.backgroundImageFit = leftBackground.backgroundImageFit
+      document.value.backgroundImageCropX = leftBackground.backgroundImageCropX
+      document.value.backgroundImageCropY = leftBackground.backgroundImageCropY
+      document.value.backgroundImageScale = leftBackground.backgroundImageScale
+    }
+
+    document.value.spreadBackgroundMode = mode
+    stopPageBackgroundCropEditing()
+    syncCanvasMeta()
+    isDirty.value = true
+  }
+
+  function setActiveSpreadBackgroundSide(side: SpreadBackgroundSide): void {
+    if (activeSpreadBackgroundSide.value === side) {
+      return
+    }
+
+    stopPageBackgroundCropEditing()
+    activeSpreadBackgroundSide.value = side
   }
 
   function recalculateTextElementSize(
@@ -877,7 +1196,7 @@ export const useEditorStore = defineStore('editor', () => {
 
   function setPhotoImage(elementId: string, url: string): void {
     updateElement(elementId, {
-      defaultImageUrl: url,
+      defaultImageUrl: toStoredAssetPath(url) ?? url,
       cropX: 0,
       cropY: 0,
       imageScale: 1,
@@ -967,12 +1286,110 @@ export const useEditorStore = defineStore('editor', () => {
 
     textEditingElementId.value = null
     photoCropEditingElementId.value = id
+    pageBackgroundCropEditing.value = false
     photoDimElementId.value = null
     selectedElementIds.value = [id]
   }
 
   function stopPhotoCropEditing(): void {
     photoCropEditingElementId.value = null
+    pageBackgroundCropEditing.value = false
+  }
+
+  const pageBackgroundImageDimensions = ref<{ width: number; height: number } | null>(null)
+
+  function registerPageBackgroundImageDimensions(dimensions: {
+    width: number
+    height: number
+  }): void {
+    pageBackgroundImageDimensions.value = dimensions
+  }
+
+  function updatePageBackgroundCrop(
+    patch: Partial<PhotoCropState>,
+    options?: UpdateElementOptions,
+  ): void {
+    if (!document.value) {
+      return
+    }
+
+    if (options?.live) {
+      beginLiveTransform()
+    } else if (liveTransformActive.value) {
+      finalizeLiveTransform()
+    } else {
+      pushHistoryImmediate()
+    }
+
+    const dimensions = pageBackgroundImageDimensions.value
+    const target = pageBackgroundCropTarget.value
+    const frameWidth =
+      target === 'left' || target === 'right' ? A4_PAGE_WIDTH : document.value.width
+    const frameHeight = document.value.height
+    const current = readPageBackgroundSettings(target)
+
+    const nextCrop = {
+      cropX: patch.cropX ?? current.backgroundImageCropX,
+      cropY: patch.cropY ?? current.backgroundImageCropY,
+      imageScale: patch.imageScale ?? current.backgroundImageScale,
+    }
+
+    const clamped =
+      dimensions != null
+        ? clampPhotoCrop(
+            frameWidth,
+            frameHeight,
+            dimensions.width,
+            dimensions.height,
+            resolvePhotoRenderFitMode(current.backgroundImageFit),
+            nextCrop,
+          )
+        : nextCrop
+
+    applyPageBackgroundPatch(target, {
+      backgroundImageCropX: clamped.cropX,
+      backgroundImageCropY: clamped.cropY,
+      backgroundImageScale: clamped.imageScale,
+    })
+    isDirty.value = true
+  }
+
+  function startPageBackgroundCropEditing(
+    targetOverride?: PageBackgroundEditTarget,
+  ): void {
+    if (!document.value || previewMode.value) {
+      return
+    }
+
+    let target = targetOverride ?? getPageBackgroundEditTarget()
+
+    if (
+      (target === 'left' || target === 'right') &&
+      isSpreadPageType(document.value.pageType) &&
+      document.value.spreadBackgroundMode === 'per-page'
+    ) {
+      activeSpreadBackgroundSide.value = target
+    } else if (target === 'left' || target === 'right') {
+      target = 'spread'
+    }
+
+    const background = readPageBackgroundSettings(target)
+    if (!background.backgroundImageUrl) {
+      return
+    }
+
+    textEditingElementId.value = null
+    photoDimElementId.value = null
+    photoCropEditingElementId.value = null
+    pageBackgroundCropTarget.value = target
+    pageBackgroundCropEditing.value = true
+    selectedElementIds.value = []
+  }
+
+  function stopPageBackgroundCropEditing(): void {
+    pageBackgroundCropEditing.value = false
+    pageBackgroundCropTarget.value = getPageBackgroundEditTarget()
+    syncCanvasMeta()
   }
 
   function startPhotoDim(id: string): void {
@@ -994,6 +1411,62 @@ export const useEditorStore = defineStore('editor', () => {
     photoCropEditingElementId.value = null
     photoDimElementId.value = id
     selectedElementIds.value = [id]
+  }
+
+  function zoomPageBackgroundCrop(
+    scaleDelta: number,
+    focalPagePoint?: { x: number; y: number },
+  ): void {
+    if (!document.value || !pageBackgroundCropEditing.value) {
+      return
+    }
+
+    const target = pageBackgroundCropTarget.value
+    const frameWidth =
+      target === 'left' || target === 'right' ? A4_PAGE_WIDTH : document.value.width
+    const frameX = target === 'right' ? A4_PAGE_WIDTH : 0
+    const settings = readPageBackgroundSettings(target)
+    const fitMode = resolvePhotoRenderFitMode(settings.backgroundImageFit)
+    const dimensions = pageBackgroundImageDimensions.value
+
+    if (fitMode === 'fill') {
+      return
+    }
+
+    if (!dimensions) {
+      updatePageBackgroundCrop({
+        imageScale: settings.backgroundImageScale + scaleDelta,
+      })
+      return
+    }
+
+    const focalLocal = focalPagePoint
+      ? {
+          x: focalPagePoint.x - frameX,
+          y: focalPagePoint.y,
+        }
+      : {
+          x: frameWidth / 2,
+          y: document.value.height / 2,
+        }
+
+    const nextCrop = computePhotoCropZoomAtPoint(
+      frameWidth,
+      document.value.height,
+      dimensions.width,
+      dimensions.height,
+      fitMode,
+      getPageBackgroundCropState({
+        cropX: settings.backgroundImageCropX,
+        cropY: settings.backgroundImageCropY,
+        imageScale: settings.backgroundImageScale,
+      }),
+      focalLocal.x,
+      focalLocal.y,
+      scaleDelta,
+    )
+
+    updatePageBackgroundCrop(nextCrop)
   }
 
   function stopPhotoDim(): void {
@@ -1278,9 +1751,13 @@ export const useEditorStore = defineStore('editor', () => {
     selectedElementIds.value = []
     textEditingElementId.value = null
     photoCropEditingElementId.value = null
+    pageBackgroundCropEditing.value = false
+    pageBackgroundCropTarget.value = 'spread'
+    activeSpreadBackgroundSide.value = 'left'
     photoDimElementId.value = null
     photoDropTargetId.value = null
     photoImageDimensions.value = {}
+    pageBackgroundImageDimensions.value = null
     liveDragPositions.value = {}
     previewMode.value = false
     canvasZoom.value = 1
@@ -1309,6 +1786,8 @@ export const useEditorStore = defineStore('editor', () => {
     printSafeZoneEnabled,
     textEditingElementId,
     photoCropEditingElementId,
+    pageBackgroundCropEditing,
+    pageBackgroundCropTarget,
     photoDimElementId,
     photoDropTargetId,
     elements,
@@ -1323,6 +1802,19 @@ export const useEditorStore = defineStore('editor', () => {
     pageWidth,
     pageHeight,
     backgroundColor,
+    backgroundImageUrl,
+    backgroundImageFit,
+    backgroundImageCropX,
+    backgroundImageCropY,
+    backgroundImageScale,
+    spreadBackgroundMode,
+    leftPageBackground,
+    rightPageBackground,
+    editablePageBackground,
+    editablePageBackgroundTarget,
+    pageBackgroundCropEditingKey,
+    pageBackgroundCropSettings,
+    activeSpreadBackgroundSide,
     templateName,
     isSpreadPage,
     printCropZoneViolation,
@@ -1358,10 +1850,17 @@ export const useEditorStore = defineStore('editor', () => {
     registerPhotoImageDimensions,
     startPhotoCropEditing,
     stopPhotoCropEditing,
+    registerPageBackgroundImageDimensions,
+    updatePageBackgroundCrop,
+    startPageBackgroundCropEditing,
+    stopPageBackgroundCropEditing,
+    zoomPageBackgroundCrop,
     startPhotoDim,
     stopPhotoDim,
     zoomPhotoReposition,
     updatePageSettings,
+    setSpreadBackgroundMode,
+    setActiveSpreadBackgroundSide,
     reorderElements,
     moveElementLayer,
     setElementVisible,
