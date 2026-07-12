@@ -43,6 +43,7 @@ import {
   MIN_PHOTO_IMAGE_SCALE,
   resolvePhotoRenderFitMode,
 } from '../../utils/photo-crop.util'
+import { getPhotoRenderBox } from '../../utils/photo-frame.util'
 import { getPlaceholderPhotoUrl } from '../../utils/placeholder-display.util'
 import { spreadLogicalXToVisual } from '../../utils/spread.util'
 
@@ -130,13 +131,14 @@ const cropSession = computed((): CropSession | null => {
 
   const photo = found as PhotoPlaceholder
   const url = getPlaceholderPhotoUrl(photo, photo.defaultImageUrl)
+  const box = getPhotoRenderBox(photo.frame, photo.size.width, photo.size.height)
 
   return {
     mode: 'photo',
-    frameWidth: photo.size.width,
-    frameHeight: photo.size.height,
-    frameX: photo.position.x,
-    frameY: photo.position.y,
+    frameWidth: box.width,
+    frameHeight: box.height,
+    frameX: photo.position.x + box.x,
+    frameY: photo.position.y + box.y,
     borderRadius: photo.borderRadius,
     rotation: photo.rotation,
     fitMode: resolvePhotoRenderFitMode(photo.fitMode),

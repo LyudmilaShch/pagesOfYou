@@ -1,13 +1,8 @@
 <template>
-  <aside class="editor-library" aria-label="Библиотека элементов">
-    <div class="editor-library__header">
-      <p class="editor-library__eyebrow">Библиотека</p>
-      <h2 class="editor-library__title">Элементы</h2>
-    </div>
-
+  <div class="editor-library">
     <div class="editor-library__list">
       <button
-        v-for="item in LIBRARY_ELEMENTS"
+        v-for="item in items"
         :key="item.type"
         type="button"
         class="editor-library__item"
@@ -23,15 +18,63 @@
         </span>
       </button>
     </div>
-  </aside>
+
+    <div v-if="category === 'photo'" class="editor-library__frames">
+      <p class="editor-library__frames-title">Фоторамки</p>
+
+      <v-progress-linear v-if="loadingFrames" indeterminate color="primary" />
+
+      <p v-else-if="activeFrames.length === 0" class="editor-library__frames-empty">
+        Рамки ещё не добавлены в админке
+      </p>
+
+      <div v-else class="editor-library__frames-grid">
+        <button
+          v-for="frame in activeFrames"
+          :key="frame.id"
+          type="button"
+          class="editor-library__frame"
+          :disabled="store.previewMode"
+          :title="frame.name"
+          @click="handleAddFramedPhoto(frame)"
+        >
+          <img :src="frame.imageUrl" :alt="frame.name" />
+        </button>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
+import { computed, onMounted, ref } from 'vue'
+
 import { LIBRARY_ELEMENTS } from '../factories/create-element.factory'
-import type { LibraryElementType } from '../factories/create-element.factory'
+import type { LibraryElementCategory, LibraryElementType } from '../factories/create-element.factory'
 import { useEditorStore } from '../store/editor.store'
+import { adminPhotoFramesApi, type AdminPhotoFrame } from '@/shared/api/admin/photo-frames.api'
+
+const props = defineProps<{
+  category: LibraryElementCategory
+}>()
 
 const store = useEditorStore()
+
+const items = computed(() => LIBRARY_ELEMENTS.filter((item) => item.category === props.category))
+
+const frames = ref<AdminPhotoFrame[]>([])
+const loadingFrames = ref(false)
+const activeFrames = computed(() => frames.value.filter((frame) => frame.isActive))
+
+async function loadFrames(): Promise<void> {
+  loadingFrames.value = true
+  try {
+    frames.value = await adminPhotoFramesApi.list()
+  } catch {
+    frames.value = []
+  } finally {
+    loadingFrames.value = false
+  }
+}
 
 function handleAdd(type: LibraryElementType): void {
   if (store.previewMode) {
@@ -39,6 +82,17 @@ function handleAdd(type: LibraryElementType): void {
   }
   store.addElement(type)
 }
+
+function handleAddFramedPhoto(frame: AdminPhotoFrame): void {
+  if (store.previewMode) {
+    return
+  }
+  store.addFramedPhoto(frame)
+}
+
+onMounted(() => {
+  void loadFrames()
+})
 </script>
 
 <style scoped lang="scss">
@@ -46,28 +100,6 @@ function handleAdd(type: LibraryElementType): void {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: $bg-primary;
-}
-
-.editor-library__header {
-  padding: $spacing-6 $spacing-4 $spacing-4;
-  border-bottom: 1px solid $border-light;
-}
-
-.editor-library__eyebrow {
-  margin: 0 0 $spacing-1;
-  font-size: $font-size-caption;
-  letter-spacing: $letter-spacing-caption;
-  text-transform: uppercase;
-  color: $text-muted;
-}
-
-.editor-library__title {
-  margin: 0;
-  font-family: $font-family-display;
-  font-size: $font-size-h4;
-  font-weight: $font-weight-regular;
-  color: $text-primary;
 }
 
 .editor-library__list {
@@ -116,6 +148,7 @@ function handleAdd(type: LibraryElementType): void {
 
 .editor-library__item-content {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
@@ -130,5 +163,60 @@ function handleAdd(type: LibraryElementType): void {
 .editor-library__item-description {
   font-size: $font-size-caption;
   color: $text-muted;
+}
+
+.editor-library__frames {
+  padding: 0 $spacing-4 $spacing-4;
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-2;
+}
+
+.editor-library__frames-title {
+  margin: 0;
+  font-size: $font-size-caption;
+  font-weight: $font-weight-medium;
+  letter-spacing: $letter-spacing-caption;
+  text-transform: uppercase;
+  color: $text-muted;
+}
+
+.editor-library__frames-empty {
+  margin: 0;
+  font-size: $font-size-caption;
+  color: $text-muted;
+}
+
+.editor-library__frames-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: $spacing-2;
+}
+
+.editor-library__frame {
+  aspect-ratio: 1;
+  border: 1px solid $border-light;
+  border-radius: $radius-sm;
+  background:
+    linear-gradient(45deg, $bg-muted 25%, transparent 25%, transparent 75%, $bg-muted 75%) 0 0 / 10px 10px,
+    linear-gradient(45deg, $bg-muted 25%, transparent 25%, transparent 75%, $bg-muted 75%) 5px 5px / 10px 10px;
+  cursor: pointer;
+  padding: $spacing-1;
+  transition: border-color 0.18s ease;
+
+  &:hover:not(:disabled) {
+    border-color: $border-default;
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
 }
 </style>

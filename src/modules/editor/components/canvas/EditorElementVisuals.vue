@@ -27,6 +27,14 @@
     <v-line v-else :config="borderNode.config" />
   </template>
 
+  <template v-if="ctx.loadedFrameImage.value">
+    <v-image
+      v-for="(frameSlice, index) in ctx.frameSliceConfigs.value"
+      :key="`photo-frame-${index}`"
+      :config="{ ...frameSlice, image: ctx.loadedFrameImage.value, listening: false }"
+    />
+  </template>
+
   <v-image
     v-if="ctx.photoRepositionOutsideConfig.value && ctx.loadedImage.value && ctx.isPhotoDimmed.value"
     :config="{ ...ctx.photoRepositionOutsideConfig.value, image: ctx.loadedImage.value }"

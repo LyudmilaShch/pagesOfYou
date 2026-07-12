@@ -12,6 +12,7 @@ import { PrismaModule } from './database';
 import { AdminAuthModule } from './modules/admin-auth/admin-auth.module';
 import { AdminMagazineTypesModule } from './modules/admin-magazine-types/admin-magazine-types.module';
 import { AdminMagazinePagesModule } from './modules/admin-magazine-pages/admin-magazine-pages.module';
+import { AdminPhotoFramesModule } from './modules/admin-photo-frames/admin-photo-frames.module';
 import { AdminUploadsModule } from './modules/admin-uploads/admin-uploads.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
@@ -45,6 +46,7 @@ import { HealthModule } from './modules/health/health.module';
     AdminAuthModule,
     AdminMagazineTypesModule,
     AdminMagazinePagesModule,
+    AdminPhotoFramesModule,
     AdminUploadsModule,
     UsersModule,
     CatalogModule,

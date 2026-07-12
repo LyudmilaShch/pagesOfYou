@@ -53,7 +53,9 @@ const handleOverlayClick = () => {
 .base-modal {
   position: fixed;
   inset: 0;
-  z-index: 2000;
+  // Above Vuetify's v-dialog/v-overlay stack (typically ~2000-2400 with nested overlays),
+  // so error/info modals always surface on top of any open dialog.
+  z-index: 2500;
   display: flex;
   align-items: center;
   justify-content: center;

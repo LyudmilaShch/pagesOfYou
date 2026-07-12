@@ -12,6 +12,7 @@ import {
   pagePointToPhotoLocal,
   resolvePhotoRenderFitMode,
 } from '@/modules/editor/utils/photo-crop.util'
+import { getPhotoRenderBox } from '@/modules/editor/utils/photo-frame.util'
 import type { SmartGuideLines } from '@/modules/editor/utils/smart-guides.util'
 import { snapCoordinate as snapCoordinateUtil } from '@/modules/editor/utils/snap.util'
 import type { OrderFillSession } from '../composables/useOrderFillSession'
@@ -202,9 +203,10 @@ export function createOrderCanvasContext(
       return
     }
 
+    const box = getPhotoRenderBox(photo.frame, photo.size.width, photo.size.height)
     const nextCrop = clampPhotoCrop(
-      photo.size.width,
-      photo.size.height,
+      box.width,
+      box.height,
       dimensions.width,
       dimensions.height,
       resolvePhotoRenderFitMode(photo.fitMode),
@@ -350,23 +352,28 @@ export function createOrderCanvasContext(
       return
     }
 
+    const box = getPhotoRenderBox(photo.frame, photo.size.width, photo.size.height)
+
     const focalLocal = focalPagePoint
-      ? pagePointToPhotoLocal(
-          photo.size.width,
-          photo.size.height,
-          photo.position,
-          photo.rotation,
-          focalPagePoint.x,
-          focalPagePoint.y,
-        )
+      ? (() => {
+          const elementLocal = pagePointToPhotoLocal(
+            photo.size.width,
+            photo.size.height,
+            photo.position,
+            photo.rotation,
+            focalPagePoint.x,
+            focalPagePoint.y,
+          )
+          return { x: elementLocal.x - box.x, y: elementLocal.y - box.y }
+        })()
       : {
-          x: photo.size.width / 2,
-          y: photo.size.height / 2,
+          x: box.width / 2,
+          y: box.height / 2,
         }
 
     const nextCrop = computePhotoCropZoomAtPoint(
-      photo.size.width,
-      photo.size.height,
+      box.width,
+      box.height,
       dimensions.width,
       dimensions.height,
       photo.fitMode,

@@ -12,6 +12,8 @@ import {
 import { getPageCenterPosition } from '@/modules/editor/utils/snap.util'
 import { isSpreadCanvas } from '@/modules/editor/utils/spread.util'
 import { getPlaceholderPhotoUrl } from '@/modules/editor/utils/placeholder-display.util'
+import { useErrorMessageModal } from '@/shared/composables/useErrorMessageModal'
+import { getUploadErrorMessage } from '@/shared/utils/api-error.util'
 import { filesApi } from '../api/orders.api'
 import type {
   JournalPage,
@@ -97,6 +99,8 @@ function buildPreviewValue(
 }
 
 export function useOrderFillSession(options: OrderFillSessionOptions) {
+  const { showErrorMessageModal } = useErrorMessageModal()
+
   const selectedElementId = ref<string | null>(null)
   const textEditingElementId = ref<string | null>(null)
   const photoCropEditingElementId = ref<string | null>(null)
@@ -513,6 +517,8 @@ export function useOrderFillSession(options: OrderFillSessionOptions) {
         : (await filesApi.uploadImage(file)).url
 
       await uploadPhotoFromUrl(elementId, photoUrl)
+    } catch (error) {
+      showErrorMessageModal(getUploadErrorMessage(error), 'Не удалось загрузить фото')
     } finally {
       uploadingId.value = null
     }

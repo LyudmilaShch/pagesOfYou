@@ -1078,7 +1078,10 @@
 
           />
 
+          <EditorPhotoFrameField :frame="photoElement.frame" @patch="patchElement" />
+
           <EditorBorderFields
+            v-if="!photoElement.frame"
             :stroke="photoElement.stroke"
             :stroke-width="photoElement.strokeWidth"
             :stroke-style="photoElement.strokeStyle"
@@ -1213,6 +1216,7 @@ import type { PageBackgroundImageFit, SpreadBackgroundMode, SpreadBackgroundSide
 import EditorShapeStrokeFields from './EditorShapeStrokeFields.vue'
 import EditorColorPicker from './EditorColorPicker.vue'
 import EditorBorderFields from './EditorBorderFields.vue'
+import EditorPhotoFrameField from './EditorPhotoFrameField.vue'
 
 import type { MultiAlignMode } from '../utils/align-elements.util'
 import {

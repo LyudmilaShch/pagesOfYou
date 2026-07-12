@@ -16,11 +16,14 @@ export type LibraryElementType =
   | 'shape-rectangle'
   | 'shape-circle'
 
+export type LibraryElementCategory = 'photo' | 'text' | 'shape'
+
 export interface LibraryElementDefinition {
   type: LibraryElementType
   label: string
   icon: string
   description: string
+  category: LibraryElementCategory
 }
 
 export const LIBRARY_ELEMENTS: LibraryElementDefinition[] = [
@@ -29,42 +32,49 @@ export const LIBRARY_ELEMENTS: LibraryElementDefinition[] = [
     label: 'Фото',
     icon: 'mdi-image-outline',
     description: 'Область для фотографии',
+    category: 'photo',
   },
   {
     type: 'title-placeholder',
     label: 'Заголовок',
     icon: 'mdi-format-title',
     description: 'Крупный заголовок',
+    category: 'text',
   },
   {
     type: 'subtitle-placeholder',
     label: 'Подзаголовок',
     icon: 'mdi-format-header-2',
     description: 'Вторичный заголовок',
+    category: 'text',
   },
   {
     type: 'text-placeholder',
     label: 'Текст',
     icon: 'mdi-format-text',
     description: 'Текстовый блок',
+    category: 'text',
   },
   {
     type: 'shape-line',
     label: 'Линия',
     icon: 'mdi-minus',
     description: 'Декоративная линия',
+    category: 'shape',
   },
   {
     type: 'shape-rectangle',
     label: 'Прямоугольник',
     icon: 'mdi-rectangle-outline',
     description: 'Прямоугольная форма',
+    category: 'shape',
   },
   {
     type: 'shape-circle',
     label: 'Круг',
     icon: 'mdi-circle-outline',
     description: 'Круглая форма',
+    category: 'shape',
   },
 ]
 

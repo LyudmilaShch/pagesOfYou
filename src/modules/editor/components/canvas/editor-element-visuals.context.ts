@@ -3,6 +3,7 @@ import type { InjectionKey, Ref } from 'vue'
 import type Konva from 'konva'
 
 import type { PhotoBorderDrawNode } from '../../utils/element-stroke.util'
+import type { NineSliceImageConfig } from '../../utils/photo-frame.util'
 
 export interface EditorElementVisualsContext {
   backgroundRectConfig: Ref<Record<string, unknown> | null>
@@ -21,6 +22,8 @@ export interface EditorElementVisualsContext {
   photoRepositionInsideConfig: Ref<Record<string, unknown> | null>
   photoDimBorderConfig: Ref<Record<string, unknown> | null>
   photoBorderDrawNodes: Ref<PhotoBorderDrawNode[]>
+  frameSliceConfigs: Ref<NineSliceImageConfig[]>
+  loadedFrameImage: Ref<HTMLImageElement | null>
   shapeRectConfig: Ref<Record<string, unknown> | null>
   shapeCircleConfig: Ref<Record<string, unknown> | null>
   shapeLineConfig: Ref<Record<string, unknown> | null>

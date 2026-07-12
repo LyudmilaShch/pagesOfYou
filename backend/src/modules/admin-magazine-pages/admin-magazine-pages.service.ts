@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Prisma } from '@prisma/client';
+import { MagazinePage, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database';
 import { resolveAssetUrl, toStoredAssetPath } from '../../common/utils/asset-url.util';
 import {
@@ -13,6 +13,7 @@ import {
 } from '../../shared/types/canvas-data.types';
 import type {
   CreateMagazinePageDto,
+  DuplicateMagazinePageDto,
   ReorderMagazinePagesDto,
   UpdateMagazinePageDto,
 } from './dto/magazine-page.dto';
@@ -67,6 +68,51 @@ export class AdminMagazinePagesService {
 
     this.logger.log(`Magazine page created: ${item.id} for type ${magazineTypeId}`);
     return this.withResolvedPreview(item);
+  }
+
+  async duplicate(
+    magazineTypeId: string,
+    pageId: string,
+    dto: DuplicateMagazinePageDto,
+  ) {
+    const source = await this.getPageOrThrow(magazineTypeId, pageId);
+    const targetMagazineTypeId = dto.targetMagazineTypeId ?? magazineTypeId;
+
+    if (dto.targetMagazineTypeId) {
+      await this.assertMagazineTypeExists(targetMagazineTypeId);
+    }
+
+    const created = await this.cloneForType(source, targetMagazineTypeId);
+
+    this.logger.log(
+      `Magazine page duplicated: ${source.id} -> ${created.id} (type ${targetMagazineTypeId})`,
+    );
+    return this.withResolvedPreview(created);
+  }
+
+  /** Creates a copy of `source` under `targetMagazineTypeId`, appended at the end. */
+  async cloneForType(
+    source: MagazinePage,
+    targetMagazineTypeId: string,
+    client: Prisma.TransactionClient | PrismaService = this.prisma,
+  ): Promise<MagazinePage> {
+    const maxSort = await client.magazinePage.aggregate({
+      where: { magazineTypeId: targetMagazineTypeId, deletedAt: null },
+      _max: { sortOrder: true },
+    });
+
+    return client.magazinePage.create({
+      data: {
+        magazineTypeId: targetMagazineTypeId,
+        name: `${source.name} (копия)`,
+        description: source.description,
+        pageType: source.pageType,
+        sortOrder: (maxSort._max.sortOrder ?? -1) + 1,
+        previewImage: source.previewImage,
+        canvasData: normalizeCanvasData(source.canvasData) as unknown as Prisma.InputJsonValue,
+        isRequired: source.isRequired,
+      },
+    });
   }
 
   async update(

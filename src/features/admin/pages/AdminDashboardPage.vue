@@ -109,20 +109,6 @@ const catalogStats = computed(() => [
     color: 'neutral',
   },
   {
-    label: 'Стили журналов',
-    value: '—',
-    icon: 'mdi-palette-outline',
-    to: '/admin/magazine-styles',
-    color: 'neutral',
-  },
-  {
-    label: 'Развороты',
-    value: '—',
-    icon: 'mdi-table-large',
-    to: '/admin/spreads',
-    color: 'neutral',
-  },
-  {
     label: 'Всего заказов',
     value: 0,
     icon: 'mdi-package-variant-closed',
@@ -207,10 +193,6 @@ const orderStats = [
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: $spacing-3;
-
-  @include tablet-up {
-    grid-template-columns: repeat(4, 1fr);
-  }
 }
 
 .stat-card {

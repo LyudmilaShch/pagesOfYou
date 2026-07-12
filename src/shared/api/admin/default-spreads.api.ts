@@ -67,4 +67,15 @@ export const adminDefaultSpreadsApi = {
     )
     return data.data.map(withResolvedPreview)
   },
+
+  async duplicateToType(
+    magazineTypeId: string,
+    payload: DefaultSpreadItemPayload & { targetMagazineTypeId: string },
+  ): Promise<AdminDefaultSpread> {
+    const { data } = await adminHttp.post<BackendResponse<AdminDefaultSpread>>(
+      `/admin/magazine-types/${magazineTypeId}/default-spreads/duplicate-to-type`,
+      payload,
+    )
+    return withResolvedPreview(data.data)
+  },
 }

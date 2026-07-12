@@ -1,6 +1,7 @@
 import type { PageElement } from '../models'
 import type {
   PhotoFitMode,
+  PhotoFrameRef,
   PhotoPlaceholder,
   PhotoStrokePosition,
   PhotoStrokeStyle,
@@ -25,6 +26,45 @@ type LegacyPhotoPlaceholder = PhotoPlaceholder & {
   imageUrl?: string | null
   image?: string | null
   src?: string | null
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
+function normalizePhotoFrame(value: unknown): PhotoFrameRef | null {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+
+  const frame = value as Partial<PhotoFrameRef>
+
+  if (
+    typeof frame.imageUrl !== 'string' ||
+    !frame.imageUrl.trim() ||
+    !isFiniteNumber(frame.naturalWidth) ||
+    !isFiniteNumber(frame.naturalHeight) ||
+    !isFiniteNumber(frame.sliceTop) ||
+    !isFiniteNumber(frame.sliceRight) ||
+    !isFiniteNumber(frame.sliceBottom) ||
+    !isFiniteNumber(frame.sliceLeft)
+  ) {
+    return null
+  }
+
+  return {
+    imageUrl: toStoredAssetPath(frame.imageUrl) ?? frame.imageUrl.trim(),
+    naturalWidth: frame.naturalWidth,
+    naturalHeight: frame.naturalHeight,
+    sliceTop: frame.sliceTop,
+    sliceRight: frame.sliceRight,
+    sliceBottom: frame.sliceBottom,
+    sliceLeft: frame.sliceLeft,
+    photoAreaTop: isFiniteNumber(frame.photoAreaTop) ? frame.photoAreaTop : 0,
+    photoAreaRight: isFiniteNumber(frame.photoAreaRight) ? frame.photoAreaRight : 0,
+    photoAreaBottom: isFiniteNumber(frame.photoAreaBottom) ? frame.photoAreaBottom : 0,
+    photoAreaLeft: isFiniteNumber(frame.photoAreaLeft) ? frame.photoAreaLeft : 0,
+  }
 }
 
 function resolveStoredDefaultImageUrl(photo: LegacyPhotoPlaceholder): string | null {
@@ -88,6 +128,7 @@ export function normalizePhotoPlaceholderElement(element: PageElement): PageElem
     cropY: typeof photo.cropY === 'number' ? photo.cropY : 0,
     imageScale:
       typeof photo.imageScale === 'number' && photo.imageScale > 0 ? photo.imageScale : 1,
+    frame: normalizePhotoFrame(photo.frame),
   }
 }
 

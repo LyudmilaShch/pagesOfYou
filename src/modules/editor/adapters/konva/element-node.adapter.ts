@@ -30,6 +30,11 @@ import {
   type PhotoScaleCorner,
 } from '../../utils/photo-crop.util'
 import { getPhotoPlaceholderCheckerPattern } from '../../utils/photo-placeholder-pattern.util'
+import {
+  buildFrameNineSliceConfigs,
+  getPhotoRenderBox,
+  type NineSliceImageConfig,
+} from '../../utils/photo-frame.util'
 import { getElementTransformNodeId } from '../../utils/element-pivot.util'
 
 export { resolveKonvaFontStyle }
@@ -92,10 +97,13 @@ export function getPhotoPlaceholderGridConfig(element: PageElement) {
   }
 
   const hasUserStrokes = element.type === 'photo-placeholder' && hasPhotoStroke(element)
+  const box = getPhotoRenderBox(element.frame, element.size.width, element.size.height)
 
   return {
-    width: element.size.width,
-    height: element.size.height,
+    x: box.x,
+    y: box.y,
+    width: box.width,
+    height: box.height,
     fillPatternImage: getPhotoPlaceholderCheckerPattern(),
     fillPatternRepeat: 'repeat',
     stroke: hasUserStrokes ? 'transparent' : PHOTO_PLACEHOLDER_STROKE,
@@ -124,11 +132,10 @@ export function getPhotoPlaceholderIconLines(element: PageElement) {
     return []
   }
 
-  const width = element.size.width
-  const height = element.size.height
-  const iconSize = Math.min(width * 0.22, height * 0.18, 44)
-  const left = width / 2 - iconSize / 2
-  const top = height / 2 - iconSize / 2 - 10
+  const box = getPhotoRenderBox(element.frame, element.size.width, element.size.height)
+  const iconSize = Math.min(box.width * 0.22, box.height * 0.18, 44)
+  const left = box.x + box.width / 2 - iconSize / 2
+  const top = box.y + box.height / 2 - iconSize / 2 - 10
   const stroke = '#B8B0A6'
 
   return [
@@ -191,10 +198,12 @@ export function getPhotoPlaceholderEmptyHintConfig(element: PageElement) {
     return null
   }
 
+  const box = getPhotoRenderBox(element.frame, element.size.width, element.size.height)
+
   return {
-    x: 0,
-    y: element.size.height / 2 + 18,
-    width: element.size.width,
+    x: box.x,
+    y: box.y + box.height / 2 + 18,
+    width: box.width,
     text: 'Перетащите фото',
     fontSize: 11,
     fontFamily: 'Inter',
@@ -212,9 +221,13 @@ export function getPhotoDropHighlightConfig(
     return null
   }
 
+  const box = getPhotoRenderBox(element.frame, element.size.width, element.size.height)
+
   return {
-    width: element.size.width,
-    height: element.size.height,
+    x: box.x,
+    y: box.y,
+    width: box.width,
+    height: box.height,
     stroke: '#2563EB',
     strokeWidth: 2,
     dash: [6, 4],
@@ -231,9 +244,13 @@ export function getPhotoCropEditingBorderConfig(
     return null
   }
 
+  const box = getPhotoRenderBox(element.frame, element.size.width, element.size.height)
+
   return {
-    width: element.size.width,
-    height: element.size.height,
+    x: box.x,
+    y: box.y,
+    width: box.width,
+    height: box.height,
     stroke: '#111111',
     strokeWidth: 2,
     cornerRadius: element.borderRadius,
@@ -246,8 +263,8 @@ export function getPhotoClipGroupConfig(element: PageElement) {
     return null
   }
 
-  const width = element.size.width
-  const height = element.size.height
+  const box = getPhotoRenderBox(element.frame, element.size.width, element.size.height)
+  const { x, y, width, height } = box
   const radius = element.borderRadius
 
   if (radius > 0) {
@@ -255,15 +272,15 @@ export function getPhotoClipGroupConfig(element: PageElement) {
       listening: false,
       clipFunc: (ctx: CanvasRenderingContext2D) => {
         ctx.beginPath()
-        ctx.moveTo(radius, 0)
-        ctx.lineTo(width - radius, 0)
-        ctx.quadraticCurveTo(width, 0, width, radius)
-        ctx.lineTo(width, height - radius)
-        ctx.quadraticCurveTo(width, height, width - radius, height)
-        ctx.lineTo(radius, height)
-        ctx.quadraticCurveTo(0, height, 0, height - radius)
-        ctx.lineTo(0, radius)
-        ctx.quadraticCurveTo(0, 0, radius, 0)
+        ctx.moveTo(x + radius, y)
+        ctx.lineTo(x + width - radius, y)
+        ctx.quadraticCurveTo(x + width, y, x + width, y + radius)
+        ctx.lineTo(x + width, y + height - radius)
+        ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height)
+        ctx.lineTo(x + radius, y + height)
+        ctx.quadraticCurveTo(x, y + height, x, y + height - radius)
+        ctx.lineTo(x, y + radius)
+        ctx.quadraticCurveTo(x, y, x + radius, y)
         ctx.closePath()
       },
     }
@@ -272,8 +289,8 @@ export function getPhotoClipGroupConfig(element: PageElement) {
   return {
     listening: false,
     clip: {
-      x: 0,
-      y: 0,
+      x,
+      y,
       width,
       height,
     },
@@ -288,23 +305,30 @@ function getPhotoCoverLayout(element: PageElement, image: HTMLImageElement): Pho
   }
 
   const photo = element as PhotoPlaceholder
+  const box = getPhotoRenderBox(photo.frame, photo.size.width, photo.size.height)
   const crop = clampPhotoCrop(
-    photo.size.width,
-    photo.size.height,
+    box.width,
+    box.height,
     imageWidth,
     imageHeight,
     resolvePhotoRenderFitMode(photo.fitMode),
     getPhotoCropState(photo),
   )
 
-  return computePhotoImageLayout(
-    photo.size.width,
-    photo.size.height,
+  const layout = computePhotoImageLayout(
+    box.width,
+    box.height,
     imageWidth,
     imageHeight,
     'cover',
     crop,
   )
+
+  if (!layout) {
+    return null
+  }
+
+  return { ...layout, x: layout.x + box.x, y: layout.y + box.y }
 }
 
 export function getPhotoRepositionBoundsConfig(element: PageElement, image: HTMLImageElement) {
@@ -380,11 +404,13 @@ export function getPhotoPlaceholderPanHitConfig(element: PageElement) {
     return null
   }
 
+  const box = getPhotoRenderBox(element.frame, element.size.width, element.size.height)
+
   return {
-    x: 0,
-    y: 0,
-    width: element.size.width,
-    height: element.size.height,
+    x: box.x,
+    y: box.y,
+    width: box.width,
+    height: box.height,
     cornerRadius: element.borderRadius,
     fill: 'rgba(0, 0, 0, 0.001)',
     listening: true,
@@ -432,9 +458,13 @@ export function getPhotoDimBorderConfig(element: PageElement, isActive: boolean)
     return null
   }
 
+  const box = getPhotoRenderBox(element.frame, element.size.width, element.size.height)
+
   return {
-    width: element.size.width,
-    height: element.size.height,
+    x: box.x,
+    y: box.y,
+    width: box.width,
+    height: box.height,
     stroke: TRANSFORMER_BORDER_STROKE,
     strokeWidth: TRANSFORMER_BORDER_STROKE_WIDTH,
     cornerRadius: element.borderRadius,
@@ -450,9 +480,10 @@ export function getPhotoImageKonvaConfig(element: PageElement, image: HTMLImageE
   }
 
   const photo = element as PhotoPlaceholder
+  const box = getPhotoRenderBox(photo.frame, photo.size.width, photo.size.height)
   const konvaLayout = computePhotoKonvaImageLayout(
-    photo.size.width,
-    photo.size.height,
+    box.width,
+    box.height,
     imageWidth,
     imageHeight,
     resolvePhotoRenderFitMode(photo.fitMode),
@@ -464,14 +495,29 @@ export function getPhotoImageKonvaConfig(element: PageElement, image: HTMLImageE
   }
 
   return {
-    x: konvaLayout.x,
-    y: konvaLayout.y,
+    x: konvaLayout.x + box.x,
+    y: konvaLayout.y + box.y,
     width: konvaLayout.width,
     height: konvaLayout.height,
     crop: konvaLayout.crop,
     cornerRadius: photo.borderRadius,
     listening: false,
   }
+}
+
+/** Decorative 9-slice frame overlay — drawn on top of the photo, independent of its crop/scale. */
+export function getPhotoFrameImageConfigs(element: PageElement): NineSliceImageConfig[] {
+  if (element.type !== 'photo-placeholder') {
+    return []
+  }
+
+  const photo = element as PhotoPlaceholder
+
+  if (!photo.frame) {
+    return []
+  }
+
+  return buildFrameNineSliceConfigs(photo.frame, element.size.width, element.size.height)
 }
 
 export function getShapeRectConfig(element: PageElement) {

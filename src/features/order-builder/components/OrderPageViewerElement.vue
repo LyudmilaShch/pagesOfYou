@@ -72,6 +72,8 @@ import {
   getElementInnerGroupConfig,
   getElementOuterGroupConfig,
 
+  getPhotoFrameImageConfigs,
+
   getPhotoImageKonvaConfig,
 
   getPhotoPlaceholderEmptyHintConfig,
@@ -173,6 +175,8 @@ const emit = defineEmits<{
 
 
 const loadedImage = ref<HTMLImageElement | null>(null)
+
+const loadedFrameImage = ref<HTMLImageElement | null>(null)
 
 
 
@@ -454,6 +458,20 @@ const photoUrl = computed(() => {
 
 })
 
+const frameUrl = computed(() => {
+
+  if (renderElement.value.type !== 'photo-placeholder') {
+
+    return null
+
+  }
+
+  return renderElement.value.frame?.imageUrl ?? null
+
+})
+
+const frameSliceConfigs = computed(() => getPhotoFrameImageConfigs(renderElement.value))
+
 
 
 const backgroundRectConfig = computed(() => {
@@ -556,6 +574,10 @@ provide(EDITOR_ELEMENT_VISUALS_KEY, {
 
   photoDimBorderConfig: computed(() => null),
 
+  frameSliceConfigs,
+
+  loadedFrameImage,
+
   shapeRectConfig,
 
   shapeCircleConfig,
@@ -595,6 +617,36 @@ watch(
     } catch {
 
       loadedImage.value = null
+
+    }
+
+  },
+
+  { immediate: true },
+
+)
+
+watch(
+
+  frameUrl,
+
+  async (url) => {
+
+    loadedFrameImage.value = null
+
+    if (!url) {
+
+      return
+
+    }
+
+    try {
+
+      loadedFrameImage.value = await loadHtmlImage(url)
+
+    } catch {
+
+      loadedFrameImage.value = null
 
     }
 

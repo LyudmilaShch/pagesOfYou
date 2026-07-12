@@ -483,6 +483,34 @@ model MagazineDefaultSpread {
   @@map("magazine_default_spreads")
 }
 
+/// Библиотека декоративных рамок для фото-плейсхолдера (9-slice PNG).
+/// Данные копируются в canvasData фото-элемента при выборе — эта таблица
+/// только для управления каталогом и пикера в редакторе, не live-ссылка.
+model PhotoFrame {
+  id            String   @id @default(cuid())
+  name          String
+  imageUrl      String
+  naturalWidth  Int
+  naturalHeight Int
+  sliceTop      Int
+  sliceRight    Int
+  sliceBottom   Int
+  sliceLeft     Int
+  photoAreaTop    Int @default(0)
+  photoAreaRight  Int @default(0)
+  photoAreaBottom Int @default(0)
+  photoAreaLeft   Int @default(0)
+  sortOrder     Int      @default(0)
+  isActive      Boolean  @default(true)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([isActive, sortOrder])
+  @@map("photo_frames")
+}
+
 /// Конкретная страница журнала пользователя (экземпляр в заказе)
 model JournalPage {
   id             String @id @default(cuid())

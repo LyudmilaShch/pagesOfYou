@@ -95,6 +95,14 @@
         />
 
         <v-btn
+          icon="mdi-content-copy"
+          size="small"
+          variant="text"
+          aria-label="Дублировать в другой тип"
+          @click="openDuplicateToType(index)"
+        />
+
+        <v-btn
           icon="mdi-delete-outline"
           size="small"
           variant="text"
@@ -105,11 +113,23 @@
         />
       </div>
     </div>
+
+    <MagazineTypePickerDialog
+      v-model="duplicateDialog.open"
+      :exclude-id="props.magazineTypeId"
+      title="Дублировать разворот в другой тип"
+      :loading="duplicateDialog.submitting"
+      @confirm="confirmDuplicateToType"
+    />
+
+    <v-snackbar v-model="snackbar.show" :color="snackbar.color" location="bottom right" :timeout="3500">
+      {{ snackbar.text }}
+    </v-snackbar>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 
 import { MIN_JOURNAL_SPREADS } from '@/features/order-builder/constants/journal.constants'
 import { pickDefaultSpreadTemplate, groupTemplatesByPageType } from '@/features/order-builder/utils/journal-structure.util'
@@ -122,6 +142,8 @@ import {
   PAGE_TYPE_LABELS,
   type AdminMagazinePage,
 } from '@/shared/api/admin/magazine-pages.api'
+import { extractApiErrorMessage } from '@/shared/utils/api-error.util'
+import MagazineTypePickerDialog from './MagazineTypePickerDialog.vue'
 
 const props = defineProps<{
   magazineTypeId: string
@@ -296,6 +318,48 @@ async function save(): Promise<void> {
   }
 }
 
+const duplicateDialog = reactive({ open: false, index: null as number | null, submitting: false })
+const snackbar = reactive({ show: false, text: '', color: 'success' as string })
+
+function notify(text: string, color = 'success'): void {
+  snackbar.text = text
+  snackbar.color = color
+  snackbar.show = true
+}
+
+function openDuplicateToType(index: number): void {
+  duplicateDialog.index = index
+  duplicateDialog.open = true
+}
+
+async function confirmDuplicateToType(targetTypeId: string): Promise<void> {
+  if (duplicateDialog.index === null) {
+    return
+  }
+
+  const spread = spreads.value[duplicateDialog.index]
+  if (!spread) {
+    return
+  }
+
+  duplicateDialog.submitting = true
+  try {
+    await adminDefaultSpreadsApi.duplicateToType(props.magazineTypeId, {
+      layoutMode: spread.layoutMode,
+      magazinePageId: spread.magazinePageId,
+      rightMagazinePageId:
+        spread.layoutMode === 'SPLIT_PAGES' ? spread.rightMagazinePageId : undefined,
+      targetMagazineTypeId: targetTypeId,
+    })
+    duplicateDialog.open = false
+    notify('Разворот продублирован в другой тип')
+  } catch (err) {
+    notify(extractApiErrorMessage(err, 'Не удалось продублировать разворот'), 'error')
+  } finally {
+    duplicateDialog.submitting = false
+  }
+}
+
 onMounted(() => {
   void load()
 })
@@ -335,7 +399,7 @@ onMounted(() => {
 
 .default-spreads-tab__item {
   display: grid;
-  grid-template-columns: auto auto 160px minmax(180px, 1fr) minmax(180px, 1fr) auto;
+  grid-template-columns: auto auto 160px minmax(180px, 1fr) minmax(180px, 1fr) auto auto;
   align-items: center;
   gap: $spacing-3;
   padding: $spacing-3;

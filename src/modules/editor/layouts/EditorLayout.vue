@@ -105,8 +105,6 @@
     <v-snackbar v-model="snackbar.show" :color="snackbar.color" location="bottom center" :timeout="3000">
       {{ snackbar.text }}
     </v-snackbar>
-
-    <ErrorMessageModalHost />
   </div>
 </template>
 
@@ -114,7 +112,6 @@
 import { computed, onMounted, onUnmounted, reactive } from 'vue'
 import { useRoute } from 'vue-router'
 
-import ErrorMessageModalHost from '@/components/ui/ErrorMessageModalHost.vue'
 import { useEditorStore } from '../store/editor.store'
 
 const route = useRoute()

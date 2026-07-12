@@ -44,14 +44,9 @@ export const routes: RouteRecordRaw[] = [
         component: () => import('@/features/admin/pages/AdminMagazineTypeEditPage.vue'),
       },
       {
-        path: 'magazine-styles',
-        name: 'admin-magazine-styles',
-        component: () => import('@/features/admin/pages/AdminDashboardPage.vue'),
-      },
-      {
-        path: 'spreads',
-        name: 'admin-spreads',
-        component: () => import('@/features/admin/pages/AdminDashboardPage.vue'),
+        path: 'photo-frames',
+        name: 'admin-photo-frames',
+        component: () => import('@/features/admin/pages/AdminPhotoFramesPage.vue'),
       },
       {
         path: 'orders',

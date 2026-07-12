@@ -1,4 +1,8 @@
-import type { CanvasElement, CanvasPhotoPlaceholder } from '../types/canvas-data.types';
+import type {
+  CanvasElement,
+  CanvasPhotoFrame,
+  CanvasPhotoPlaceholder,
+} from '../types/canvas-data.types';
 import { toStoredAssetPath } from '../../common/utils/asset-url.util';
 
 const STROKE_LINE_STYLES = new Set(['solid', 'dashed']);
@@ -55,6 +59,46 @@ function resolveStoredDefaultImageUrl(photo: LegacyCanvasPhotoPlaceholder): stri
   return null;
 }
 
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function normalizePhotoFrame(value: unknown): CanvasPhotoFrame | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const frame = value as Partial<CanvasPhotoFrame>;
+
+  if (
+    typeof frame.imageUrl !== 'string' ||
+    !frame.imageUrl.trim() ||
+    !isFiniteNumber(frame.naturalWidth) ||
+    !isFiniteNumber(frame.naturalHeight) ||
+    !isFiniteNumber(frame.sliceTop) ||
+    !isFiniteNumber(frame.sliceRight) ||
+    !isFiniteNumber(frame.sliceBottom) ||
+    !isFiniteNumber(frame.sliceLeft)
+  ) {
+    return null;
+  }
+
+  return {
+    imageUrl: toStoredAssetPath(frame.imageUrl) ?? frame.imageUrl.trim(),
+    naturalWidth: frame.naturalWidth,
+    naturalHeight: frame.naturalHeight,
+    sliceTop: frame.sliceTop,
+    sliceRight: frame.sliceRight,
+    sliceBottom: frame.sliceBottom,
+    sliceLeft: frame.sliceLeft,
+    // Older elements were saved before the photo-area feature — default to 0 (full box), not reject the frame.
+    photoAreaTop: isFiniteNumber(frame.photoAreaTop) ? frame.photoAreaTop : 0,
+    photoAreaRight: isFiniteNumber(frame.photoAreaRight) ? frame.photoAreaRight : 0,
+    photoAreaBottom: isFiniteNumber(frame.photoAreaBottom) ? frame.photoAreaBottom : 0,
+    photoAreaLeft: isFiniteNumber(frame.photoAreaLeft) ? frame.photoAreaLeft : 0,
+  };
+}
+
 function resolveInitialPhotoStroke(photo: LegacyCanvasPhotoPlaceholder) {
   const legacyStroke = Array.isArray(photo.strokes) ? photo.strokes[0] : undefined;
 
@@ -94,5 +138,6 @@ export function normalizePhotoPlaceholderElement(element: CanvasElement): Canvas
     cropY: typeof photo.cropY === 'number' ? photo.cropY : 0,
     imageScale:
       typeof photo.imageScale === 'number' && photo.imageScale > 0 ? photo.imageScale : 1,
+    frame: normalizePhotoFrame(photo.frame),
   };
 }

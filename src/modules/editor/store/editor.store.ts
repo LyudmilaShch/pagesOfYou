@@ -54,7 +54,7 @@ import type { EditorDocument } from '../models/page-template.model'
 import { normalizeCanvasData } from '../models/canvas-data.model'
 import type { Position, Size } from '../models/geometry.model'
 import type { TextPlaceholder } from '../models/text-placeholder.model'
-import type { PhotoPlaceholder } from '../models/photo-placeholder.model'
+import type { PhotoFrameRef, PhotoPlaceholder } from '../models/photo-placeholder.model'
 import { isSpreadPageType } from '../utils/spread.util'
 import { isTextPlaceholderType } from '../utils/normalize-text-placeholder.util'
 import {
@@ -69,6 +69,7 @@ import {
   resolvePhotoRenderFitMode,
   type PhotoCropState,
 } from '../utils/photo-crop.util'
+import { getPhotoRenderBox } from '../utils/photo-frame.util'
 
 export type ElementPatch = {
   position?: Partial<Position>
@@ -794,19 +795,13 @@ export const useEditorStore = defineStore('editor', () => {
     isDirty.value = true
   }
 
-  function addElement(type: LibraryElementType): PageElement {
+  function insertNewElement(element: PageElement): void {
     if (!document.value) {
       throw new Error('Editor document is not loaded')
     }
 
     pushHistoryImmediate()
 
-    const element = createElementFromLibrary(
-      type,
-      nextZIndex.value,
-      document.value.width,
-      document.value.height,
-    )
     document.value.canvasData.elements.push(element)
     if (isTextPlaceholderType(element.type)) {
       recalculateTextElementSize(element.id)
@@ -819,6 +814,37 @@ export const useEditorStore = defineStore('editor', () => {
     }
     selectedElementIds.value = [element.id]
     isDirty.value = true
+  }
+
+  function addElement(type: LibraryElementType): PageElement {
+    if (!document.value) {
+      throw new Error('Editor document is not loaded')
+    }
+
+    const element = createElementFromLibrary(
+      type,
+      nextZIndex.value,
+      document.value.width,
+      document.value.height,
+    )
+    insertNewElement(element)
+    return element
+  }
+
+  function addFramedPhoto(frame: PhotoFrameRef): PageElement {
+    if (!document.value) {
+      throw new Error('Editor document is not loaded')
+    }
+
+    const element = createElementFromLibrary(
+      'photo-placeholder',
+      nextZIndex.value,
+      document.value.width,
+      document.value.height,
+    ) as PhotoPlaceholder
+
+    element.frame = frame
+    insertNewElement(element)
     return element
   }
 
@@ -1221,9 +1247,10 @@ export const useEditorStore = defineStore('editor', () => {
       return
     }
 
+    const box = getPhotoRenderBox(photo.frame, photo.size.width, photo.size.height)
     const nextCrop = clampPhotoCrop(
-      photo.size.width,
-      photo.size.height,
+      box.width,
+      box.height,
       dimensions.width,
       dimensions.height,
       resolvePhotoRenderFitMode(photo.fitMode),
@@ -1502,23 +1529,28 @@ export const useEditorStore = defineStore('editor', () => {
       return
     }
 
+    const box = getPhotoRenderBox(photo.frame, photo.size.width, photo.size.height)
+
     const focalLocal = focalPagePoint
-      ? pagePointToPhotoLocal(
-          photo.size.width,
-          photo.size.height,
-          photo.position,
-          photo.rotation,
-          focalPagePoint.x,
-          focalPagePoint.y,
-        )
+      ? (() => {
+          const elementLocal = pagePointToPhotoLocal(
+            photo.size.width,
+            photo.size.height,
+            photo.position,
+            photo.rotation,
+            focalPagePoint.x,
+            focalPagePoint.y,
+          )
+          return { x: elementLocal.x - box.x, y: elementLocal.y - box.y }
+        })()
       : {
-          x: photo.size.width / 2,
-          y: photo.size.height / 2,
+          x: box.width / 2,
+          y: box.height / 2,
         }
 
     const nextCrop = computePhotoCropZoomAtPoint(
-      photo.size.width,
-      photo.size.height,
+      box.width,
+      box.height,
       dimensions.width,
       dimensions.height,
       photo.fitMode,
@@ -1823,6 +1855,7 @@ export const useEditorStore = defineStore('editor', () => {
     canUndo,
     canRedo,
     addElement,
+    addFramedPhoto,
     duplicateElement,
     removeElement,
     removeSelectedElements,

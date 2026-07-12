@@ -56,6 +56,25 @@
             aria-label="Редактор"
             @click="openEditor(page.id)"
           />
+          <v-menu>
+            <template #activator="{ props: menuProps }">
+              <v-btn
+                icon="mdi-content-copy"
+                size="small"
+                variant="text"
+                aria-label="Дублировать"
+                v-bind="menuProps"
+              />
+            </template>
+            <v-list density="compact">
+              <v-list-item @click="duplicateSamePage(page)">
+                <v-list-item-title>Дублировать</v-list-item-title>
+              </v-list-item>
+              <v-list-item @click="openDuplicateToType(page)">
+                <v-list-item-title>Дублировать в другой тип…</v-list-item-title>
+              </v-list-item>
+            </v-list>
+          </v-menu>
           <v-btn
             icon="mdi-pencil-outline"
             size="small"
@@ -116,6 +135,18 @@
         </v-card-actions>
       </v-card>
     </v-dialog>
+
+    <MagazineTypePickerDialog
+      v-model="duplicateDialog.open"
+      :exclude-id="props.magazineTypeId"
+      title="Дублировать страницу в другой тип"
+      :loading="duplicateDialog.submitting"
+      @confirm="confirmDuplicateToType"
+    />
+
+    <v-snackbar v-model="snackbar.show" :color="snackbar.color" location="bottom right" :timeout="3500">
+      {{ snackbar.text }}
+    </v-snackbar>
   </div>
 </template>
 
@@ -129,6 +160,8 @@ import {
   type AdminMagazinePage,
   type PageType,
 } from '@/shared/api/admin/magazine-pages.api'
+import { extractApiErrorMessage } from '@/shared/utils/api-error.util'
+import MagazineTypePickerDialog from './MagazineTypePickerDialog.vue'
 
 const props = defineProps<{
   magazineTypeId: string
@@ -228,6 +261,51 @@ async function confirmDelete(): Promise<void> {
     await loadPages()
   } finally {
     deleteDialog.loading = false
+  }
+}
+
+const duplicateDialog = reactive({
+  open: false,
+  page: null as AdminMagazinePage | null,
+  submitting: false,
+})
+const snackbar = reactive({ show: false, text: '', color: 'success' as string })
+
+function notify(text: string, color = 'success'): void {
+  snackbar.text = text
+  snackbar.color = color
+  snackbar.show = true
+}
+
+async function duplicateSamePage(page: AdminMagazinePage): Promise<void> {
+  try {
+    await adminMagazinePagesApi.duplicate(props.magazineTypeId, page.id)
+    await loadPages()
+    notify('Страница продублирована')
+  } catch (err) {
+    notify(extractApiErrorMessage(err, 'Не удалось продублировать страницу'), 'error')
+  }
+}
+
+function openDuplicateToType(page: AdminMagazinePage): void {
+  duplicateDialog.page = page
+  duplicateDialog.open = true
+}
+
+async function confirmDuplicateToType(targetTypeId: string): Promise<void> {
+  if (!duplicateDialog.page) {
+    return
+  }
+
+  duplicateDialog.submitting = true
+  try {
+    await adminMagazinePagesApi.duplicate(props.magazineTypeId, duplicateDialog.page.id, targetTypeId)
+    duplicateDialog.open = false
+    notify('Страница продублирована в другой тип')
+  } catch (err) {
+    notify(extractApiErrorMessage(err, 'Не удалось продублировать страницу'), 'error')
+  } finally {
+    duplicateDialog.submitting = false
   }
 }
 

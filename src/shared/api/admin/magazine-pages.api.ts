@@ -103,4 +103,16 @@ export const adminMagazinePagesApi = {
   async remove(magazineTypeId: string, pageId: string): Promise<void> {
     await adminHttp.delete(`/admin/magazine-types/${magazineTypeId}/pages/${pageId}`)
   },
+
+  async duplicate(
+    magazineTypeId: string,
+    pageId: string,
+    targetMagazineTypeId?: string,
+  ): Promise<AdminMagazinePage> {
+    const { data } = await adminHttp.post<BackendResponse<AdminMagazinePage>>(
+      `/admin/magazine-types/${magazineTypeId}/pages/${pageId}/duplicate`,
+      targetMagazineTypeId ? { targetMagazineTypeId } : {},
+    )
+    return withResolvedPreview(data.data)
+  },
 }

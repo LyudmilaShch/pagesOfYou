@@ -36,3 +36,10 @@ export class SetMagazineDefaultSpreadsDto {
   @Type(() => DefaultSpreadItemDto)
   spreads!: DefaultSpreadItemDto[];
 }
+
+export class DuplicateDefaultSpreadDto extends DefaultSpreadItemDto {
+  @ApiProperty({ description: 'Magazine type to duplicate this spread (and its page templates) into' })
+  @IsString()
+  @IsNotEmpty()
+  targetMagazineTypeId!: string;
+}

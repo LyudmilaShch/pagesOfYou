@@ -38,6 +38,22 @@ export interface CanvasElementBase {
   zIndex: number;
 }
 
+/** Decorative 9-slice frame, copied from the PhotoFrame catalog when selected. */
+export interface CanvasPhotoFrame {
+  imageUrl: string;
+  naturalWidth: number;
+  naturalHeight: number;
+  sliceTop: number;
+  sliceRight: number;
+  sliceBottom: number;
+  sliceLeft: number;
+  /** Photo window insets (source PNG px) — where the photo may be positioned within the frame. */
+  photoAreaTop: number;
+  photoAreaRight: number;
+  photoAreaBottom: number;
+  photoAreaLeft: number;
+}
+
 export interface CanvasPhotoPlaceholder extends CanvasElementBase {
   type: 'photo-placeholder';
   label: string;
@@ -54,6 +70,7 @@ export interface CanvasPhotoPlaceholder extends CanvasElementBase {
   cropX?: number;
   cropY?: number;
   imageScale?: number;
+  frame?: CanvasPhotoFrame | null;
 }
 
 export interface CanvasTextPlaceholder extends CanvasElementBase {

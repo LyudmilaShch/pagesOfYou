@@ -80,8 +80,6 @@
     <main class="admin-main">
       <router-view />
     </main>
-
-    <ErrorMessageModalHost />
   </div>
 </template>
 
@@ -89,7 +87,6 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 
-import ErrorMessageModalHost from '@/components/ui/ErrorMessageModalHost.vue'
 import { useAdminAuthStore } from '../stores/admin-auth.store'
 
 const store = useAdminAuthStore()
@@ -101,8 +98,7 @@ const loggingOut = ref(false)
 const navItems = [
   { to: '/admin/dashboard', icon: 'mdi-view-dashboard-outline', label: 'Dashboard' },
   { to: '/admin/magazine-types', icon: 'mdi-book-open-outline', label: 'Типы журналов' },
-  { to: '/admin/magazine-styles', icon: 'mdi-palette-outline', label: 'Стили журналов' },
-  { to: '/admin/spreads', icon: 'mdi-table-large', label: 'Развороты' },
+  { to: '/admin/photo-frames', icon: 'mdi-image-frame', label: 'Фоторамки' },
   { to: '/admin/orders', icon: 'mdi-package-variant-closed', label: 'Заказы' },
 ]
 

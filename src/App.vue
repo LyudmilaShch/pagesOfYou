@@ -1,10 +1,13 @@
 <template>
   <v-app class="app-root">
     <router-view />
+    <ErrorMessageModalHost />
   </v-app>
 </template>
 
-<script setup lang="ts"></script>
+<script setup lang="ts">
+import ErrorMessageModalHost from '@/components/ui/ErrorMessageModalHost.vue'
+</script>
 
 <style lang="scss">
 .app-root.v-application {

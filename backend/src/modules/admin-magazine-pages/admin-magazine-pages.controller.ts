@@ -19,6 +19,7 @@ import {
 import { AdminMagazinePagesService } from './admin-magazine-pages.service';
 import {
   CreateMagazinePageDto,
+  DuplicateMagazinePageDto,
   ReorderMagazinePagesDto,
   UpdateMagazinePageDto,
 } from './dto/magazine-page.dto';
@@ -57,6 +58,16 @@ export class AdminMagazinePagesController {
     @Body() dto: CreateMagazinePageDto,
   ) {
     return this.service.create(magazineTypeId, dto);
+  }
+
+  @Post(':pageId/duplicate')
+  @ApiOperation({ summary: 'Duplicate magazine page (optionally into another magazine type)' })
+  duplicate(
+    @Param('magazineTypeId') magazineTypeId: string,
+    @Param('pageId') pageId: string,
+    @Body() dto: DuplicateMagazinePageDto,
+  ) {
+    return this.service.duplicate(magazineTypeId, pageId, dto);
   }
 
   @Patch('reorder')

@@ -94,6 +94,15 @@ export class UpdateMagazinePageDto {
   isRequired?: boolean;
 }
 
+export class DuplicateMagazinePageDto {
+  @ApiPropertyOptional({
+    description: 'Если не задано — дублирует страницу в тот же тип журнала',
+  })
+  @IsOptional()
+  @IsString()
+  targetMagazineTypeId?: string;
+}
+
 export class ReorderMagazinePageItemDto {
   @ApiProperty()
   @IsString()

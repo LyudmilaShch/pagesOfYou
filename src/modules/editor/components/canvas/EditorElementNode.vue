@@ -106,6 +106,7 @@ import {
   getPhotoCropEditingBorderConfig,
   getPhotoDimBorderConfig,
   getPhotoDropHighlightConfig,
+  getPhotoFrameImageConfigs,
   getPhotoImageKonvaConfig,
   getPhotoPlaceholderEmptyHintConfig,
   getPhotoPlaceholderIconLines,
@@ -154,6 +155,7 @@ import {
   type PhotoScaleCorner,
 } from '../../utils/photo-crop.util'
 import { getPhotoBorderDrawNodes } from '../../utils/element-stroke.util'
+import { getPhotoRenderBox } from '../../utils/photo-frame.util'
 import { isPageBackgroundCropTransformerTarget } from '../../utils/canvas-background.util'
 
 import {
@@ -191,6 +193,7 @@ const photoCropEditingElementId = computed(() =>
 const outerGroupRef = ref<{ getNode: () => Konva.Group } | null>(null)
 const transformGroupRef = ref<{ getNode: () => Konva.Group } | null>(null)
 const loadedImage = ref<HTMLImageElement | null>(null)
+const loadedFrameImage = ref<HTMLImageElement | null>(null)
 const lastPhotoClickAt = ref(0)
 const photoRepositionDragOrigin = ref<{
   cropX: number
@@ -409,6 +412,16 @@ const photoUrl = computed(() => {
 
 })
 
+const frameUrl = computed(() => {
+  if (props.element.type !== 'photo-placeholder') {
+    return null
+  }
+
+  return props.element.frame?.imageUrl ?? null
+})
+
+const frameSliceConfigs = computed(() => getPhotoFrameImageConfigs(props.element))
+
 
 
 const displayText = computed(() => {
@@ -587,6 +600,8 @@ provide(EDITOR_ELEMENT_VISUALS_KEY, {
   photoRepositionInsideConfig,
   photoDimBorderConfig,
   photoBorderDrawNodes,
+  frameSliceConfigs,
+  loadedFrameImage,
   shapeRectConfig,
   shapeCircleConfig,
   shapeLineConfig,
@@ -710,6 +725,25 @@ watch(
       outerGroupRef.value?.getNode()?.getLayer()?.batchDraw()
     } catch {
       loadedImage.value = null
+    }
+  },
+  { immediate: true },
+)
+
+watch(
+  frameUrl,
+  async (url) => {
+    loadedFrameImage.value = null
+
+    if (!url) {
+      return
+    }
+
+    try {
+      loadedFrameImage.value = await loadHtmlImage(url)
+      outerGroupRef.value?.getNode()?.getLayer()?.batchDraw()
+    } catch {
+      loadedFrameImage.value = null
     }
   },
   { immediate: true },
@@ -911,9 +945,10 @@ function applyPhotoPanFromPointer(): void {
   }
 
   const { width: imageWidth, height: imageHeight } = getImagePixelSize(loadedImage.value)
+  const box = getPhotoRenderBox(props.element.frame, props.element.size.width, props.element.size.height)
   const nextCrop = computePhotoCropFromPanDelta(
-    props.element.size.width,
-    props.element.size.height,
+    box.width,
+    box.height,
     imageWidth,
     imageHeight,
     resolvePhotoRenderFitMode(props.element.fitMode),
@@ -1002,16 +1037,17 @@ function applyPhotoScaleFromPointer(corner: PhotoScaleCorner): void {
   }
 
   const { width: imageWidth, height: imageHeight } = getImagePixelSize(loadedImage.value)
+  const box = getPhotoRenderBox(props.element.frame, props.element.size.width, props.element.size.height)
   const nextCrop = computePhotoCropFromCornerDrag(
-    props.element.size.width,
-    props.element.size.height,
+    box.width,
+    box.height,
     imageWidth,
     imageHeight,
     resolvePhotoRenderFitMode(props.element.fitMode),
     getPhotoCropState(props.element),
     corner,
-    local.x,
-    local.y,
+    local.x - box.x,
+    local.y - box.y,
   )
 
   store.updatePhotoCrop(props.element.id, nextCrop, { live: true })
