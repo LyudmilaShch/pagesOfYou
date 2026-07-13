@@ -474,32 +474,6 @@ const frameSliceConfigs = computed(() => getPhotoFrameImageConfigs(renderElement
 
 
 
-const backgroundRectConfig = computed(() => {
-
-  if (renderElement.value.type !== 'background') {
-
-    return null
-
-  }
-
-
-
-  return {
-
-    width: renderElement.value.size.width,
-
-    height: renderElement.value.size.height,
-
-    fill: renderElement.value.color,
-
-    listening: false,
-
-  }
-
-})
-
-
-
 const photoRectConfig = computed(() => getPhotoPlaceholderRectConfig(renderElement.value))
 
 const photoBorderDrawNodes = computed(() => getPhotoBorderDrawNodes(renderElement.value))
@@ -541,8 +515,6 @@ const isPhotoDimmed = computed(() => false)
 
 
 provide(EDITOR_ELEMENT_VISUALS_KEY, {
-
-  backgroundRectConfig,
 
   photoRectConfig,
 

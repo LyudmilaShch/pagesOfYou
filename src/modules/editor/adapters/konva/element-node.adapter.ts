@@ -612,7 +612,7 @@ export function getTextConfig(element: PageElement, displayText?: string | null)
 }
 
 export function getElementHitAreaConfig(element: PageElement) {
-  if (element.type === 'background' || !element.visible) {
+  if (!element.visible) {
     return null
   }
 

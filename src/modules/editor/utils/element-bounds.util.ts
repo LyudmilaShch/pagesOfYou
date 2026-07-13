@@ -31,5 +31,5 @@ export function getElementSelectionBounds(element: PageElement): ElementBoundsRe
 }
 
 export function isSelectableEditorElement(element: PageElement): boolean {
-  return element.visible && !element.locked && element.type !== 'background'
+  return element.visible && !element.locked
 }

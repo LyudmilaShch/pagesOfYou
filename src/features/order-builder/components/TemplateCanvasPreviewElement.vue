@@ -1,8 +1,6 @@
 <template>
   <v-group :config="outerGroupConfig">
     <v-group :config="innerGroupConfig">
-      <v-rect v-if="backgroundRectConfig" :config="backgroundRectConfig" />
-
       <template v-if="element.type === 'photo-placeholder'">
         <v-rect v-if="photoGridConfig" :config="photoGridConfig" />
         <v-image
@@ -54,21 +52,6 @@ const innerGroupConfig = computed(() => ({
   ...getElementInnerGroupConfig(props.element),
   listening: false,
 }))
-
-const backgroundRectConfig = computed(() => {
-  if (props.element.type !== 'background') {
-    return null
-  }
-
-  return {
-    x: 0,
-    y: 0,
-    width: props.element.size.width,
-    height: props.element.size.height,
-    fill: props.element.color,
-    listening: false,
-  }
-})
 
 const photoGridConfig = computed(() => {
   if (props.element.type !== 'photo-placeholder' || loadedImage.value) {

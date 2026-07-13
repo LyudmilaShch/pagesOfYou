@@ -434,28 +434,6 @@ const displayText = computed(() => {
 
 const hitAreaConfig = computed(() => getElementHitAreaConfig(props.element))
 
-const backgroundRectConfig = computed(() => {
-
-  if (props.element.type !== 'background') {
-
-    return null
-
-  }
-
-
-
-  return {
-
-    width: props.element.size.width,
-
-    height: props.element.size.height,
-
-    fill: props.element.color,
-
-  }
-
-})
-
 
 
 const photoRectConfig = computed(() =>
@@ -584,7 +562,6 @@ const isEditingText = computed(
 )
 
 provide(EDITOR_ELEMENT_VISUALS_KEY, {
-  backgroundRectConfig,
   photoRectConfig,
   photoUrl,
   photoIconLines,

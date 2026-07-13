@@ -73,7 +73,7 @@ const pageGroupConfig = computed(() => {
 
 const visibleElements = computed(() =>
   [...canvas.value.elements]
-    .filter((element) => element.visible && element.type !== 'background')
+    .filter((element) => element.visible)
     .sort((left, right) => left.zIndex - right.zIndex),
 )
 

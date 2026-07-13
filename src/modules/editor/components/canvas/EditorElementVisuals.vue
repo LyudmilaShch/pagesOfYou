@@ -1,6 +1,4 @@
 <template>
-  <v-rect v-if="ctx.backgroundRectConfig.value" :config="ctx.backgroundRectConfig.value" />
-
   <v-rect v-if="ctx.photoRectConfig.value && !ctx.photoUrl.value" :config="ctx.photoRectConfig.value" />
 
   <v-line

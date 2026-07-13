@@ -6,7 +6,6 @@ import type { PhotoBorderDrawNode } from '../../utils/element-stroke.util'
 import type { NineSliceImageConfig } from '../../utils/photo-frame.util'
 
 export interface EditorElementVisualsContext {
-  backgroundRectConfig: Ref<Record<string, unknown> | null>
   photoRectConfig: Ref<Record<string, unknown> | null>
   photoUrl: Ref<string | null>
   photoIconLines: Ref<Record<string, unknown>[]>
