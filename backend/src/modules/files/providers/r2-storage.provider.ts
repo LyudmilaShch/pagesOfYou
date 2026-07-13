@@ -46,6 +46,21 @@ export class R2StorageProvider implements IStorageProvider {
     return { uploadUrl, publicUrl, key };
   }
 
+  /** Server-side upload (as opposed to `generateUploadUrl`, which lets the client PUT directly). */
+  async uploadBuffer(key: string, body: Buffer, contentType: string): Promise<string> {
+    const command = new PutObjectCommand({
+      Bucket: this.bucketName,
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+    });
+
+    await this.client.send(command);
+    this.logger.debug(`Uploaded buffer to R2: ${key}`);
+
+    return this.getFileUrl(key);
+  }
+
   async deleteFile(key: string): Promise<void> {
     const command = new DeleteObjectCommand({
       Bucket: this.bucketName,

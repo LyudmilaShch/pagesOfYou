@@ -17,12 +17,9 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import type { Request } from 'express';
-import { diskStorage } from 'multer';
+import { memoryStorage } from 'multer';
 import type { FileFilterCallback } from 'multer';
-import { extname, join } from 'path';
-import { existsSync, mkdirSync } from 'fs';
-import { randomUUID } from 'crypto';
+import type { Request } from 'express';
 import { AdminJwtGuard } from '../admin-auth/guards/admin-jwt.guard';
 import { AdminRoleGuard } from '../admin-auth/guards/admin-role.guard';
 import { Public } from '../../common/decorators/public.decorator';
@@ -46,8 +43,9 @@ export class AdminUploadsController {
    * POST /api/admin/uploads/image
    *
    * Accepts a single image file (multipart/form-data field: "file").
-   * Saves it to uploads/magazine-types/ on disk.
-   * Returns { url } pointing to the publicly accessible file.
+   * Uploads it to Cloudflare R2 (magazine-types/ prefix) — never touches
+   * the backend's own disk, which does not persist across deploys/restarts.
+   * Returns { url } pointing to the publicly accessible R2 file.
    */
   @Post('image')
   @HttpCode(HttpStatus.OK)
@@ -70,30 +68,12 @@ export class AdminUploadsController {
     status: 200,
     description: 'Upload successful',
     schema: {
-      example: { success: true, data: { url: 'http://localhost:3000/uploads/magazine-types/uuid.jpg' } },
+      example: { success: true, data: { url: 'https://pub-xxx.r2.dev/magazine-types/uuid.jpg' } },
     },
   })
   @UseInterceptors(
     FileInterceptor('file', {
-      storage: diskStorage({
-        destination: (
-          _req: Request,
-          _file: Express.Multer.File,
-          cb: (error: Error | null, destination: string) => void,
-        ) => {
-          const dest = join(process.cwd(), 'uploads', 'magazine-types');
-          if (!existsSync(dest)) mkdirSync(dest, { recursive: true });
-          cb(null, dest);
-        },
-        filename: (
-          _req: Request,
-          file: Express.Multer.File,
-          cb: (error: Error | null, filename: string) => void,
-        ) => {
-          const ext = extname(file.originalname).toLowerCase() || '.jpg';
-          cb(null, `${randomUUID()}${ext}`);
-        },
-      }),
+      storage: memoryStorage(),
       fileFilter: (_req: Request, file: Express.Multer.File, cb: FileFilterCallback) => {
         if (ALLOWED_MIME_TYPES.includes(file.mimetype)) {
           cb(null, true);
@@ -109,6 +89,6 @@ export class AdminUploadsController {
     }),
   )
   uploadImage(@UploadedFile() file: Express.Multer.File) {
-    return this.service.getImageUrl(file);
+    return this.service.uploadImage(file);
   }
 }

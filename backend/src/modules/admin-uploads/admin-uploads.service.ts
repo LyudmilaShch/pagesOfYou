@@ -1,21 +1,26 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { toStoredAssetPath } from '../../common/utils/asset-url.util';
+import { randomUUID } from 'crypto';
+import { extname } from 'path';
+import { R2StorageProvider } from '../files/providers/r2-storage.provider';
 
 /**
- * Handles file URL resolution after Multer saves the file to disk.
+ * Uploads admin-provided images (magazine type covers, page previews,
+ * photo frames…) straight to R2 — the backend's own disk is ephemeral in
+ * production and must not be relied on for persistence.
  */
 @Injectable()
 export class AdminUploadsService {
-  getImageUrl(file: Express.Multer.File | undefined): { url: string } {
+  constructor(private readonly storage: R2StorageProvider) {}
+
+  async uploadImage(file: Express.Multer.File | undefined): Promise<{ url: string }> {
     if (!file) {
       throw new BadRequestException('Файл не передан.');
     }
 
-    const normalized = file.path.replace(/\\/g, '/');
-    const uploadsIdx = normalized.indexOf('uploads/');
-    const publicPath =
-      uploadsIdx !== -1 ? normalized.slice(uploadsIdx) : `uploads/${file.filename}`;
+    const ext = extname(file.originalname).toLowerCase() || '.jpg';
+    const key = `magazine-types/${randomUUID()}${ext}`;
+    const url = await this.storage.uploadBuffer(key, file.buffer, file.mimetype);
 
-    return { url: toStoredAssetPath(`/${publicPath}`) ?? `/${publicPath}` };
+    return { url };
   }
 }
