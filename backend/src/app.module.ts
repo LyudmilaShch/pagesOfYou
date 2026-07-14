@@ -7,6 +7,7 @@ import {
   jwtConfig,
   otpConfig,
   r2Config,
+  yandexStorageConfig,
 } from './config';
 import { PrismaModule } from './database';
 import { AdminAuthModule } from './modules/admin-auth/admin-auth.module';
@@ -30,7 +31,7 @@ import { HealthModule } from './modules/health/health.module';
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
-      load: [appConfig, databaseConfig, jwtConfig, adminJwtConfig, otpConfig, r2Config],
+      load: [appConfig, databaseConfig, jwtConfig, adminJwtConfig, otpConfig, r2Config, yandexStorageConfig],
       cache: true,
     }),
 

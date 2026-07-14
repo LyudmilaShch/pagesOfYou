@@ -43,9 +43,10 @@ export class AdminUploadsController {
    * POST /api/admin/uploads/image
    *
    * Accepts a single image file (multipart/form-data field: "file").
-   * Uploads it to Cloudflare R2 (magazine-types/ prefix) — never touches
-   * the backend's own disk, which does not persist across deploys/restarts.
-   * Returns { url } pointing to the publicly accessible R2 file.
+   * Uploads it to Yandex Object Storage (magazine-types/ prefix) — never
+   * touches the backend's own disk, which does not persist across
+   * deploys/restarts.
+   * Returns { url } pointing to the publicly accessible file.
    */
   @Post('image')
   @HttpCode(HttpStatus.OK)
@@ -68,7 +69,10 @@ export class AdminUploadsController {
     status: 200,
     description: 'Upload successful',
     schema: {
-      example: { success: true, data: { url: 'https://pub-xxx.r2.dev/magazine-types/uuid.jpg' } },
+      example: {
+        success: true,
+        data: { url: 'https://storage.yandexcloud.net/pages-of-you/magazine-types/uuid.jpg' },
+      },
     },
   })
   @UseInterceptors(

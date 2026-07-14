@@ -4,3 +4,4 @@ export * from './jwt.config';
 export * from './admin-jwt.config';
 export * from './otp.config';
 export * from './r2.config';
+export * from './yandex-storage.config';

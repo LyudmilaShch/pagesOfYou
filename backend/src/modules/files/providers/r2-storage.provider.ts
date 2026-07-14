@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { S3Client, DeleteObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -12,25 +12,52 @@ import type {
 export class R2StorageProvider implements IStorageProvider {
   private readonly logger = new Logger(R2StorageProvider.name);
   private readonly client: S3Client;
-  private readonly bucketName: string;
-  private readonly publicUrl: string;
+  private readonly bucketName?: string;
+  private readonly publicUrl?: string;
+  private readonly missingEnvVars: string[];
 
   constructor(private readonly config: ConfigService) {
-    const endpoint = config.get<string>('r2.endpoint')!;
-    const accessKeyId = config.get<string>('r2.accessKeyId')!;
-    const secretAccessKey = config.get<string>('r2.secretAccessKey')!;
+    const accountId = config.get<string>('r2.accountId');
+    const accessKeyId = config.get<string>('r2.accessKeyId');
+    const secretAccessKey = config.get<string>('r2.secretAccessKey');
 
-    this.bucketName = config.get<string>('r2.bucketName')!;
-    this.publicUrl = config.get<string>('r2.publicUrl')!;
+    this.bucketName = config.get<string>('r2.bucketName');
+    this.publicUrl = config.get<string>('r2.publicUrl');
+
+    this.missingEnvVars = Object.entries({
+      R2_ACCOUNT_ID: accountId,
+      R2_ACCESS_KEY_ID: accessKeyId,
+      R2_SECRET_ACCESS_KEY: secretAccessKey,
+      R2_BUCKET_NAME: this.bucketName,
+      R2_PUBLIC_URL: this.publicUrl,
+    })
+      .filter(([, value]) => !value)
+      .map(([name]) => name);
+
+    if (this.missingEnvVars.length > 0) {
+      this.logger.error(
+        `R2 is not configured — missing environment variable(s): ${this.missingEnvVars.join(', ')}. ` +
+          'Uploads to R2 will fail until these are set.',
+      );
+    }
 
     this.client = new S3Client({
       region: 'auto',
-      endpoint,
-      credentials: { accessKeyId, secretAccessKey },
+      endpoint: config.get<string>('r2.endpoint'),
+      credentials: { accessKeyId: accessKeyId ?? '', secretAccessKey: secretAccessKey ?? '' },
     });
   }
 
+  private assertConfigured(): void {
+    if (this.missingEnvVars.length > 0) {
+      throw new InternalServerErrorException(
+        `Хранилище R2 не настроено на сервере: отсутствуют переменные окружения ${this.missingEnvVars.join(', ')}.`,
+      );
+    }
+  }
+
   async generateUploadUrl(options: PresignedUploadOptions): Promise<PresignedUploadResult> {
+    this.assertConfigured();
     const { key, contentType, expiresIn = 900 } = options;
 
     const command = new PutObjectCommand({
@@ -46,22 +73,9 @@ export class R2StorageProvider implements IStorageProvider {
     return { uploadUrl, publicUrl, key };
   }
 
-  /** Server-side upload (as opposed to `generateUploadUrl`, which lets the client PUT directly). */
-  async uploadBuffer(key: string, body: Buffer, contentType: string): Promise<string> {
-    const command = new PutObjectCommand({
-      Bucket: this.bucketName,
-      Key: key,
-      Body: body,
-      ContentType: contentType,
-    });
-
-    await this.client.send(command);
-    this.logger.debug(`Uploaded buffer to R2: ${key}`);
-
-    return this.getFileUrl(key);
-  }
-
   async deleteFile(key: string): Promise<void> {
+    this.assertConfigured();
+
     const command = new DeleteObjectCommand({
       Bucket: this.bucketName,
       Key: key,
@@ -72,6 +86,7 @@ export class R2StorageProvider implements IStorageProvider {
   }
 
   getFileUrl(key: string): string {
+    this.assertConfigured();
     return `${this.publicUrl}/${key}`;
   }
 }

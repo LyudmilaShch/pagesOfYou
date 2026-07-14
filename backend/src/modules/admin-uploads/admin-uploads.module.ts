@@ -1,11 +1,10 @@
 import { Module } from '@nestjs/common';
 import { AdminUploadsController } from './admin-uploads.controller';
 import { AdminUploadsService } from './admin-uploads.service';
-import { FilesModule } from '../files/files.module';
+import { YandexStorageProvider } from './providers/yandex-storage.provider';
 
 @Module({
-  imports: [FilesModule],
   controllers: [AdminUploadsController],
-  providers: [AdminUploadsService],
+  providers: [AdminUploadsService, YandexStorageProvider],
 })
 export class AdminUploadsModule {}
