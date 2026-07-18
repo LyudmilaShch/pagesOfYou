@@ -10,6 +10,7 @@ import { PrismaService } from '../../database';
 import { resolveAssetUrl } from '../../common/utils/asset-url.util';
 import { MIN_JOURNAL_SPREADS } from '../../shared/constants/journal.constants';
 import { normalizeCanvasData } from '../../shared/types/canvas-data.types';
+import { flattenTree } from '../../shared/utils/element-tree.util';
 import {
   buildInitialJournalSlots,
   buildJournalPageSnapshot,
@@ -201,7 +202,7 @@ export class OrdersService {
     }
 
     const canvas = normalizeCanvasData(journalPage.pageSnapshot);
-    const elementMap = new Map(canvas.elements.map((element) => [element.id, element]));
+    const elementMap = new Map(flattenTree(canvas.elements).map((element) => [element.id, element]));
 
     for (const input of dto.values) {
       const element = elementMap.get(input.elementId);
@@ -562,7 +563,7 @@ export class OrdersService {
         journalPage.placeholderValues.map((value) => [value.elementId, value]),
       );
 
-      for (const element of canvas.elements) {
+      for (const element of flattenTree(canvas.elements)) {
         if (!isFillableElement(element)) {
           continue;
         }

@@ -3,8 +3,9 @@
  * Independent from Konva — used for storage, PDF generation and user filling.
  */
 
-import { normalizeCanvasElements } from '../utils/normalize-text-placeholder.util';
+import { normalizeCanvasElement } from '../utils/normalize-text-placeholder.util';
 import { migrateLegacyBackgroundElements } from '../utils/migrate-legacy-background.util';
+import { mapTree } from '../utils/element-tree.util';
 
 export interface CanvasPosition {
   x: number;
@@ -23,19 +24,20 @@ export type CanvasElementType =
   | 'subtitle-placeholder'
   | 'shape-rectangle'
   | 'shape-circle'
-  | 'shape-line';
+  | 'shape-line'
+  | 'group';
 
 export interface CanvasElementBase {
   id: string;
   type: CanvasElementType;
   name: string;
+  /** Relative to the owning container's content frame; root-level elements use page coordinates. */
   position: CanvasPosition;
   size: CanvasSize;
   rotation: number;
   opacity: number;
   visible: boolean;
   locked: boolean;
-  zIndex: number;
 }
 
 /** Decorative 9-slice frame, copied from the PhotoFrame catalog when selected. */
@@ -100,10 +102,22 @@ export interface CanvasShapeElement extends CanvasElementBase {
   strokeWidth: number;
 }
 
-export type CanvasElement =
+export type CanvasLeafElement =
   | CanvasPhotoPlaceholder
   | CanvasTextPlaceholder
   | CanvasShapeElement;
+
+/** A plain container node — a group is not a separate mechanism, just a node with children. */
+export interface CanvasGroupElement extends CanvasElementBase {
+  type: 'group';
+  children: CanvasElement[];
+}
+
+export type CanvasElement = CanvasLeafElement | CanvasGroupElement;
+
+export function isCanvasGroupElement(element: CanvasElement): element is CanvasGroupElement {
+  return element.type === 'group';
+}
 
 export interface PageBackgroundSettings {
   backgroundColor?: string;
@@ -115,7 +129,7 @@ export interface PageBackgroundSettings {
 }
 
 export interface CanvasData {
-  version: 1;
+  version: 2;
   pageWidth?: number;
   pageHeight?: number;
   backgroundColor?: string;
@@ -130,7 +144,7 @@ export interface CanvasData {
   elements: CanvasElement[];
 }
 
-export const CANVAS_DATA_VERSION = 1 as const;
+export const CANVAS_DATA_VERSION = 2 as const;
 
 export const A4_PAGE_WIDTH = 595;
 export const A4_PAGE_HEIGHT = 842;
@@ -234,13 +248,27 @@ export function createCanvasDataForPageType(pageType: string): CanvasData {
   return createDefaultCanvasData();
 }
 
+/** v1 (flat, `zIndex`-ordered) → v2 (tree, array-order-ordered): legacy paint order was `zIndex`,
+ * not array position, so root elements are re-sorted once and the field is dropped. v1 data never
+ * had `type: 'group'`/nested `children`, so this only ever touches the root level. */
+function normalizeElementTree(elements: Array<CanvasElement & { zIndex?: number }>): CanvasElement[] {
+  const sortedByLegacyZIndex = [...elements].sort(
+    (left, right) => (left.zIndex ?? 0) - (right.zIndex ?? 0),
+  );
+  const withoutZIndex = sortedByLegacyZIndex.map(({ zIndex: _zIndex, ...rest }) => rest as CanvasElement);
+
+  return mapTree(withoutZIndex, (leaf) => normalizeCanvasElement(leaf) as CanvasLeafElement);
+}
+
 export function normalizeCanvasData(raw: unknown): CanvasData {
   if (!raw || typeof raw !== 'object') {
     return createDefaultCanvasData();
   }
 
   const data = raw as Partial<CanvasData>;
-  const rawElements = Array.isArray(data.elements) ? (data.elements as CanvasElement[]) : [];
+  const rawElements = Array.isArray(data.elements)
+    ? (data.elements as Array<CanvasElement & { zIndex?: number }>)
+    : [];
   const migrated = migrateLegacyBackgroundElements(rawElements, data.backgroundColor);
   const backgroundCrop = normalizePageBackgroundCrop(data);
   const pageWidth = typeof data.pageWidth === 'number' ? data.pageWidth : 595;
@@ -262,7 +290,7 @@ export function normalizeCanvasData(raw: unknown): CanvasData {
   };
 
   const normalized: CanvasData = {
-    version: 1,
+    version: CANVAS_DATA_VERSION,
     pageWidth,
     pageHeight,
     backgroundColor: rootBackground.backgroundColor,
@@ -271,7 +299,7 @@ export function normalizeCanvasData(raw: unknown): CanvasData {
     backgroundImageCropX: rootBackground.backgroundImageCropX,
     backgroundImageCropY: rootBackground.backgroundImageCropY,
     backgroundImageScale: rootBackground.backgroundImageScale,
-    elements: normalizeCanvasElements(migrated.elements),
+    elements: normalizeElementTree(migrated.elements),
   };
 
   if (spread) {

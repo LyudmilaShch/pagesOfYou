@@ -2,6 +2,7 @@ import {
   A4_PAGE_WIDTH,
   A4_SPREAD_PAGE_HEIGHT,
   A4_SPREAD_PAGE_WIDTH,
+  CANVAS_DATA_VERSION,
   type CanvasData,
   type CanvasElement,
 } from '../types/canvas-data.types';
@@ -37,7 +38,7 @@ export function mergePageCanvasesIntoSpread(
   );
 
   return {
-    version: 1,
+    version: CANVAS_DATA_VERSION,
     pageWidth: A4_SPREAD_PAGE_WIDTH,
     pageHeight: A4_SPREAD_PAGE_HEIGHT,
     backgroundColor: leftCanvas.backgroundColor ?? rightCanvas.backgroundColor ?? '#FFFFFF',

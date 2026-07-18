@@ -22,6 +22,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import { normalizeCanvasData } from '@/modules/editor/models/canvas-data.model'
+import { flattenTree } from '@/modules/editor/utils/element-tree.util'
 import SpreadPageBackgroundLayers from '@/modules/editor/components/canvas/SpreadPageBackgroundLayers.vue'
 import TemplateCanvasPreviewElement from './TemplateCanvasPreviewElement.vue'
 
@@ -72,9 +73,7 @@ const pageGroupConfig = computed(() => {
 })
 
 const visibleElements = computed(() =>
-  [...canvas.value.elements]
-    .filter((element) => element.visible)
-    .sort((left, right) => left.zIndex - right.zIndex),
+  flattenTree(canvas.value.elements).filter((element) => element.visible),
 )
 
 function updateContainerSize(): void {

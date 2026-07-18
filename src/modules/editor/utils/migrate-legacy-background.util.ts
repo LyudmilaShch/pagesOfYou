@@ -3,7 +3,7 @@ const DEFAULT_PAGE_BACKGROUNDS = new Set(['#FFFFFF', '#ffffff', '#F3F1ED', '#f3f
 interface LegacyBackgroundLike {
   type: string
   color?: string
-  zIndex: number
+  zIndex?: number
 }
 
 /** Move legacy `background` elements into page-level backgroundColor and drop them. */
@@ -18,7 +18,9 @@ export function migrateLegacyBackgroundElements<T extends LegacyBackgroundLike>(
     return { elements: otherElements, backgroundColor: pageBackgroundColor }
   }
 
-  const bottomBackground = [...legacyBackgrounds].sort((left, right) => left.zIndex - right.zIndex)[0]
+  const bottomBackground = [...legacyBackgrounds].sort(
+    (left, right) => (left.zIndex ?? 0) - (right.zIndex ?? 0),
+  )[0]
   const legacyColor =
     typeof bottomBackground?.color === 'string' ? bottomBackground.color : undefined
 

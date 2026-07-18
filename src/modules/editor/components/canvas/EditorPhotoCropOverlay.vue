@@ -46,6 +46,7 @@ import {
 import { getPhotoRenderBox } from '../../utils/photo-frame.util'
 import { getPlaceholderPhotoUrl } from '../../utils/placeholder-display.util'
 import { spreadLogicalXToVisual } from '../../utils/spread.util'
+import { findNodeById, getAbsoluteTransform } from '../../utils/element-tree.util'
 
 const props = defineProps<{
   pageOffset: { x: number; y: number }
@@ -77,6 +78,25 @@ const photoCropEditingElementId = computed(() =>
 const pageBackgroundCropEditing = computed(
   () => false,
 )
+
+/** Tree-aware lookup — `store.elements` (the shared editor/order-canvas interface) is root-level
+ * only in the editor; order-builder has no nesting (fed a pre-flattened list). */
+function findPhotoById(id: string): PhotoPlaceholder | null {
+  const found = orderCanvas ? store.elements.find((item) => item.id === id) : findNodeById(editorStore.elements, id)
+
+  return found && found.type === 'photo-placeholder' ? (found as PhotoPlaceholder) : null
+}
+
+/** Absolute page position/rotation — for a nested element (inside a group), `position` is LOCAL
+ * to its parent; only root-level elements have `position` directly in page coordinates. */
+function getPhotoAbsoluteBox(id: string): { x: number; y: number; rotationDeg: number } {
+  if (orderCanvas) {
+    const photo = store.elements.find((item) => item.id === id)
+    return { x: photo?.position.x ?? 0, y: photo?.position.y ?? 0, rotationDeg: photo?.rotation ?? 0 }
+  }
+
+  return getAbsoluteTransform(editorStore.elements, id)
+}
 
 const viewportRef = ref<HTMLElement | null>(null)
 const imageNaturalSize = ref({ width: 0, height: 0 })
@@ -124,23 +144,23 @@ const cropSession = computed((): CropSession | null => {
     return null
   }
 
-  const found = store.elements.find((item) => item.id === photoCropEditingElementId.value)
-  if (!found || found.type !== 'photo-placeholder') {
+  const photo = findPhotoById(photoCropEditingElementId.value)
+  if (!photo) {
     return null
   }
 
-  const photo = found as PhotoPlaceholder
   const url = getPlaceholderPhotoUrl(photo, photo.defaultImageUrl)
   const box = getPhotoRenderBox(photo.frame, photo.size.width, photo.size.height)
+  const absoluteBox = getPhotoAbsoluteBox(photo.id)
 
   return {
     mode: 'photo',
     frameWidth: box.width,
     frameHeight: box.height,
-    frameX: photo.position.x + box.x,
-    frameY: photo.position.y + box.y,
+    frameX: absoluteBox.x + box.x,
+    frameY: absoluteBox.y + box.y,
     borderRadius: photo.borderRadius,
-    rotation: photo.rotation,
+    rotation: absoluteBox.rotationDeg,
     fitMode: resolvePhotoRenderFitMode(photo.fitMode),
     cropX: photo.cropX,
     cropY: photo.cropY,
@@ -154,12 +174,7 @@ const photoElement = computed(() => {
     return null
   }
 
-  const found = store.elements.find((item) => item.id === photoCropEditingElementId.value)
-  if (!found || found.type !== 'photo-placeholder') {
-    return null
-  }
-
-  return found as PhotoPlaceholder
+  return findPhotoById(photoCropEditingElementId.value)
 })
 
 const imageSrc = computed(() => {

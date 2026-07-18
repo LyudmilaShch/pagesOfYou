@@ -23,12 +23,28 @@
     <template v-if="showSpreadSplitVisuals">
       <v-group :config="spreadSplitLeftClipConfig">
         <v-group :config="spreadSplitVisualsConfig">
-          <EditorElementVisuals />
+          <template v-if="isContainerElement">
+            <EditorElementNode
+              v-for="child in groupChildren"
+              :key="child.id"
+              :element="child"
+              :parent-id="props.element.id"
+            />
+          </template>
+          <EditorElementVisuals v-else />
         </v-group>
       </v-group>
       <v-group :config="spreadSplitRightClipConfig">
         <v-group :config="spreadSplitVisualsConfig">
-          <EditorElementVisuals />
+          <template v-if="isContainerElement">
+            <EditorElementNode
+              v-for="child in groupChildren"
+              :key="child.id"
+              :element="child"
+              :parent-id="props.element.id"
+            />
+          </template>
+          <EditorElementVisuals v-else />
         </v-group>
       </v-group>
     </template>
@@ -44,7 +60,15 @@
     <v-rect v-if="hitAreaConfig" :config="hitAreaConfig" />
 
     <v-group v-if="showTransformGroupVisuals" :config="transformPreviewClipConfig">
-      <EditorElementVisuals />
+      <template v-if="isContainerElement">
+        <EditorElementNode
+          v-for="child in groupChildren"
+          :key="child.id"
+          :element="child"
+          :parent-id="props.element.id"
+        />
+      </template>
+      <EditorElementVisuals v-else />
     </v-group>
 
     <v-rect v-if="photoRepositionBoundsConfig" :config="photoRepositionBoundsConfig" />
@@ -128,7 +152,9 @@ import { MIN_TEXT_BOX_WIDTH } from '../../constants/text.constants'
 import {
   PHOTO_DOUBLE_CLICK_MS,
 } from '../../constants/page.constants'
-import type { PageElement } from '../../models'
+import type { GroupElement, PageElement } from '../../models'
+import { isGroupElement } from '../../models'
+import { findNodeById, getSiblings } from '../../utils/element-tree.util'
 import { useElementCanvasStore } from '../../composables/use-element-canvas-store'
 import { useEditorStore } from '../../store/editor.store'
 
@@ -171,11 +197,17 @@ import { EDITOR_ELEMENT_VISUALS_KEY } from './editor-element-visuals.context'
 
 
 
-const props = defineProps<{
+const props = withDefaults(
+  defineProps<{
 
-  element: PageElement
+    element: PageElement
+    /** Id of the direct owning container, or null at root — used to gate interactivity to the
+     * container currently being edited in isolation. */
+    parentId?: string | null
 
-}>()
+  }>(),
+  { parentId: null },
+)
 
 
 
@@ -209,11 +241,22 @@ const isTransforming = ref(false)
 const dragPosition = ref<{ x: number; y: number } | null>(null)
 const groupDragSnapshot = ref<Record<string, { x: number; y: number }> | null>(null)
 
+// Spread (two-page) mirroring is a root/page-level concept over absolute page coordinates —
+// nested children use parent-relative coordinates, so it must not apply to them (their content is
+// already correctly placed within their parent's already-mirrored frame via Konva's own nesting).
 function toVisualX(x: number): number {
+  if (props.parentId != null) {
+    return x
+  }
+
   return spreadLogicalXToVisual(x, store.pageWidth, store.pageHeight, props.element.size.width)
 }
 
 function toLogicalX(x: number): number {
+  if (props.parentId != null) {
+    return x
+  }
+
   return spreadVisualXToLogical(x, store.pageWidth, store.pageHeight, props.element.size.width)
 }
 
@@ -295,7 +338,8 @@ const outerGroupConfig = computed(() => ({
     !store.previewMode &&
     !isPhotoCropEditing.value &&
     !isPhotoDimmed.value &&
-    !store.textEditingElementId,
+    !store.textEditingElementId &&
+    isAtActiveScope.value,
 }))
 
 const innerGroupShellConfig = {
@@ -315,8 +359,15 @@ function syncInnerFromElement(rotationDeg = props.element.rotation): void {
   syncInnerTransformNode(inner, getPivotSize(), rotationDeg)
 }
 
-const pageContentClipConfig = computed(() =>
-  getElementPageClipConfig(
+const pageContentClipConfig = computed(() => {
+  // This clip assumes `position` is the element's absolute page position, which only holds at
+  // root level — nested children use parent-relative coordinates, so skip it for them (their
+  // content is already implicitly bounded by the root ancestor's own page clip).
+  if (props.parentId != null) {
+    return {}
+  }
+
+  return getElementPageClipConfig(
     {
       position: displayPosition.value,
       size: props.element.size,
@@ -324,11 +375,15 @@ const pageContentClipConfig = computed(() =>
     },
     store.pageWidth,
     store.pageHeight,
-  ),
-)
+  )
+})
 
 const useSpreadSplit = computed(
   () =>
+    // Fold-spanning is a root/page-level concept expressed in absolute page coordinates — nested
+    // children use parent-relative coordinates, so they never split; they render normally within
+    // their (already correctly positioned, via Konva's own nested transforms) parent.
+    props.parentId == null &&
     store.isSpreadPage &&
     props.element.type !== 'shape-line' &&
     elementSpansSpreadFold(
@@ -377,6 +432,44 @@ const spreadSplitVisualsConfig = computed(() =>
     rotation: props.element.rotation,
   }),
 )
+
+/** Whether this node is directly interactive right now — root elements when nothing is isolated,
+ * or direct children of the container currently being edited in isolation. Everything else (the
+ * outer container's other descendants, siblings of an isolated group, etc.) must NOT be draggable
+ * or clickable itself: otherwise Konva would drag whichever child the pointer happens to land on
+ * instead of the group as a whole. */
+const isAtActiveScope = computed(() => {
+  if (orderCanvas) {
+    return true
+  }
+
+  return (props.parentId ?? null) === (editorStore.groupEditingId ?? null)
+})
+
+const isContainerElement = computed(() => isGroupElement(props.element))
+const groupChildren = computed(() =>
+  isGroupElement(props.element) ? (props.element as GroupElement).children : [],
+)
+
+/** Tree-aware lookup for elements nested inside a group — `store.elements` (the shared
+ * editor/order-canvas interface) is root-level only in the editor; order-builder has no nesting. */
+function findElementById(id: string): PageElement | undefined {
+  if (orderCanvas) {
+    return store.elements.find((item) => item.id === id)
+  }
+
+  return findNodeById(editorStore.elements, id) ?? undefined
+}
+
+/** Smart guides only ever compare against siblings sharing the same parent (Figma-like scoping) —
+ * order-builder has no nesting, so its flat element list is already "siblings". */
+const smartGuideCandidates = computed(() => {
+  if (orderCanvas) {
+    return store.elements
+  }
+
+  return getSiblings(editorStore.elements, props.element.id)
+})
 
 function isActiveGroupDrag(): boolean {
   return (
@@ -826,6 +919,12 @@ function handleSelect(event: Konva.KonvaEventObject<MouseEvent | TouchEvent>): v
     return
   }
 
+  if (!isAtActiveScope.value) {
+    // Not interactive at this scope — don't cancelBubble, so the event reaches the enclosing
+    // (interactive) container's own handler instead of getting stuck on this locked descendant.
+    return
+  }
+
   if (isPhotoRepositionChildTarget(event.target)) {
     return
   }
@@ -870,6 +969,16 @@ function handleSelect(event: Konva.KonvaEventObject<MouseEvent | TouchEvent>): v
 
 function handleDblClick(event: Konva.KonvaEventObject<MouseEvent | TouchEvent>): void {
   if (store.previewMode || props.element.locked) {
+    return
+  }
+
+  if (!isAtActiveScope.value) {
+    return
+  }
+
+  if (!orderCanvas && isGroupElement(props.element)) {
+    event.cancelBubble = true
+    editorStore.stepIntoGroupEditing(props.element.id)
     return
   }
 
@@ -1093,6 +1202,16 @@ function handlePhotoScalePointerDown(
 
 
 function applySnapToOuter(outer: Konva.Group): void {
+  if (props.parentId != null) {
+    // Nested children: grid size and smart guides are both defined in page-absolute terms, which
+    // don't correspond to a child's small LOCAL (parent-relative) coordinates. Imperatively
+    // overwriting the node's position from either fights Konva's own native per-tick drag
+    // recomputation (which already correctly composes the full nested-transform chain), producing
+    // visible jitter. Leave Konva's native positioning untouched for nested drags.
+    store.clearSmartGuideLines()
+    return
+  }
+
   let { x, y } = readLogicalTopLeftFromOuter(outer)
   let snappedX = false
   let snappedY = false
@@ -1105,7 +1224,7 @@ function applySnapToOuter(outer: Konva.Group): void {
       height: props.element.size.height,
       pageWidth: store.pageWidth,
       pageHeight: store.pageHeight,
-      otherElements: store.elements,
+      otherElements: smartGuideCandidates.value,
       excludeId: props.element.id,
     })
 
@@ -1135,7 +1254,20 @@ function applySnapToOuter(outer: Konva.Group): void {
   applyOuterPosition(outer, { x, y })
 }
 
+/** Konva bubbles dragstart/dragmove/dragend/transform* up the node tree, so an ancestor
+ * EditorElementNode's own handlers ALSO fire for a descendant's drag/transform gesture (with
+ * `event.target` still pointing at the descendant) — ignore anything that didn't originate on
+ * this instance's own node, otherwise the ancestor's handler fights the descendant's over the
+ * same node's position every tick. */
+function isOwnDragEvent(event: Konva.KonvaEventObject<unknown>): boolean {
+  return event.target === getOuterNode()
+}
+
 function handleDragStart(event: Konva.KonvaEventObject<DragEvent>): void {
+  if (!isOwnDragEvent(event)) {
+    return
+  }
+
   if (isPhotoRepositionChildTarget(event.target)) {
     return
   }
@@ -1159,6 +1291,10 @@ function handleDragStart(event: Konva.KonvaEventObject<DragEvent>): void {
 }
 
 function handleDragMove(event: Konva.KonvaEventObject<DragEvent>): void {
+  if (!isOwnDragEvent(event)) {
+    return
+  }
+
   const outer = event.target as Konva.Group
   applySnapToOuter(outer)
 
@@ -1200,6 +1336,10 @@ function handleDragMove(event: Konva.KonvaEventObject<DragEvent>): void {
 }
 
 function handleDragEnd(event: Konva.KonvaEventObject<DragEvent>): void {
+  if (!isOwnDragEvent(event)) {
+    return
+  }
+
   const outer = event.target as Konva.Group
   applySnapToOuter(outer)
   store.clearSmartGuideLines()
@@ -1314,7 +1454,7 @@ function applyTextTransformFromNode(inner: Konva.Group): void {
     { live: true },
   )
 
-  const updated = store.elements.find((item) => item.id === props.element.id)
+  const updated = findElementById(props.element.id)
   if (updated) {
     syncInnerTransformNode(
       inner,
@@ -1405,7 +1545,7 @@ function handleTransformEnd(event: Konva.KonvaEventObject<Event>): void {
         resizedBox?.height ?? inner.height(),
       )
     } else if (isResizing && !isTextRotation) {
-      const updated = store.elements.find((item) => item.id === props.element.id)
+      const updated = findElementById(props.element.id)
       if (updated) {
         size.width = updated.size.width
         size.height = updated.size.height

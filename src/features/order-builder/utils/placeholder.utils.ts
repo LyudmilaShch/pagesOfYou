@@ -52,10 +52,6 @@ export function getPlaceholderLabel(element: PageElement): string {
   return element.name
 }
 
-export function sortElementsByZIndex(elements: PageElement[]): PageElement[] {
-  return [...elements].sort((a, b) => a.zIndex - b.zIndex)
-}
-
 export function isPlaceholderFilled(
   element: PageElement,
   value: { textValue?: string | null; jsonValue?: { url?: string } | null } | undefined,

@@ -56,8 +56,10 @@ export function normalizeTextPlaceholderElement(element: CanvasElement): CanvasE
   };
 }
 
+export function normalizeCanvasElement(element: CanvasElement): CanvasElement {
+  return normalizePhotoPlaceholderElement(normalizeTextPlaceholderElement(element));
+}
+
 export function normalizeCanvasElements(elements: CanvasElement[]): CanvasElement[] {
-  return elements.map((element) =>
-    normalizePhotoPlaceholderElement(normalizeTextPlaceholderElement(element)),
-  );
+  return elements.map(normalizeCanvasElement);
 }

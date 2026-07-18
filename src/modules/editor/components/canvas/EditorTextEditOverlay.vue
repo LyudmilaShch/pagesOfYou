@@ -33,6 +33,7 @@ import {
   resolveTextEditingDraft,
 } from '../../utils/text-layout.util'
 import { spreadLogicalXToVisual } from '../../utils/spread.util'
+import { findNodeById, getAbsoluteTransform } from '../../utils/element-tree.util'
 
 const props = defineProps<{
   pageOffset: { x: number; y: number }
@@ -50,28 +51,47 @@ const textEditingElementId = computed(() =>
   orderCanvas ? orderCanvas.textEditingElementId : editorStore.textEditingElementId,
 )
 
+/** Tree-aware lookup — `store.elements` (the shared editor/order-canvas interface) is root-level
+ * only in the editor; order-builder has no nesting (fed a pre-flattened list). */
+function findElementById(id: string): TextPlaceholder | null {
+  const found = orderCanvas
+    ? store.elements.find((item) => item.id === id)
+    : findNodeById(editorStore.elements, id)
+
+  return found && isTextPlaceholderElement(found) ? (found as TextPlaceholder) : null
+}
+
 const element = computed(() => {
   if (!textEditingElementId.value) {
     return null
   }
 
-  const found = store.elements.find((item) => item.id === textEditingElementId.value)
-  if (!found || !isTextPlaceholderElement(found)) {
+  return findElementById(textEditingElementId.value)
+})
+
+/** Absolute page position/rotation — for a nested element (inside a group), `element.position` is
+ * LOCAL to its parent; only root-level elements have `position` directly in page coordinates. */
+const absoluteBox = computed(() => {
+  if (!element.value) {
     return null
   }
 
-  return found as TextPlaceholder
+  if (orderCanvas) {
+    return { x: element.value.position.x, y: element.value.position.y, rotationDeg: 0 }
+  }
+
+  return getAbsoluteTransform(editorStore.elements, element.value.id)
 })
 
 const overlayStyle = computed(() => {
-  if (!element.value) {
+  if (!element.value || !absoluteBox.value) {
     return null
   }
 
   const scale = props.pageScale
   const padding = TEXT_BOX_PADDING * scale
   const visualX = spreadLogicalXToVisual(
-    element.value.position.x,
+    absoluteBox.value.x,
     store.pageWidth,
     store.pageHeight,
     element.value.size.width,
@@ -79,10 +99,14 @@ const overlayStyle = computed(() => {
 
   return {
     left: `${props.pageOffset.x + visualX * scale}px`,
-    top: `${props.pageOffset.y + element.value.position.y * scale}px`,
+    top: `${props.pageOffset.y + absoluteBox.value.y * scale}px`,
     width: `${element.value.size.width * scale}px`,
     height: `${element.value.size.height * scale}px`,
     padding: `${padding}px`,
+    transform: absoluteBox.value.rotationDeg
+      ? `rotate(${absoluteBox.value.rotationDeg}deg)`
+      : undefined,
+    transformOrigin: 'center center',
   }
 })
 
@@ -115,8 +139,8 @@ watch(
       return
     }
 
-    const current = store.elements.find((item) => item.id === id)
-    if (!current || !isTextPlaceholderElement(current)) {
+    const current = findElementById(id)
+    if (!current) {
       return
     }
 

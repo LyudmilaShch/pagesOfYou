@@ -10,6 +10,7 @@ export type {
 } from './text-placeholder.model'
 export type { TitlePlaceholder, SubtitlePlaceholder } from './title-placeholder.model'
 export type { ShapeElement } from './shape-element.model'
+export type { GroupElement } from './group-element.model'
 export type { EditorDocument } from './page-template.model'
 export type { CanvasData } from './canvas-data.model'
 export { CANVAS_DATA_VERSION, createEmptyCanvasData, normalizeCanvasData } from './canvas-data.model'
@@ -21,13 +22,21 @@ import type {
   TitlePlaceholder,
 } from './title-placeholder.model'
 import type { TextPlaceholder } from './text-placeholder.model'
+import type { GroupElement } from './group-element.model'
 
-export type PageElement =
+/** Leaf node — everything that isn't a container. */
+export type LeafElement =
   | PhotoPlaceholder
   | TextPlaceholder
   | TitlePlaceholder
   | SubtitlePlaceholder
   | ShapeElement
+
+export type PageElement = LeafElement | GroupElement
+
+export function isGroupElement(element: PageElement): element is GroupElement {
+  return element.type === 'group'
+}
 
 export function isTextElement(
   element: PageElement,

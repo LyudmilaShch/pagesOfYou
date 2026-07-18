@@ -8,15 +8,17 @@ export type PageElementType =
   | 'shape-rectangle'
   | 'shape-circle'
   | 'shape-line'
+  | 'group'
 
 export interface PageElementBase {
   id: string
   type: PageElementType
   name: string
+  /** Relative to the owning container's content frame; root-level elements use page coordinates. */
   position: Position
   size: Size
+  /** Relative to the owning container's own rotation. */
   rotation: number
-  zIndex: number
   locked: boolean
   visible: boolean
   opacity: number

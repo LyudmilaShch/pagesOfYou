@@ -7,6 +7,7 @@ import {
   DEFAULT_PAGE_BACKGROUND_IMAGE_FIT,
 } from '@/modules/editor/models/page-background.model'
 import {
+  CANVAS_DATA_VERSION,
   createEmptyCanvasData,
   createSpreadCanvasData,
   normalizeCanvasData,
@@ -61,7 +62,7 @@ export function mergePageCanvasesIntoSpread(
   )
 
   return {
-    version: 1,
+    version: CANVAS_DATA_VERSION,
     pageWidth: A4_SPREAD_PAGE_WIDTH,
     pageHeight: A4_SPREAD_PAGE_HEIGHT,
     backgroundColor: leftCanvas.backgroundColor ?? rightCanvas.backgroundColor ?? '#FFFFFF',

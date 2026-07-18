@@ -12,6 +12,7 @@ import {
 import { getPageCenterPosition } from '@/modules/editor/utils/snap.util'
 import { isSpreadCanvas } from '@/modules/editor/utils/spread.util'
 import { getPlaceholderPhotoUrl } from '@/modules/editor/utils/placeholder-display.util'
+import { flattenTree } from '@/modules/editor/utils/element-tree.util'
 import { useErrorMessageModal } from '@/shared/composables/useErrorMessageModal'
 import { getUploadErrorMessage } from '@/shared/utils/api-error.util'
 import { filesApi } from '../api/orders.api'
@@ -29,7 +30,6 @@ import {
   getPlaceholderLabel,
   isFillableElement,
   resolvePlaceholderValueType,
-  sortElementsByZIndex,
 } from '../utils/placeholder.utils'
 
 interface OrderFillSessionOptions {
@@ -125,7 +125,7 @@ export function useOrderFillSession(options: OrderFillSessionOptions) {
     }
 
     const canvas = normalizeCanvasData(options.currentJournalPage.value.pageSnapshot)
-    return sortElementsByZIndex(canvas.elements)
+    return flattenTree(canvas.elements)
   })
 
   const fillableElements = computed(() => currentElements.value.filter(isFillableElement))

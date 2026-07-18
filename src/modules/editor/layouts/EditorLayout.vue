@@ -58,6 +58,28 @@
         </v-btn>
 
         <v-btn
+          icon
+          size="small"
+          variant="text"
+          :disabled="store.selectionCount < 2 || store.previewMode"
+          title="Сгруппировать (Ctrl+G)"
+          @click="store.groupSelection()"
+        >
+          <v-icon size="20">mdi-group</v-icon>
+        </v-btn>
+
+        <v-btn
+          icon
+          size="small"
+          variant="text"
+          :disabled="!canUngroupSelection || store.previewMode"
+          title="Разгруппировать (Ctrl+Shift+G)"
+          @click="ungroupSelection()"
+        >
+          <v-icon size="20">mdi-ungroup</v-icon>
+        </v-btn>
+
+        <v-btn
           size="small"
           :variant="store.previewMode ? 'flat' : 'text'"
           :color="store.previewMode ? 'primary' : undefined"
@@ -138,10 +160,14 @@ function handleKeyDown(event: KeyboardEvent): void {
     return
   }
 
-  const key = event.key.toLowerCase()
+  // `event.code` reflects the PHYSICAL key regardless of the active input language (e.g. on a
+  // Cyrillic ЙЦУКЕН layout, `event.key` for the physical G key is "п", not "g") — `event.key` is
+  // fine for named keys (Escape/Delete/Backspace, unaffected by layout) but letter shortcuts must
+  // key off `code` to work under any keyboard layout.
+  const code = event.code
   const withCtrl = event.ctrlKey || event.metaKey
 
-  if (withCtrl && key === 's') {
+  if (withCtrl && code === 'KeyS') {
     event.preventDefault()
     if (!store.previewMode && store.isDirty) {
       void handleSave()
@@ -149,19 +175,19 @@ function handleKeyDown(event: KeyboardEvent): void {
     return
   }
 
-  if (withCtrl && key === 'z' && !event.shiftKey) {
+  if (withCtrl && code === 'KeyZ' && !event.shiftKey) {
     event.preventDefault()
     store.undo()
     return
   }
 
-  if (withCtrl && (key === 'y' || (key === 'z' && event.shiftKey))) {
+  if (withCtrl && (code === 'KeyY' || (code === 'KeyZ' && event.shiftKey))) {
     event.preventDefault()
     store.redo()
     return
   }
 
-  if (withCtrl && key === 'd') {
+  if (withCtrl && code === 'KeyD') {
     event.preventDefault()
     if (!store.previewMode) {
       store.duplicateElement()
@@ -169,7 +195,23 @@ function handleKeyDown(event: KeyboardEvent): void {
     return
   }
 
-  if (key === 'escape') {
+  if (withCtrl && code === 'KeyG' && event.shiftKey) {
+    event.preventDefault()
+    if (!store.previewMode) {
+      ungroupSelection()
+    }
+    return
+  }
+
+  if (withCtrl && code === 'KeyG') {
+    event.preventDefault()
+    if (!store.previewMode) {
+      store.groupSelection()
+    }
+    return
+  }
+
+  if (event.key === 'Escape') {
     if (store.previewMode) {
       store.setPreviewMode(false)
     } else {
@@ -183,8 +225,24 @@ function handleKeyDown(event: KeyboardEvent): void {
   }
 
   if ((event.key === 'Delete' || event.key === 'Backspace') && store.hasSelection) {
+    const impactCount = store.getRemovalImpactCount(store.selectedElementIds)
+    if (impactCount > 0 && !window.confirm(`Удалить группу и ${impactCount} вложенных объектов?`)) {
+      return
+    }
     store.removeSelectedElements()
   }
+}
+
+const canUngroupSelection = computed(
+  () => store.selectionCount === 1 && store.selectedElement?.type === 'group',
+)
+
+function ungroupSelection(): void {
+  if (!canUngroupSelection.value || !store.selectedElement) {
+    return
+  }
+
+  store.ungroupElement(store.selectedElement.id)
 }
 
 async function handleSave(): Promise<void> {

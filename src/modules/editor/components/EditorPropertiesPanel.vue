@@ -1854,17 +1854,16 @@ function handleDuplicate(): void {
 }
 
 function handleRemove(): void {
-
   if (!selected.value) {
-
     return
-
   }
 
-
+  const impactCount = store.getRemovalImpactCount([selected.value.id])
+  if (impactCount > 0 && !window.confirm(`Удалить группу и ${impactCount} вложенных объектов?`)) {
+    return
+  }
 
   store.removeElement(selected.value.id)
-
 }
 
 </script>

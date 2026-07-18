@@ -40,16 +40,15 @@ import {
   rectsIntersect,
   type MultiAlignMode,
 } from '../utils/align-elements.util'
-import {
-  getElementSelectionBounds,
-  isSelectableEditorElement,
-} from '../utils/element-bounds.util'
+import { isSelectableEditorElement } from '../utils/element-bounds.util'
 import { createElementFromLibrary } from '../factories/create-element.factory'
 import type { LibraryElementType } from '../factories/create-element.factory'
 import type { AdminMagazinePage } from '@/shared/api/admin/magazine-pages.api'
 import { adminMagazinePagesApi } from '@/shared/api/admin/magazine-pages.api'
 import { toStoredAssetPath } from '@/shared/config/assets'
 import type { PageElement } from '../models'
+import { isGroupElement } from '../models'
+import type { GroupElement } from '../models/group-element.model'
 import type { EditorDocument } from '../models/page-template.model'
 import { normalizeCanvasData } from '../models/canvas-data.model'
 import type { Position, Size } from '../models/geometry.model'
@@ -70,6 +69,25 @@ import {
   type PhotoCropState,
 } from '../utils/photo-crop.util'
 import { getPhotoRenderBox } from '../utils/photo-frame.util'
+import {
+  absoluteToLocal,
+  childBoxFromLocal,
+  cloneSubtree,
+  contentFrameOf,
+  countDescendants,
+  findNodeById,
+  flattenTree,
+  generateElementId,
+  getAbsoluteTransform,
+  getAncestors,
+  getContentFrameOf,
+  getDescendants,
+  getElementAbsoluteBounds,
+  locateNode,
+  walkTree,
+  type AbsoluteBox,
+  type TreeLocation,
+} from '../utils/element-tree.util'
 
 export type ElementPatch = {
   position?: Partial<Position>
@@ -114,22 +132,6 @@ const HISTORY_DEBOUNCE_MS = 500
 const MIN_ZOOM = 0.25
 const MAX_ZOOM = 4
 
-let elementDuplicateCounter = 0
-
-function cloneElementForDuplicate(element: PageElement, zIndex: number): PageElement {
-  elementDuplicateCounter += 1
-  const clone = JSON.parse(JSON.stringify(element)) as PageElement
-  clone.id = `${element.type}-copy-${Date.now()}-${elementDuplicateCounter}`
-  clone.name = `${element.name} (копия)`
-  clone.position = {
-    x: element.position.x + 20,
-    y: element.position.y + 20,
-  }
-  clone.zIndex = zIndex
-  clone.locked = false
-  return clone
-}
-
 export const useEditorStore = defineStore('editor', () => {
   const document = ref<EditorDocument | null>(null)
   const selectedElementIds = ref<string[]>([])
@@ -151,6 +153,8 @@ export const useEditorStore = defineStore('editor', () => {
   const photoDimElementId = ref<string | null>(null)
   const photoDropTargetId = ref<string | null>(null)
   const liveDragPositions = ref<Record<string, Position>>({})
+  /** Outermost → innermost currently-entered container ids; [] = at page/root level. */
+  const groupEditingPath = ref<string[]>([])
 
   const historyPast = ref<CanvasSnapshot[]>([])
   const historyFuture = ref<CanvasSnapshot[]>([])
@@ -160,11 +164,11 @@ export const useEditorStore = defineStore('editor', () => {
   let historyDebounceTimer: ReturnType<typeof setTimeout> | null = null
   let liveTransformActive = ref(false)
 
-  const elements = computed(() =>
-    [...(document.value?.canvasData.elements ?? [])].sort((a, b) => a.zIndex - b.zIndex),
-  )
+  /** Root-level nodes, in paint order (array order = bottom → top). */
+  const elements = computed(() => document.value?.canvasData.elements ?? [])
 
-  const layers = computed(() => [...elements.value].reverse())
+  /** Leaves only, at any depth, with ABSOLUTE page coordinates already composed. */
+  const flatElements = computed(() => flattenTree(elements.value))
 
   const selectedElementId = computed(() => selectedElementIds.value[0] ?? null)
 
@@ -173,16 +177,12 @@ export const useEditorStore = defineStore('editor', () => {
       return null
     }
 
-    return (
-      document.value?.canvasData.elements.find(
-        (element) => element.id === selectedElementIds.value[0],
-      ) ?? null
-    )
+    return findNodeById(elements.value, selectedElementIds.value[0])
   })
 
   const selectedElements = computed(() =>
     selectedElementIds.value
-      .map((id) => document.value?.canvasData.elements.find((element) => element.id === id))
+      .map((id) => findNodeById(elements.value, id))
       .filter((element): element is PageElement => element != null),
   )
 
@@ -198,13 +198,25 @@ export const useEditorStore = defineStore('editor', () => {
     return selectedElementIds.value.includes(id)
   }
 
-  const nextZIndex = computed(
-    () =>
-      (document.value?.canvasData.elements ?? []).reduce(
-        (max, element) => Math.max(max, element.zIndex),
-        0,
-      ) + 1,
+  /** Innermost container currently being edited in isolation (double-click), or null at root. */
+  const groupEditingId = computed(() => groupEditingPath.value.at(-1) ?? null)
+
+  /** Root-first breadcrumb of the group nodes currently being navigated. */
+  const groupEditingBreadcrumb = computed(() =>
+    groupEditingPath.value
+      .map((id) => findNodeById(elements.value, id))
+      .filter((node): node is GroupElement => node != null && isGroupElement(node)),
   )
+
+  /** Direct children of the level currently being edited (root elements when not isolated). */
+  const currentScopeChildren = computed(() => {
+    if (groupEditingId.value == null) {
+      return elements.value
+    }
+
+    const scopeNode = findNodeById(elements.value, groupEditingId.value)
+    return scopeNode && isGroupElement(scopeNode) ? scopeNode.children : []
+  })
 
   const pageWidth = computed(() => document.value?.width ?? A4_PAGE_WIDTH)
   const pageHeight = computed(() => document.value?.height ?? A4_PAGE_HEIGHT)
@@ -269,18 +281,7 @@ export const useEditorStore = defineStore('editor', () => {
       return false
     }
 
-    const elementsForCheck = elements.value.map((element) => {
-      const livePosition = liveDragPositions.value[element.id]
-
-      if (!livePosition) {
-        return element
-      }
-
-      return {
-        ...element,
-        position: livePosition,
-      }
-    })
+    const elementsForCheck = flattenTree(elements.value, liveDragPositions.value)
 
     return hasElementsInPrintCropZone(
       elementsForCheck,
@@ -493,9 +494,11 @@ export const useEditorStore = defineStore('editor', () => {
     document.value.canvasData.elements = snapshot.elements
     syncCanvasMeta()
 
-    if (selectedElementIds.value.length > 0) {
-      const validIds = new Set(snapshot.elements.map((element) => element.id))
+    if (selectedElementIds.value.length > 0 || groupEditingPath.value.length > 0) {
+      const validIds = new Set<string>()
+      walkTree(snapshot.elements, (node) => validIds.add(node.id))
       selectedElementIds.value = selectedElementIds.value.filter((id) => validIds.has(id))
+      purgeGroupEditingPath(new Set([...groupEditingPath.value].filter((id) => !validIds.has(id))))
     }
 
     isApplyingHistory = false
@@ -571,17 +574,18 @@ export const useEditorStore = defineStore('editor', () => {
     activeSpreadBackgroundSide.value = 'left'
     pageBackgroundCropTarget.value = 'spread'
     selectedElementIds.value = []
+    groupEditingPath.value = []
     liveDragPositions.value = {}
     previewMode.value = false
     canvasZoom.value = 1
     isDirty.value = false
     clearHistory()
 
-    for (const element of document.value.canvasData.elements) {
+    walkTree(document.value.canvasData.elements, (element) => {
       if (isTextPlaceholderType(element.type)) {
         recalculateTextElementSize(element.id)
       }
-    }
+    })
 
     syncCanvasMeta()
   }
@@ -694,15 +698,12 @@ export const useEditorStore = defineStore('editor', () => {
       return
     }
 
-    const index = document.value.canvasData.elements.findIndex((element) => element.id === id)
-    if (index === -1) {
+    const location = locateNode(document.value.canvasData.elements, id)
+    if (!location || !isTextPlaceholderType(location.node.type)) {
       return
     }
 
-    const element = document.value.canvasData.elements[index]
-    if (!isTextPlaceholderType(element.type)) {
-      return
-    }
+    const element = location.node
 
     const layout = recalculateTextLayout({
       element: element as TextPlaceholder,
@@ -712,7 +713,7 @@ export const useEditorStore = defineStore('editor', () => {
       adjustAnchor: options?.adjustAnchor ?? false,
     })
 
-    document.value.canvasData.elements[index] = {
+    location.siblings[location.index] = {
       ...element,
       size: layout.size,
       position:
@@ -768,25 +769,24 @@ export const useEditorStore = defineStore('editor', () => {
 
     scheduleDebouncedHistory()
 
-    const patchMap = new Map(patches.map((patch) => [patch.id, patch.position]))
+    const root = document.value.canvasData.elements
     const textIdsToRecalculate: string[] = []
 
-    document.value.canvasData.elements = document.value.canvasData.elements.map((element) => {
-      const nextPosition = patchMap.get(element.id)
-
-      if (!nextPosition) {
-        return element
+    for (const patch of patches) {
+      const location = locateNode(root, patch.id)
+      if (!location) {
+        continue
       }
 
-      if (isTextPlaceholderType(element.type)) {
-        textIdsToRecalculate.push(element.id)
+      if (isTextPlaceholderType(location.node.type)) {
+        textIdsToRecalculate.push(patch.id)
       }
 
-      return {
-        ...element,
-        position: nextPosition,
+      location.siblings[location.index] = {
+        ...location.node,
+        position: patch.position,
       } as PageElement
-    })
+    }
 
     for (const id of textIdsToRecalculate) {
       recalculateTextElementSize(id)
@@ -795,14 +795,19 @@ export const useEditorStore = defineStore('editor', () => {
     isDirty.value = true
   }
 
-  function insertNewElement(element: PageElement): void {
+  /** New elements land inside the container currently being edited in isolation, if any. */
+  function insertNewElement(element: PageElement, parentId: string | null = groupEditingId.value): void {
     if (!document.value) {
       throw new Error('Editor document is not loaded')
     }
 
     pushHistoryImmediate()
 
-    document.value.canvasData.elements.push(element)
+    const root = document.value.canvasData.elements
+    const parent = parentId != null ? findNodeById(root, parentId) : null
+    const siblings = parent && isGroupElement(parent) ? parent.children : root
+
+    siblings.push(element)
     if (isTextPlaceholderType(element.type)) {
       recalculateTextElementSize(element.id)
 
@@ -821,12 +826,7 @@ export const useEditorStore = defineStore('editor', () => {
       throw new Error('Editor document is not loaded')
     }
 
-    const element = createElementFromLibrary(
-      type,
-      nextZIndex.value,
-      document.value.width,
-      document.value.height,
-    )
+    const element = createElementFromLibrary(type, document.value.width, document.value.height)
     insertNewElement(element)
     return element
   }
@@ -838,7 +838,6 @@ export const useEditorStore = defineStore('editor', () => {
 
     const element = createElementFromLibrary(
       'photo-placeholder',
-      nextZIndex.value,
       document.value.width,
       document.value.height,
     ) as PhotoPlaceholder
@@ -865,26 +864,30 @@ export const useEditorStore = defineStore('editor', () => {
 
     pushHistoryImmediate()
 
+    const root = document.value.canvasData.elements
     const clones: PageElement[] = []
-    let zIndex = nextZIndex.value
 
     for (const sourceId of sourceIds) {
-      const source = document.value.canvasData.elements.find((element) => element.id === sourceId)
-      if (!source) {
+      const location = locateNode(root, sourceId)
+      if (!location) {
         continue
       }
 
-      const clone = cloneElementForDuplicate(source, zIndex)
+      const clone = cloneSubtree(location.node)
+      clone.name = `${location.node.name} (копия)`
       clone.position = {
-        x: source.position.x + 20,
-        y: source.position.y + 20,
+        x: location.node.position.x + 20,
+        y: location.node.position.y + 20,
       }
-      document.value.canvasData.elements.push(clone)
-      if (isTextPlaceholderType(clone.type)) {
-        recalculateTextElementSize(clone.id)
-      }
+      clone.locked = false
+
+      location.siblings.splice(location.index + 1, 0, clone)
+      walkTree([clone], (node) => {
+        if (isTextPlaceholderType(node.type)) {
+          recalculateTextElementSize(node.id)
+        }
+      })
       clones.push(clone)
-      zIndex += 1
     }
 
     if (clones.length === 0) {
@@ -896,6 +899,31 @@ export const useEditorStore = defineStore('editor', () => {
     return clones[clones.length - 1]
   }
 
+  /** Truncates the isolation breadcrumb at the first id no longer present after a removal/undo. */
+  function purgeGroupEditingPath(removedIds: Set<string>): void {
+    const validPath: string[] = []
+    for (const pathId of groupEditingPath.value) {
+      if (removedIds.has(pathId)) {
+        break
+      }
+      validPath.push(pathId)
+    }
+    groupEditingPath.value = validPath
+  }
+
+  /** Total number of descendants across the given ids — for a delete confirmation message. */
+  function getRemovalImpactCount(ids: string[]): number {
+    if (!document.value) {
+      return 0
+    }
+
+    const root = document.value.canvasData.elements
+    return ids.reduce((total, id) => {
+      const node = findNodeById(root, id)
+      return node ? total + countDescendants(node) : total
+    }, 0)
+  }
+
   function removeElement(id: string): void {
     if (!document.value || previewMode.value) {
       return
@@ -903,11 +931,19 @@ export const useEditorStore = defineStore('editor', () => {
 
     pushHistoryImmediate()
 
-    document.value.canvasData.elements = document.value.canvasData.elements.filter(
-      (element) => element.id !== id,
-    )
+    const root = document.value.canvasData.elements
+    const location = locateNode(root, id)
+    if (!location) {
+      return
+    }
 
-    selectedElementIds.value = selectedElementIds.value.filter((selectedId) => selectedId !== id)
+    const removedIds = new Set([id, ...getDescendants(location.node).map((node) => node.id)])
+    location.siblings.splice(location.index, 1)
+
+    selectedElementIds.value = selectedElementIds.value.filter(
+      (selectedId) => !removedIds.has(selectedId),
+    )
+    purgeGroupEditingPath(removedIds)
     isDirty.value = true
   }
 
@@ -918,19 +954,102 @@ export const useEditorStore = defineStore('editor', () => {
 
     pushHistoryImmediate()
 
-    const idsToRemove = new Set(selectedElementIds.value)
-    document.value.canvasData.elements = document.value.canvasData.elements.filter(
-      (element) => !idsToRemove.has(element.id),
-    )
+    const root = document.value.canvasData.elements
+    const idsToRemove = [...selectedElementIds.value]
+    const removedIds = new Set<string>()
+
+    for (const id of idsToRemove) {
+      // Skip ids whose ancestor is also selected — already removed recursively as part of it.
+      if (getAncestors(root, id).some((ancestor) => idsToRemove.includes(ancestor.id))) {
+        continue
+      }
+
+      const location = locateNode(root, id)
+      if (!location) {
+        continue
+      }
+
+      removedIds.add(id)
+      for (const descendant of getDescendants(location.node)) {
+        removedIds.add(descendant.id)
+      }
+      location.siblings.splice(location.index, 1)
+    }
+
     selectedElementIds.value = []
+    purgeGroupEditingPath(removedIds)
     isDirty.value = true
+  }
+
+  function exitAllEditingModes(): void {
+    textEditingElementId.value = null
+    photoCropEditingElementId.value = null
+    photoDimElementId.value = null
+    pageBackgroundCropEditing.value = false
   }
 
   function clearSelection(): void {
     selectedElementIds.value = []
-    textEditingElementId.value = null
-    photoCropEditingElementId.value = null
-    photoDimElementId.value = null
+    exitAllEditingModes()
+  }
+
+  /** Resolves a click on any node up to the right selectable target: the outermost container at
+   * root level, or the direct child of the container currently being edited in isolation. */
+  function resolveSelectionTarget(id: string): string {
+    if (!document.value) {
+      return id
+    }
+
+    const root = document.value.canvasData.elements
+    const path = getAncestors(root, id)
+    const scopeId = groupEditingId.value
+
+    if (scopeId == null) {
+      return path.length > 0 ? path[0].id : id
+    }
+
+    const scopeIndex = path.findIndex((ancestor) => ancestor.id === scopeId)
+    if (scopeIndex === -1) {
+      return path.length > 0 ? path[0].id : id
+    }
+
+    if (scopeIndex === path.length - 1) {
+      return id
+    }
+
+    return path[scopeIndex + 1].id
+  }
+
+  /** Selects a node exactly as clicked in the layers panel (unlike canvas clicks, this does not
+   * resolve upward) — syncs the isolation scope to the node's own ancestor chain first. */
+  function selectFromLayersPanel(id: string): void {
+    if (previewMode.value || !document.value) {
+      return
+    }
+
+    const ancestors = getAncestors(document.value.canvasData.elements, id)
+    groupEditingPath.value = ancestors.map((ancestor) => ancestor.id)
+    selectedElementIds.value = [id]
+  }
+
+  /** A click outside the currently isolated container's branch exits isolation entirely — the
+   * outer container is otherwise locked/non-interactive, matching the "must be able to step out"
+   * requirement without needing exact per-ancestor partial-exit bookkeeping. */
+  function syncGroupEditingScopeForClick(id: string): void {
+    if (!document.value || groupEditingPath.value.length === 0) {
+      return
+    }
+
+    const ancestorIds = getAncestors(document.value.canvasData.elements, id).map(
+      (ancestor) => ancestor.id,
+    )
+    const isWithinActiveScope = groupEditingPath.value.every(
+      (scopeId, index) => ancestorIds[index] === scopeId,
+    )
+
+    if (!isWithinActiveScope) {
+      groupEditingPath.value = []
+    }
   }
 
   function setSelection(ids: string[]): void {
@@ -946,7 +1065,11 @@ export const useEditorStore = defineStore('editor', () => {
       return
     }
 
-    selectedElementIds.value = id ? [id] : []
+    if (id) {
+      syncGroupEditingScopeForClick(id)
+    }
+
+    selectedElementIds.value = id ? [resolveSelectionTarget(id)] : []
   }
 
   function toggleElementSelection(id: string): void {
@@ -954,26 +1077,32 @@ export const useEditorStore = defineStore('editor', () => {
       return
     }
 
-    if (selectedElementIds.value.includes(id)) {
-      selectedElementIds.value = selectedElementIds.value.filter((selectedId) => selectedId !== id)
+    syncGroupEditingScopeForClick(id)
+    const resolvedId = resolveSelectionTarget(id)
+
+    if (selectedElementIds.value.includes(resolvedId)) {
+      selectedElementIds.value = selectedElementIds.value.filter(
+        (selectedId) => selectedId !== resolvedId,
+      )
       return
     }
 
-    selectedElementIds.value = [...selectedElementIds.value, id]
+    selectedElementIds.value = [...selectedElementIds.value, resolvedId]
   }
 
   function selectElementsInRect(
     rect: { x: number; y: number; width: number; height: number },
     additive = false,
   ): void {
-    if (previewMode.value) {
+    if (previewMode.value || !document.value) {
       return
     }
 
-    const hits = elements.value.filter(
+    const root = document.value.canvasData.elements
+    const hits = currentScopeChildren.value.filter(
       (element) =>
         isSelectableEditorElement(element) &&
-        rectsIntersect(rect, getElementSelectionBounds(element)),
+        rectsIntersect(rect, getElementAbsoluteBounds(root, element.id)),
     )
 
     const hitIds = hits.map((element) => element.id)
@@ -986,26 +1115,71 @@ export const useEditorStore = defineStore('editor', () => {
     setSelection(hitIds)
   }
 
+  /** Enters isolation mode for a container: only its direct children become selectable/draggable. */
+  function stepIntoGroupEditing(id: string): void {
+    if (previewMode.value || !document.value) {
+      return
+    }
+
+    const node = findNodeById(document.value.canvasData.elements, id)
+    if (!node || !isGroupElement(node) || node.locked) {
+      return
+    }
+
+    groupEditingPath.value = [...groupEditingPath.value, id]
+    selectedElementIds.value = []
+  }
+
+  /** Exits one level of isolation (Escape / breadcrumb "up"), selecting the container just exited. */
+  function exitGroupEditingLevel(): void {
+    if (groupEditingPath.value.length === 0) {
+      return
+    }
+
+    const exitedId = groupEditingPath.value[groupEditingPath.value.length - 1]
+    groupEditingPath.value = groupEditingPath.value.slice(0, -1)
+    selectedElementIds.value = [exitedId]
+  }
+
+  /** Exits isolation entirely (click fully outside the page/canvas chrome). */
+  function exitGroupEditingToRoot(): void {
+    groupEditingPath.value = []
+  }
+
+  /** Breadcrumb click on an arbitrary ancestor level. */
+  function setGroupEditingPath(path: string[]): void {
+    groupEditingPath.value = [...path]
+    selectedElementIds.value = []
+  }
+
   function applyPositionPatches(
     targets: PageElement[],
     patches: Map<string, { x?: number; y?: number }>,
     options?: { snap?: boolean },
   ): void {
-    if (!document.value) {
+    if (!document.value || targets.length === 0) {
+      return
+    }
+
+    // Alignment/distribution only ever runs against siblings (resolveSelectionTarget clamps
+    // multi-selection to a single scope level), so they all share one owning array/local frame.
+    const root = document.value.canvasData.elements
+    const location = locateNode(root, targets[0].id)
+    if (!location) {
       return
     }
 
     const shouldSnap = options?.snap ?? false
     const targetIds = new Set(targets.map((element) => element.id))
 
-    const nextElements = document.value.canvasData.elements.map((current) => {
+    location.siblings.forEach((current, index) => {
       if (!targetIds.has(current.id)) {
-        return current
+        return
       }
 
       const patch = patches.get(current.id)
       if (!patch) {
-        return current
+        return
       }
 
       let x = patch.x !== undefined ? patch.x : current.position.x
@@ -1018,22 +1192,14 @@ export const useEditorStore = defineStore('editor', () => {
       }
 
       if (x === current.position.x && y === current.position.y) {
-        return current
+        return
       }
 
-      return {
+      location.siblings[index] = {
         ...current,
         position: { x, y },
       } as PageElement
     })
-
-    document.value = {
-      ...document.value,
-      canvasData: {
-        ...document.value.canvasData,
-        elements: nextElements,
-      },
-    }
   }
 
   function alignSelectedElements(mode: MultiAlignMode): void {
@@ -1066,7 +1232,7 @@ export const useEditorStore = defineStore('editor', () => {
     }
 
     const targets = alignableSelectedElements.value.map((element) => {
-      const latest = document.value!.canvasData.elements.find((item) => item.id === element.id)
+      const latest = findNodeById(document.value!.canvasData.elements, element.id)
       return latest ?? element
     })
 
@@ -1125,20 +1291,20 @@ export const useEditorStore = defineStore('editor', () => {
       scheduleDebouncedHistory()
     }
 
-    const index = document.value.canvasData.elements.findIndex((element) => element.id === id)
-    if (index === -1) {
+    const location = locateNode(document.value.canvasData.elements, id)
+    if (!location) {
       return
     }
 
-    const current = document.value.canvasData.elements[index]
-    document.value.canvasData.elements[index] = {
+    const current = location.node
+    location.siblings[location.index] = {
       ...current,
       ...patch,
       position: patch.position ? { ...current.position, ...patch.position } : current.position,
       size: patch.size ? { ...current.size, ...patch.size } : current.size,
     } as PageElement
 
-    const updated = document.value.canvasData.elements[index]
+    const updated = location.siblings[location.index]
     if (shouldRecalculateTextLayout(patch, updated)) {
       recalculateTextElementSize(id, undefined, { adjustAnchor: true })
     }
@@ -1148,12 +1314,27 @@ export const useEditorStore = defineStore('editor', () => {
     }
   }
 
-  function reorderElements(orderedIds: string[]): void {
+  /** Reorders the children of `parentId` (or the root when null) — `orderedIds` must be a
+   * permutation of that array's current ids; paint order = array order, no separate zIndex. */
+  function reorderSiblings(parentId: string | null, orderedIds: string[]): void {
     if (!document.value || previewMode.value) {
       return
     }
 
-    const currentIds = elements.value.map((element) => element.id)
+    const root = document.value.canvasData.elements
+    let siblings: PageElement[]
+
+    if (parentId == null) {
+      siblings = root
+    } else {
+      const parent = findNodeById(root, parentId)
+      if (!parent || !isGroupElement(parent)) {
+        return
+      }
+      siblings = parent.children
+    }
+
+    const currentIds = siblings.map((element) => element.id)
     if (
       orderedIds.length !== currentIds.length ||
       !orderedIds.every((id) => currentIds.includes(id))
@@ -1163,31 +1344,219 @@ export const useEditorStore = defineStore('editor', () => {
 
     pushHistoryImmediate()
 
-    orderedIds.forEach((id, index) => {
-      const element = document.value!.canvasData.elements.find((item) => item.id === id)
-      if (element) {
-        element.zIndex = index
-      }
-    })
+    const byId = new Map(siblings.map((element) => [element.id, element]))
+    const reordered = orderedIds.map((id) => byId.get(id)!)
+    siblings.splice(0, siblings.length, ...reordered)
 
     isDirty.value = true
   }
 
   function moveElementLayer(id: string, direction: 'up' | 'down'): void {
-    const ordered = elements.value.map((element) => element.id)
-    const index = ordered.indexOf(id)
-    if (index === -1) {
+    if (!document.value) {
       return
     }
 
-    const targetIndex = direction === 'up' ? index + 1 : index - 1
-    if (targetIndex < 0 || targetIndex >= ordered.length) {
+    const location = locateNode(document.value.canvasData.elements, id)
+    if (!location) {
       return
     }
 
-    const nextOrder = [...ordered]
-    ;[nextOrder[index], nextOrder[targetIndex]] = [nextOrder[targetIndex], nextOrder[index]]
-    reorderElements(nextOrder)
+    const targetIndex = direction === 'up' ? location.index + 1 : location.index - 1
+    if (targetIndex < 0 || targetIndex >= location.siblings.length) {
+      return
+    }
+
+    const orderedIds = location.siblings.map((element) => element.id)
+    ;[orderedIds[location.index], orderedIds[targetIndex]] = [
+      orderedIds[targetIndex],
+      orderedIds[location.index],
+    ]
+    reorderSiblings(location.parent?.id ?? null, orderedIds)
+  }
+
+  /** General reparenting primitive — used by the layers panel drag&drop and internally by
+   * group/ungroup. Preserves the node's absolute visual position/rotation across the move. */
+  function moveElementToParent(id: string, newParentId: string | null, index: number): void {
+    if (!document.value || previewMode.value || newParentId === id) {
+      return
+    }
+
+    const root = document.value.canvasData.elements
+    const location = locateNode(root, id)
+    if (!location) {
+      return
+    }
+
+    const node = location.node
+    if (isGroupElement(node) && newParentId != null) {
+      const descendantIds = new Set(getDescendants(node).map((descendant) => descendant.id))
+      if (descendantIds.has(newParentId)) {
+        return
+      }
+    }
+
+    let newSiblings: PageElement[]
+    if (newParentId == null) {
+      newSiblings = root
+    } else {
+      const parent = findNodeById(root, newParentId)
+      if (!parent || !isGroupElement(parent)) {
+        return
+      }
+      newSiblings = parent.children
+    }
+
+    pushHistoryImmediate()
+
+    const absoluteBox = getAbsoluteTransform(root, id)
+    location.siblings.splice(location.index, 1)
+
+    const newParentFrame = getContentFrameOf(root, newParentId)
+    const local = absoluteToLocal(absoluteBox, newParentFrame)
+    node.position = local.position
+    node.rotation = local.rotation
+
+    const clampedIndex = Math.max(0, Math.min(index, newSiblings.length))
+    newSiblings.splice(clampedIndex, 0, node)
+
+    isDirty.value = true
+  }
+
+  /** Creates a container in place of the current selection (>= 2 siblings) — visual position is
+   * unchanged: the new group is axis-aligned (rotation 0) and each child's local position becomes
+   * a plain offset from the group's own absolute top-left. */
+  function groupSelection(): GroupElement | null {
+    if (!document.value || previewMode.value) {
+      return null
+    }
+
+    const ids = [...new Set(selectedElementIds.value)]
+    if (ids.length < 2) {
+      return null
+    }
+
+    const root = document.value.canvasData.elements
+    const locations = ids
+      .map((elementId) => locateNode(root, elementId))
+      .filter((location): location is TreeLocation => location != null)
+
+    if (locations.length < 2) {
+      return null
+    }
+
+    const parentIds = new Set(locations.map((location) => location.parent?.id ?? null))
+    if (parentIds.size > 1) {
+      // Selection spans multiple containers — resolveSelectionTarget should prevent this,
+      // but guard defensively rather than produce a group with mixed coordinate spaces.
+      return null
+    }
+
+    pushHistoryImmediate()
+
+    const siblings = locations[0].siblings
+    const parentId = locations[0].parent?.id ?? null
+
+    const bounds = ids.map((elementId) => getElementAbsoluteBounds(root, elementId))
+    const minX = Math.min(...bounds.map((rect) => rect.x))
+    const minY = Math.min(...bounds.map((rect) => rect.y))
+    const maxX = Math.max(...bounds.map((rect) => rect.x + rect.width))
+    const maxY = Math.max(...bounds.map((rect) => rect.y + rect.height))
+    const groupSize: Size = { width: maxX - minX, height: maxY - minY }
+    const groupAbsoluteBox: AbsoluteBox = { x: minX, y: minY, rotationDeg: 0 }
+    const groupContentFrame = contentFrameOf(groupAbsoluteBox, groupSize)
+
+    const orderedNodes = [...locations].sort((a, b) => a.index - b.index).map((location) => location.node)
+    const children = orderedNodes.map((node) => {
+      const absolute = getAbsoluteTransform(root, node.id)
+      const local = absoluteToLocal(absolute, groupContentFrame)
+      return { ...node, position: local.position, rotation: local.rotation }
+    })
+
+    const parentFrame = getContentFrameOf(root, parentId)
+    const groupLocal = absoluteToLocal(groupAbsoluteBox, parentFrame)
+
+    const group: GroupElement = {
+      id: generateElementId('group'),
+      type: 'group',
+      name: 'Группа',
+      position: groupLocal.position,
+      rotation: groupLocal.rotation,
+      size: groupSize,
+      locked: false,
+      visible: true,
+      opacity: 1,
+      children,
+    }
+
+    const idsToRemove = new Set(ids)
+    let topmostOriginalIndex = -1
+    const removedIndices: number[] = []
+    for (let i = siblings.length - 1; i >= 0; i -= 1) {
+      if (idsToRemove.has(siblings[i].id)) {
+        removedIndices.push(i)
+        if (i > topmostOriginalIndex) {
+          topmostOriginalIndex = i
+        }
+        siblings.splice(i, 1)
+      }
+    }
+
+    const removedBeforeInsert = removedIndices.filter((i) => i < topmostOriginalIndex).length
+    const insertIndex = Math.max(0, topmostOriginalIndex - removedBeforeInsert)
+    siblings.splice(insertIndex, 0, group)
+
+    selectedElementIds.value = [group.id]
+    isDirty.value = true
+    return group
+  }
+
+  /** Dissolves a container: children are reparented to the group's own parent, preserving their
+   * absolute visual position/rotation (general case — handles a group that was itself moved,
+   * rotated, or resized before ungrouping). */
+  function ungroupElement(id: string): PageElement[] | null {
+    if (!document.value || previewMode.value) {
+      return null
+    }
+
+    const root = document.value.canvasData.elements
+    const location = locateNode(root, id)
+    if (!location) {
+      return null
+    }
+
+    const node = location.node
+    if (!isGroupElement(node)) {
+      return null
+    }
+
+    pushHistoryImmediate()
+
+    const groupContentFrame = contentFrameOf(getAbsoluteTransform(root, id), node.size)
+    const parentFrame = getContentFrameOf(root, location.parent?.id ?? null)
+
+    const reparentedChildren = node.children.map((child) => {
+      const childAbsolute = childBoxFromLocal(child, groupContentFrame)
+      const local = absoluteToLocal(childAbsolute, parentFrame)
+      return { ...child, position: local.position, rotation: local.rotation }
+    })
+
+    location.siblings.splice(location.index, 1, ...reparentedChildren)
+
+    selectedElementIds.value = reparentedChildren.map((child) => child.id)
+    if (groupEditingId.value === id) {
+      groupEditingPath.value = groupEditingPath.value.slice(0, -1)
+    }
+    isDirty.value = true
+    return reparentedChildren
+  }
+
+  function renameElement(id: string, name: string): void {
+    const trimmed = name.trim()
+    if (!trimmed) {
+      return
+    }
+
+    updateElement(id, { name: trimmed })
   }
 
   function setElementVisible(id: string, visible: boolean): void {
@@ -1203,7 +1572,7 @@ export const useEditorStore = defineStore('editor', () => {
       return
     }
 
-    const element = document.value?.canvasData.elements.find((item) => item.id === id)
+    const element = document.value ? findNodeById(document.value.canvasData.elements, id) : null
     if (!element || !isTextPlaceholderType(element.type) || element.locked) {
       return
     }
@@ -1234,7 +1603,7 @@ export const useEditorStore = defineStore('editor', () => {
     patch: Partial<PhotoCropState>,
     options?: UpdateElementOptions,
   ): void {
-    const element = document.value?.canvasData.elements.find((item) => item.id === elementId)
+    const element = document.value ? findNodeById(document.value.canvasData.elements, elementId) : null
     if (!element || element.type !== 'photo-placeholder') {
       return
     }
@@ -1301,7 +1670,7 @@ export const useEditorStore = defineStore('editor', () => {
       return
     }
 
-    const element = document.value?.canvasData.elements.find((item) => item.id === id)
+    const element = document.value ? findNodeById(document.value.canvasData.elements, id) : null
     if (
       !element ||
       element.type !== 'photo-placeholder' ||
@@ -1311,10 +1680,8 @@ export const useEditorStore = defineStore('editor', () => {
       return
     }
 
-    textEditingElementId.value = null
+    exitAllEditingModes()
     photoCropEditingElementId.value = id
-    pageBackgroundCropEditing.value = false
-    photoDimElementId.value = null
     selectedElementIds.value = [id]
   }
 
@@ -1405,9 +1772,7 @@ export const useEditorStore = defineStore('editor', () => {
       return
     }
 
-    textEditingElementId.value = null
-    photoDimElementId.value = null
-    photoCropEditingElementId.value = null
+    exitAllEditingModes()
     pageBackgroundCropTarget.value = target
     pageBackgroundCropEditing.value = true
     selectedElementIds.value = []
@@ -1424,7 +1789,7 @@ export const useEditorStore = defineStore('editor', () => {
       return
     }
 
-    const element = document.value?.canvasData.elements.find((item) => item.id === id)
+    const element = document.value ? findNodeById(document.value.canvasData.elements, id) : null
     if (
       !element ||
       element.type !== 'photo-placeholder' ||
@@ -1434,8 +1799,7 @@ export const useEditorStore = defineStore('editor', () => {
       return
     }
 
-    textEditingElementId.value = null
-    photoCropEditingElementId.value = null
+    exitAllEditingModes()
     photoDimElementId.value = id
     selectedElementIds.value = [id]
   }
@@ -1509,7 +1873,7 @@ export const useEditorStore = defineStore('editor', () => {
       return
     }
 
-    const element = document.value.canvasData.elements.find((item) => item.id === elementId)
+    const element = findNodeById(document.value.canvasData.elements, elementId)
     if (!element || element.type !== 'photo-placeholder') {
       return
     }
@@ -1687,7 +2051,7 @@ export const useEditorStore = defineStore('editor', () => {
       return
     }
 
-    const element = document.value.canvasData.elements.find((item) => item.id === id)
+    const element = findNodeById(document.value.canvasData.elements, id)
     if (!element || element.locked) {
       return
     }
@@ -1720,18 +2084,7 @@ export const useEditorStore = defineStore('editor', () => {
       return
     }
 
-    const elementsForCheck = elements.value.map((element) => {
-      const livePosition = liveDragPositions.value[element.id]
-
-      if (!livePosition) {
-        return element
-      }
-
-      return {
-        ...element,
-        position: livePosition,
-      }
-    })
+    const elementsForCheck = flattenTree(elements.value, liveDragPositions.value)
 
     const violating = elementsForCheck.filter((element) =>
       elementIntersectsPrintCropZone(element, pageWidth.value, pageHeight.value),
@@ -1781,6 +2134,7 @@ export const useEditorStore = defineStore('editor', () => {
   function reset(): void {
     document.value = null
     selectedElementIds.value = []
+    groupEditingPath.value = []
     textEditingElementId.value = null
     photoCropEditingElementId.value = null
     pageBackgroundCropEditing.value = false
@@ -1823,7 +2177,10 @@ export const useEditorStore = defineStore('editor', () => {
     photoDimElementId,
     photoDropTargetId,
     elements,
-    layers,
+    flatElements,
+    groupEditingId,
+    groupEditingPath,
+    groupEditingBreadcrumb,
     selectedElement,
     selectedElements,
     alignableSelectedElements,
@@ -1860,10 +2217,21 @@ export const useEditorStore = defineStore('editor', () => {
     removeElement,
     removeSelectedElements,
     selectElement,
+    selectFromLayersPanel,
     toggleElementSelection,
     setSelection,
     clearSelection,
+    exitAllEditingModes,
     selectElementsInRect,
+    stepIntoGroupEditing,
+    exitGroupEditingLevel,
+    exitGroupEditingToRoot,
+    setGroupEditingPath,
+    groupSelection,
+    ungroupElement,
+    moveElementToParent,
+    renameElement,
+    getRemovalImpactCount,
     alignSelectedElements,
     applyDistributionGap,
     updateElement,
@@ -1894,7 +2262,7 @@ export const useEditorStore = defineStore('editor', () => {
     updatePageSettings,
     setSpreadBackgroundMode,
     setActiveSpreadBackgroundSide,
-    reorderElements,
+    reorderSiblings,
     moveElementLayer,
     setElementVisible,
     setElementLocked,

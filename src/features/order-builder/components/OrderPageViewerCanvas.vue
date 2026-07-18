@@ -259,7 +259,7 @@ import { getUploadErrorMessage } from '@/shared/utils/api-error.util'
 import type { OrderFillSession } from '../composables/useOrderFillSession'
 import { createOrderCanvasContext } from '../canvas/create-order-canvas-context'
 import { ORDER_CANVAS_CONTEXT_KEY } from '../canvas/order-canvas.types'
-import { sortElementsByZIndex } from '../utils/placeholder.utils'
+import { flattenTree } from '@/modules/editor/utils/element-tree.util'
 import type { PlaceholderValue } from '../types/order.types'
 
 const props = defineProps<{
@@ -278,7 +278,7 @@ const isPhotoFileDragActive = ref(false)
 const photoDropUploading = ref(false)
 let photoDragDepth = 0
 
-const sortedTemplateElements = computed(() => sortElementsByZIndex(props.canvasData.elements))
+const sortedTemplateElements = computed(() => flattenTree(props.canvasData.elements))
 
 const normalizedCanvas = computed(() => normalizeCanvasData(props.canvasData))
 

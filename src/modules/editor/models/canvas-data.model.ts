@@ -1,4 +1,4 @@
-import type { PageElement } from './index'
+import type { LeafElement, PageElement } from './index'
 import {
   A4_PAGE_HEIGHT,
   A4_PAGE_WIDTH,
@@ -17,8 +17,9 @@ import {
 } from './page-background.model'
 import { migrateLegacyBackgroundElements } from '../utils/migrate-legacy-background.util'
 import { isSpreadCanvas } from '../utils/spread.util'
+import { mapTree } from '../utils/element-tree.util'
 
-export const CANVAS_DATA_VERSION = 1 as const
+export const CANVAS_DATA_VERSION = 2 as const
 
 export interface CanvasData {
   version: typeof CANVAS_DATA_VERSION
@@ -57,13 +58,27 @@ export function createSpreadCanvasData(): CanvasData {
   }
 }
 
+/** v1 (flat, `zIndex`-ordered) → v2 (tree, array-order-ordered): legacy paint order was `zIndex`,
+ * not array position, so root elements are re-sorted once and the field is dropped. v1 data never
+ * had `type: 'group'`/nested `children`, so this only ever touches the root level. */
+function normalizeElementTree(elements: Array<PageElement & { zIndex?: number }>): PageElement[] {
+  const sortedByLegacyZIndex = [...elements].sort((left, right) => (left.zIndex ?? 0) - (right.zIndex ?? 0))
+  const withoutZIndex = sortedByLegacyZIndex.map(({ zIndex: _zIndex, ...rest }) => rest as PageElement)
+
+  return mapTree(withoutZIndex, (leaf) =>
+    normalizePhotoPlaceholderElement(normalizeTextPlaceholderElement(leaf)) as LeafElement,
+  )
+}
+
 export function normalizeCanvasData(raw: unknown): CanvasData {
   if (!raw || typeof raw !== 'object') {
     return createEmptyCanvasData()
   }
 
   const data = raw as Partial<CanvasData>
-  const rawElements = Array.isArray(data.elements) ? (data.elements as PageElement[]) : []
+  const rawElements = Array.isArray(data.elements)
+    ? (data.elements as Array<PageElement & { zIndex?: number }>)
+    : []
   const migrated = migrateLegacyBackgroundElements(rawElements, data.backgroundColor)
   const backgroundCrop = getPageBackgroundCropState({
     cropX: data.backgroundImageCropX,
@@ -101,9 +116,7 @@ export function normalizeCanvasData(raw: unknown): CanvasData {
     backgroundImageCropX: rootBackground.backgroundImageCropX,
     backgroundImageCropY: rootBackground.backgroundImageCropY,
     backgroundImageScale: rootBackground.backgroundImageScale,
-    elements: migrated.elements.map((element) =>
-      normalizePhotoPlaceholderElement(normalizeTextPlaceholderElement(element)),
-    ),
+    elements: normalizeElementTree(migrated.elements),
   }
 
   if (spread) {

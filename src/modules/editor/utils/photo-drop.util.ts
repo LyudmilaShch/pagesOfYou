@@ -19,13 +19,14 @@ export function clientToPageCoords(
   })
 }
 
+/** `elements` must already be in paint order (bottom → top), e.g. `flatElements` from the store. */
 export function findPhotoPlaceholderAtPoint(
   elements: PageElement[],
   point: PagePointer,
 ): PageElement | null {
-  const sorted = [...elements].sort((left, right) => right.zIndex - left.zIndex)
+  const topmostFirst = [...elements].reverse()
 
-  for (const element of sorted) {
+  for (const element of topmostFirst) {
     if (element.type !== 'photo-placeholder' || !isSelectableEditorElement(element)) {
       continue
     }

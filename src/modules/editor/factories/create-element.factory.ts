@@ -6,6 +6,7 @@ import {
 } from '../constants/page.constants'
 import { TEXT_FONT_SIZE_DEFAULT, TEXT_SIZING_MODE_DEFAULT } from '../constants/text.constants'
 import type { PageElement, PageElementBase, PageElementType } from '../models'
+import { generateElementId } from '../utils/element-tree.util'
 
 export type LibraryElementType =
   | 'photo-placeholder'
@@ -78,28 +79,19 @@ export const LIBRARY_ELEMENTS: LibraryElementDefinition[] = [
   },
 ]
 
-let elementCounter = 0
-
-function nextElementId(type: PageElementType): string {
-  elementCounter += 1
-  return `${type}-${Date.now()}-${elementCounter}`
-}
-
 function baseElement<T extends PageElementType>(
   type: T,
   name: string,
   position: { x: number; y: number },
   size: { width: number; height: number },
-  zIndex: number,
 ): PageElementBase & { type: T } {
   return {
-    id: nextElementId(type),
+    id: generateElementId(type),
     type,
     name,
     position,
     size,
     rotation: 0,
-    zIndex,
     locked: false,
     visible: true,
     opacity: 1,
@@ -108,7 +100,6 @@ function baseElement<T extends PageElementType>(
 
 export function createElementFromLibrary(
   type: LibraryElementType,
-  zIndex: number,
   pageWidth: number,
   pageHeight: number,
 ): PageElement {
@@ -118,7 +109,7 @@ export function createElementFromLibrary(
   switch (type) {
     case 'photo-placeholder':
       return {
-        ...baseElement(type, 'Фото', { x: centerX - 100, y: centerY - 130 }, { width: 200, height: 260 }, zIndex),
+        ...baseElement(type, 'Фото', { x: centerX - 100, y: centerY - 130 }, { width: 200, height: 260 }),
         label: 'Фото',
         borderRadius: 0,
         fitMode: 'cover',
@@ -136,7 +127,7 @@ export function createElementFromLibrary(
 
     case 'title-placeholder':
       return {
-        ...baseElement(type, 'Заголовок', { x: centerX - 180, y: 120 }, { width: 80, height: 48 }, zIndex),
+        ...baseElement(type, 'Заголовок', { x: centerX - 180, y: 120 }, { width: 80, height: 48 }),
         label: 'Заголовок',
         defaultText: 'Заголовок',
         fontFamily: EDITOR_FONT_DISPLAY,
@@ -156,7 +147,7 @@ export function createElementFromLibrary(
 
     case 'subtitle-placeholder':
       return {
-        ...baseElement(type, 'Подзаголовок', { x: centerX - 160, y: 200 }, { width: 80, height: 36 }, zIndex),
+        ...baseElement(type, 'Подзаголовок', { x: centerX - 160, y: 200 }, { width: 80, height: 36 }),
         label: 'Подзаголовок',
         defaultText: 'Подзаголовок',
         fontFamily: EDITOR_FONT_DISPLAY,
@@ -176,7 +167,7 @@ export function createElementFromLibrary(
 
     case 'text-placeholder':
       return {
-        ...baseElement(type, 'Текст', { x: centerX - 150, y: centerY }, { width: 80, height: 28 }, zIndex),
+        ...baseElement(type, 'Текст', { x: centerX - 150, y: centerY }, { width: 80, height: 28 }),
         label: 'Текстовый блок',
         defaultText: 'Текстовый блок',
         fontFamily: EDITOR_FONT_BODY,
@@ -196,7 +187,7 @@ export function createElementFromLibrary(
 
     case 'shape-rectangle':
       return {
-        ...baseElement(type, 'Прямоугольник', { x: centerX - 80, y: centerY - 50 }, { width: 160, height: 100 }, zIndex),
+        ...baseElement(type, 'Прямоугольник', { x: centerX - 80, y: centerY - 50 }, { width: 160, height: 100 }),
         fill: DEFAULT_SHAPE_FILL,
         stroke: DEFAULT_SHAPE_STROKE,
         strokeWidth: 0,
@@ -204,7 +195,7 @@ export function createElementFromLibrary(
 
     case 'shape-circle':
       return {
-        ...baseElement(type, 'Круг', { x: centerX - 60, y: centerY - 60 }, { width: 120, height: 120 }, zIndex),
+        ...baseElement(type, 'Круг', { x: centerX - 60, y: centerY - 60 }, { width: 120, height: 120 }),
         fill: DEFAULT_SHAPE_FILL,
         stroke: DEFAULT_SHAPE_STROKE,
         strokeWidth: 0,
@@ -212,7 +203,7 @@ export function createElementFromLibrary(
 
     case 'shape-line':
       return {
-        ...baseElement(type, 'Линия', { x: centerX - 120, y: centerY }, { width: 240, height: 0 }, zIndex),
+        ...baseElement(type, 'Линия', { x: centerX - 120, y: centerY }, { width: 240, height: 0 }),
         fill: 'transparent',
         stroke: DEFAULT_SHAPE_STROKE,
         strokeWidth: 2,

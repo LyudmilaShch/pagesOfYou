@@ -13,6 +13,7 @@ export const ELEMENT_TYPE_META: Record<PageElementType, ElementTypeMeta> = {
   'shape-line': { label: 'Линия', icon: 'mdi-minus' },
   'shape-rectangle': { label: 'Прямоугольник', icon: 'mdi-rectangle-outline' },
   'shape-circle': { label: 'Круг', icon: 'mdi-circle-outline' },
+  group: { label: 'Группа', icon: 'mdi-folder-outline' },
 }
 
 export function getElementMeta(type: PageElementType): ElementTypeMeta {

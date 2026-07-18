@@ -13,6 +13,29 @@
       Режим превью — так страницу увидит пользователь
     </div>
 
+    <div v-if="store.groupEditingBreadcrumb.length > 0" class="editor-canvas__breadcrumb">
+      <button type="button" class="editor-canvas__breadcrumb-item" @click="store.exitGroupEditingToRoot()">
+        Страница
+      </button>
+      <template v-for="(group, index) in store.groupEditingBreadcrumb" :key="group.id">
+        <v-icon size="14">mdi-chevron-right</v-icon>
+        <button
+          type="button"
+          class="editor-canvas__breadcrumb-item"
+          :class="{
+            'editor-canvas__breadcrumb-item--current': index === store.groupEditingBreadcrumb.length - 1,
+          }"
+          @click="
+            store.setGroupEditingPath(
+              store.groupEditingBreadcrumb.slice(0, index + 1).map((item) => item.id),
+            )
+          "
+        >
+          {{ group.name }}
+        </button>
+      </template>
+    </div>
+
     <div class="editor-canvas__toolbar">
       <v-btn
         icon
@@ -297,6 +320,7 @@ import {
 } from '../../utils/marquee-selection.util'
 import { isPageBackgroundCropTransformerTarget, isPageBackgroundTarget } from '../../utils/canvas-background.util'
 import type { PageBackgroundCropTarget } from '../../utils/canvas-background.util'
+import { findNodeById } from '../../utils/element-tree.util'
 import EditorElementNode from './EditorElementNode.vue'
 import SpreadPageBackgroundLayers from './SpreadPageBackgroundLayers.vue'
 import PageBackgroundCropLayer from './PageBackgroundCropLayer.vue'
@@ -646,7 +670,7 @@ function getTransformerNodes(): Konva.Node[] {
 }
 
 function getNodeLogicalPosition(node: Konva.Group): { x: number; y: number } | null {
-  const element = store.elements.find((item) => item.id === node.id())
+  const element = findNodeById(store.elements, node.id())
 
   if (!element) {
     return null
@@ -747,6 +771,7 @@ function handleStagePointerDown(event: Konva.KonvaEventObject<MouseEvent | Touch
 
   if (!event.evt.shiftKey) {
     store.clearSelection()
+    store.exitGroupEditingToRoot()
   }
 
   const pageGroup = getPageGroup(stage)
@@ -827,7 +852,7 @@ function updatePhotoDropTarget(clientX: number, clientY: number): void {
   }
 
   const point = clientToPageCoords(clientX, clientY, container, pageGroup)
-  const target = findPhotoPlaceholderAtPoint(store.elements, point)
+  const target = findPhotoPlaceholderAtPoint(store.flatElements, point)
   store.setPhotoDropTarget(target?.id ?? null)
 }
 
@@ -877,7 +902,7 @@ async function handlePhotoDrop(event: DragEvent): Promise<void> {
   }
 
   const point = clientToPageCoords(event.clientX, event.clientY, container, pageGroup)
-  const target = findPhotoPlaceholderAtPoint(store.elements, point)
+  const target = findPhotoPlaceholderAtPoint(store.flatElements, point)
 
   store.setPhotoDropTarget(null)
 
@@ -1048,6 +1073,12 @@ function handleCanvasKeydown(event: KeyboardEvent): void {
   if (store.photoDimElementId) {
     event.preventDefault()
     store.stopPhotoDim()
+    return
+  }
+
+  if (store.groupEditingId) {
+    event.preventDefault()
+    store.exitGroupEditingLevel()
   }
 }
 
@@ -1096,6 +1127,42 @@ onBeforeUnmount(() => {
   font-size: $font-size-body-sm;
   transform: translateX(-50%);
   pointer-events: none;
+}
+
+.editor-canvas__breadcrumb {
+  position: absolute;
+  top: $spacing-3;
+  left: $spacing-3;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: $spacing-1;
+  padding: $spacing-1 $spacing-2;
+  border: 1px solid $border-light;
+  border-radius: $radius-md;
+  background: $bg-elevated;
+  box-shadow: 0 4px 16px rgba(17, 17, 17, 0.08);
+  font-size: $font-size-caption;
+  color: $text-secondary;
+}
+
+.editor-canvas__breadcrumb-item {
+  border: none;
+  background: transparent;
+  padding: 2px 4px;
+  border-radius: $radius-sm;
+  color: $text-secondary;
+  cursor: pointer;
+
+  &:hover {
+    background: $state-hover-bg;
+    color: $text-primary;
+  }
+
+  &--current {
+    color: $text-primary;
+    font-weight: $font-weight-medium;
+  }
 }
 
 .editor-canvas__toolbar {
