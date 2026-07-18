@@ -1880,7 +1880,7 @@ function handleRemove(): void {
 
   height: 100%;
 
-  border-left: 1px solid $border-light;
+  border-right: 1px solid $border-light;
 
   background: $bg-primary;
 
