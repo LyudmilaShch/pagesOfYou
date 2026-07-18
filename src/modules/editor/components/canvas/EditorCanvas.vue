@@ -146,7 +146,12 @@
                 :crop-editing-key="store.pageBackgroundCropEditingKey"
                 @background-dblclick="handlePageBackgroundDblClick"
               />
+            </v-group>
 
+            <!-- Its own group (not mixed with the background's) — vue-konva's onUpdated z-index
+                 resync walks sibling order within a group, and mixing grid lines into the
+                 background's own group risked putting them behind it depending on render timing. -->
+            <v-group :config="{ listening: false }">
               <v-line
                 v-for="line in spreadGridLines"
                 :key="line.key"
@@ -181,7 +186,9 @@
                 :crop-editing-key="store.pageBackgroundCropEditingKey"
                 @background-dblclick="handlePageBackgroundDblClick"
               />
+            </v-group>
 
+            <v-group :config="{ listening: false }">
               <v-line
                 v-for="line in gridLines"
                 :key="line.key"
