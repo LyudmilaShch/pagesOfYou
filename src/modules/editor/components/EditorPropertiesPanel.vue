@@ -1163,6 +1163,18 @@
 
           />
 
+
+
+          <button
+            type="button"
+            class="editor-properties__row-link"
+            @click="panelStack.push({ id: 'photo-filters', title: 'Фильтры' })"
+          >
+            <span class="editor-properties__row-link-label">Фильтры</span>
+            <span class="editor-properties__row-link-preview">{{ photoFilterPreviewLabel }}</span>
+            <v-icon size="16">mdi-chevron-right</v-icon>
+          </button>
+
         </div>
 
 
@@ -1259,6 +1271,7 @@ import { PROPERTIES_PANEL_STACK_KEY } from '../composables/properties-panel-stac
 import PropertiesPanelScreenHeader from './properties-panel/PropertiesPanelScreenHeader.vue'
 import { PANEL_SCREENS, type PanelScreenId } from './properties-panel/panel-screen-registry'
 import { TEXT_EFFECT_CARDS } from '../models/text-effect.model'
+import { getPhotoFilterLabel } from '../models/photo-filter.model'
 
 
 
@@ -1344,6 +1357,8 @@ const effectPreviewLabel = computed(() => {
   }
   return TEXT_EFFECT_CARDS.find((card) => card.type === effect.type)?.label ?? 'Без эффекта'
 })
+
+const photoFilterPreviewLabel = computed(() => getPhotoFilterLabel(photoElement.value?.filter ?? null))
 
 const selectedSpreadSide = computed(() => {
   if (!store.isSpreadPage || !selected.value) {

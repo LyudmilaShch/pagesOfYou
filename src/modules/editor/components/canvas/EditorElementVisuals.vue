@@ -17,6 +17,7 @@
 
   <v-image
     v-if="ctx.photoImageConfig.value && ctx.loadedImage.value && !ctx.isPhotoCropEditing.value && !ctx.isPhotoDimmed.value"
+    ref="photoImageRef"
     :config="{ ...ctx.photoImageConfig.value, image: ctx.loadedImage.value }"
   />
 
@@ -71,7 +72,9 @@
 </template>
 
 <script setup lang="ts">
-import { inject } from 'vue'
+import { inject, nextTick, ref, watch } from 'vue'
+
+import type Konva from 'konva'
 
 import {
   EDITOR_ELEMENT_VISUALS_KEY,
@@ -82,4 +85,33 @@ const ctx = inject(EDITOR_ELEMENT_VISUALS_KEY)
 if (!ctx) {
   throw new Error('EditorElementVisuals requires EDITOR_ELEMENT_VISUALS_KEY provider')
 }
+
+// Konva only applies `filters` to nodes that have been cached — vue-konva doesn't do this for
+// us, so re-cache (or drop the cache once no filters are active) whenever the photo's filter
+// config or the loaded image itself changes.
+const photoImageRef = ref<{ getNode: () => Konva.Image } | null>(null)
+
+watch(
+  () => [ctx.photoImageConfig.value, ctx.loadedImage.value],
+  async () => {
+    await nextTick()
+    const node = photoImageRef.value?.getNode?.()
+    if (!node) {
+      return
+    }
+
+    const hasFilters = Boolean(
+      (ctx.photoImageConfig.value as { filters?: unknown[] } | null)?.filters?.length,
+    )
+
+    if (hasFilters) {
+      node.cache()
+    } else if (node.isCached()) {
+      node.clearCache()
+    }
+
+    node.getLayer()?.batchDraw()
+  },
+  { deep: true },
+)
 </script>

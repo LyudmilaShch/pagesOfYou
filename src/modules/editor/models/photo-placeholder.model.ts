@@ -1,4 +1,5 @@
 import type { PageElementBase } from './page-element.model'
+import type { PhotoFilter } from './photo-filter.model'
 
 export type PhotoFitMode = 'cover' | 'contain' | 'fill'
 export type PhotoStrokeStyle = 'solid' | 'dashed'
@@ -39,4 +40,5 @@ export interface PhotoPlaceholder extends PageElementBase {
   imageScale: number
   /** Decorative frame overlay; when set, the plain stroke is not rendered */
   frame?: PhotoFrameRef | null
+  filter: PhotoFilter | null
 }

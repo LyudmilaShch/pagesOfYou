@@ -1,9 +1,33 @@
 import type {
   CanvasElement,
+  CanvasPhotoCorrectionParams,
+  CanvasPhotoFilter,
+  CanvasPhotoFilterPresetKey,
   CanvasPhotoFrame,
   CanvasPhotoPlaceholder,
 } from '../types/canvas-data.types';
 import { toStoredAssetPath } from '../../common/utils/asset-url.util';
+
+const PHOTO_FILTER_PRESET_KEYS = new Set<CanvasPhotoFilterPresetKey>([
+  'editorial',
+  'classic',
+  'soft',
+  'warm',
+  'vintage',
+  'film',
+  'bw',
+  'pastel',
+  'love',
+]);
+
+const PHOTO_CORRECTION_NEUTRAL: CanvasPhotoCorrectionParams = {
+  brightness: 0,
+  contrast: 0,
+  saturation: 0,
+  temperature: 0,
+  hue: 0,
+  blur: 0,
+};
 
 const STROKE_LINE_STYLES = new Set(['solid', 'dashed']);
 const STROKE_POSITIONS = new Set(['center', 'inside', 'outside']);
@@ -61,6 +85,37 @@ function resolveStoredDefaultImageUrl(photo: LegacyCanvasPhotoPlaceholder): stri
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
+}
+
+function normalizePhotoCorrection(value: unknown): CanvasPhotoCorrectionParams {
+  const candidate = (value && typeof value === 'object' ? value : {}) as Partial<CanvasPhotoCorrectionParams>;
+  return {
+    brightness: isFiniteNumber(candidate.brightness) ? candidate.brightness : PHOTO_CORRECTION_NEUTRAL.brightness,
+    contrast: isFiniteNumber(candidate.contrast) ? candidate.contrast : PHOTO_CORRECTION_NEUTRAL.contrast,
+    saturation: isFiniteNumber(candidate.saturation) ? candidate.saturation : PHOTO_CORRECTION_NEUTRAL.saturation,
+    temperature: isFiniteNumber(candidate.temperature) ? candidate.temperature : PHOTO_CORRECTION_NEUTRAL.temperature,
+    hue: isFiniteNumber(candidate.hue) ? candidate.hue : PHOTO_CORRECTION_NEUTRAL.hue,
+    blur: isFiniteNumber(candidate.blur) ? candidate.blur : PHOTO_CORRECTION_NEUTRAL.blur,
+  };
+}
+
+function normalizePhotoFilter(value: unknown): CanvasPhotoFilter | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const candidate = value as Partial<CanvasPhotoFilter>;
+  const preset =
+    typeof candidate.preset === 'string' &&
+    PHOTO_FILTER_PRESET_KEYS.has(candidate.preset as CanvasPhotoFilterPresetKey)
+      ? (candidate.preset as CanvasPhotoFilterPresetKey)
+      : null;
+
+  return {
+    preset,
+    intensity: isFiniteNumber(candidate.intensity) ? Math.min(100, Math.max(0, candidate.intensity)) : 100,
+    correction: normalizePhotoCorrection(candidate.correction),
+  };
 }
 
 function normalizePhotoFrame(value: unknown): CanvasPhotoFrame | null {
@@ -139,5 +194,6 @@ export function normalizePhotoPlaceholderElement(element: CanvasElement): Canvas
     imageScale:
       typeof photo.imageScale === 'number' && photo.imageScale > 0 ? photo.imageScale : 1,
     frame: normalizePhotoFrame(photo.frame),
+    filter: normalizePhotoFilter(photo.filter),
   };
 }

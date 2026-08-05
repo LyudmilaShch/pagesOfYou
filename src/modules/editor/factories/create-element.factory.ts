@@ -123,6 +123,7 @@ export function createElementFromLibrary(
         cropX: 0,
         cropY: 0,
         imageScale: 1,
+        filter: null,
       }
 
     case 'title-placeholder':

@@ -1,8 +1,11 @@
+import Konva from 'konva'
+
 import type { PageElement } from '../../models'
 import type { PhotoPlaceholder } from '../../models/photo-placeholder.model'
 import { hasPhotoStroke } from '../../utils/element-stroke.util'
 import type { TextPlaceholder } from '../../models/text-placeholder.model'
 import type { TextEffect } from '../../models/text-effect.model'
+import type { PhotoFilter } from '../../models/photo-filter.model'
 import { parseCssColor, formatCssColor } from '../../utils/color-format.util'
 import {
   TEXT_BOX_PADDING,
@@ -504,7 +507,68 @@ export function getPhotoImageKonvaConfig(element: PageElement, image: HTMLImageE
     crop: konvaLayout.crop,
     cornerRadius: photo.borderRadius,
     listening: false,
+    ...getPhotoFilterKonvaAttrs(photo.filter),
   }
+}
+
+function clampByte(value: number): number {
+  return value < 0 ? 0 : value > 255 ? 255 : value
+}
+
+/**
+ * A "temperature" shift has no native Konva filter — this is a small custom filter function
+ * (Konva accepts any `(imageData: ImageData) => void`, not just its own Konva.Filters.*) that
+ * nudges the red/blue channels apart to read as warmer (positive) or cooler (negative).
+ */
+function createTemperatureFilter(value: number): typeof Konva.Filters.Brighten {
+  const delta = (value / 100) * 40
+  return function temperatureFilter(imageData: ImageData): void {
+    const data = imageData.data
+    for (let i = 0; i < data.length; i += 4) {
+      data[i] = clampByte(data[i] + delta)
+      data[i + 2] = clampByte(data[i + 2] - delta)
+    }
+  }
+}
+
+/**
+ * Builds the Konva `filters` array + the attribute values those filters read (brightness/
+ * contrast/hue/saturation/blurRadius are generic Konva.Node attrs, wired up the same way
+ * shadow/stroke attrs are for text effects). Only includes filters whose value actually differs
+ * from neutral, keeping the pipeline cheap when most sliders are untouched.
+ */
+function getPhotoFilterKonvaAttrs(filter: PhotoFilter | null): Record<string, unknown> {
+  if (!filter) {
+    return { filters: [] }
+  }
+
+  const { brightness, contrast, saturation, temperature, hue, blur } = filter.correction
+  const filters: Array<typeof Konva.Filters.Brighten> = []
+  const attrs: Record<string, unknown> = {}
+
+  if (brightness !== 0) {
+    filters.push(Konva.Filters.Brighten)
+    attrs.brightness = brightness / 100
+  }
+  if (contrast !== 0) {
+    filters.push(Konva.Filters.Contrast)
+    attrs.contrast = contrast
+  }
+  if (saturation !== 0 || hue !== 0) {
+    filters.push(Konva.Filters.HSL)
+    attrs.hue = hue
+    attrs.saturation = (saturation / 100) * 4
+    attrs.luminance = 0
+  }
+  if (blur > 0) {
+    filters.push(Konva.Filters.Blur)
+    attrs.blurRadius = blur
+  }
+  if (temperature !== 0) {
+    filters.push(createTemperatureFilter(temperature))
+  }
+
+  return { filters, ...attrs }
 }
 
 /** Decorative 9-slice frame overlay — drawn on top of the photo, independent of its crop/scale. */

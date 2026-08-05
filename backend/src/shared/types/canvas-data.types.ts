@@ -56,6 +56,32 @@ export interface CanvasPhotoFrame {
   photoAreaLeft: number;
 }
 
+export type CanvasPhotoFilterPresetKey =
+  | 'editorial'
+  | 'classic'
+  | 'soft'
+  | 'warm'
+  | 'vintage'
+  | 'film'
+  | 'bw'
+  | 'pastel'
+  | 'love';
+
+export interface CanvasPhotoCorrectionParams {
+  brightness: number;
+  contrast: number;
+  saturation: number;
+  temperature: number;
+  hue: number;
+  blur: number;
+}
+
+export interface CanvasPhotoFilter {
+  preset: CanvasPhotoFilterPresetKey | null;
+  intensity: number;
+  correction: CanvasPhotoCorrectionParams;
+}
+
 export interface CanvasPhotoPlaceholder extends CanvasElementBase {
   type: 'photo-placeholder';
   label: string;
@@ -73,6 +99,7 @@ export interface CanvasPhotoPlaceholder extends CanvasElementBase {
   cropY?: number;
   imageScale?: number;
   frame?: CanvasPhotoFrame | null;
+  filter?: CanvasPhotoFilter | null;
 }
 
 export type CanvasTextEffectType =

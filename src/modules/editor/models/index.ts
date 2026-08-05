@@ -2,6 +2,20 @@ export type { Position, Size } from './geometry.model'
 export type { PageElementType, PageElementBase } from './page-element.model'
 export type { PhotoFitMode, PhotoPlaceholder } from './photo-placeholder.model'
 export type {
+  PhotoFilter,
+  PhotoFilterPresetKey,
+  PhotoFilterPresetDef,
+  PhotoCorrectionParams,
+} from './photo-filter.model'
+export {
+  PHOTO_FILTER_PRESETS,
+  PHOTO_CORRECTION_NEUTRAL,
+  getPhotoFilterPresetDef,
+  isCustomPhotoFilter,
+  getPhotoFilterLabel,
+  lerpCorrection,
+} from './photo-filter.model'
+export type {
   TextAlign,
   TextPlaceholder,
   TextSizingMode,
