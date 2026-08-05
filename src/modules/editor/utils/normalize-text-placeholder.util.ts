@@ -5,10 +5,37 @@ import type {
   TextTransform,
   TextVerticalAlign,
 } from '../models/text-placeholder.model'
+import type { TextEffect, TextEffectType } from '../models/text-effect.model'
 import { TEXT_FONT_SIZE_DEFAULT, TEXT_SIZING_MODE_DEFAULT } from '../constants/text.constants'
 
 export const TEXT_VERTICAL_ALIGN_DEFAULT: TextVerticalAlign = 'top'
 export const TEXT_TRANSFORM_DEFAULT: TextTransform = 'none'
+
+const TEXT_EFFECT_TYPES = new Set<TextEffectType>([
+  'drop-shadow',
+  'glow',
+  'echo',
+  'outlined',
+  'background',
+  'stroke',
+  'neon',
+])
+
+function isTextEffect(value: unknown): value is TextEffect | null {
+  if (value === null) {
+    return true
+  }
+  if (typeof value !== 'object') {
+    return false
+  }
+  const candidate = value as { type?: unknown; params?: unknown }
+  return (
+    typeof candidate.type === 'string' &&
+    TEXT_EFFECT_TYPES.has(candidate.type as TextEffectType) &&
+    typeof candidate.params === 'object' &&
+    candidate.params !== null
+  )
+}
 
 const TEXT_TYPES = new Set([
   'text-placeholder',
@@ -63,6 +90,7 @@ export function normalizeTextPlaceholderElement(element: PageElement): PageEleme
     textSizingMode: isTextSizingMode(element.textSizingMode)
       ? element.textSizingMode
       : TEXT_SIZING_MODE_DEFAULT,
+    effect: isTextEffect(element.effect) ? element.effect : null,
   }
 
   return normalized

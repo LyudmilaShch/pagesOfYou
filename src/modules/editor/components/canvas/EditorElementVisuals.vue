@@ -51,6 +51,19 @@
   <v-circle v-if="ctx.shapeCircleConfig.value" :config="ctx.shapeCircleConfig.value" />
   <v-line v-if="ctx.shapeLineConfig.value" :config="ctx.shapeLineConfig.value" />
 
+  <v-rect
+    v-if="ctx.textBackgroundConfig.value && !ctx.isEditingText.value"
+    :config="ctx.textBackgroundConfig.value"
+  />
+
+  <template v-if="ctx.textEchoLayerConfigs.value && !ctx.isEditingText.value">
+    <v-text
+      v-for="(layer, index) in ctx.textEchoLayerConfigs.value"
+      :key="`text-echo-${index}`"
+      :config="layer"
+    />
+  </template>
+
   <v-text
     v-if="ctx.textConfig.value && !ctx.isEditingText.value"
     :config="ctx.textConfig.value"

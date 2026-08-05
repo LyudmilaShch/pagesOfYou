@@ -242,6 +242,10 @@ export function createOrderCanvasContext(
     session.recalculateTextElementSize(id, displayText, options)
   }
 
+  function recalculateAllTextElementSizes(): void {
+    session.recalculateAllTextElementSizes()
+  }
+
   function updateElement(id: string, patch: ElementPatch, _options?: { live?: boolean }): void {
     if (patch.defaultImageUrl !== undefined) {
       if (patch.defaultImageUrl) {
@@ -540,6 +544,7 @@ export function createOrderCanvasContext(
     registerPhotoImageDimensions,
     updateElement,
     recalculateTextElementSize,
+    recalculateAllTextElementSizes,
     moveElementsPositions,
     setLiveDragPosition,
     setLiveDragPositions,

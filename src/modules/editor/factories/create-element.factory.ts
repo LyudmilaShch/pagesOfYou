@@ -143,6 +143,7 @@ export function createElementFromLibrary(
         color: '#111111',
         maxLength: 120,
         required: false,
+        effect: null,
       }
 
     case 'subtitle-placeholder':
@@ -163,6 +164,7 @@ export function createElementFromLibrary(
         color: '#111111',
         maxLength: 160,
         required: false,
+        effect: null,
       }
 
     case 'text-placeholder':
@@ -183,6 +185,7 @@ export function createElementFromLibrary(
         color: '#111111',
         maxLength: 500,
         required: false,
+        effect: null,
       }
 
     case 'shape-rectangle':

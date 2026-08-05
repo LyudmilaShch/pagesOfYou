@@ -49,6 +49,11 @@ export const routes: RouteRecordRaw[] = [
         component: () => import('@/features/admin/pages/AdminPhotoFramesPage.vue'),
       },
       {
+        path: 'fonts',
+        name: 'admin-fonts',
+        component: () => import('@/features/admin/pages/AdminFontsPage.vue'),
+      },
+      {
         path: 'orders',
         name: 'admin-orders',
         component: () => import('@/features/admin/pages/AdminDashboardPage.vue'),

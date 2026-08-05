@@ -99,6 +99,7 @@ const navItems = [
   { to: '/admin/dashboard', icon: 'mdi-view-dashboard-outline', label: 'Dashboard' },
   { to: '/admin/magazine-types', icon: 'mdi-book-open-outline', label: 'Типы журналов' },
   { to: '/admin/photo-frames', icon: 'mdi-image-frame', label: 'Фоторамки' },
+  { to: '/admin/fonts', icon: 'mdi-format-font', label: 'Шрифты' },
   { to: '/admin/orders', icon: 'mdi-package-variant-closed', label: 'Заказы' },
 ]
 

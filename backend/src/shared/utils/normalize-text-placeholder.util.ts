@@ -1,4 +1,9 @@
-import type { CanvasElement, CanvasTextPlaceholder } from '../types/canvas-data.types';
+import type {
+  CanvasElement,
+  CanvasTextPlaceholder,
+  CanvasTextEffect,
+  CanvasTextEffectType,
+} from '../types/canvas-data.types';
 import { normalizePhotoPlaceholderElement } from './normalize-photo-placeholder.util';
 
 const TEXT_TYPES = new Set([
@@ -11,6 +16,16 @@ type TextVerticalAlign = 'top' | 'middle' | 'bottom';
 type TextTransform = 'none' | 'uppercase';
 type TextSizingMode = 'auto' | 'fixed';
 
+const TEXT_EFFECT_TYPES = new Set<CanvasTextEffectType>([
+  'drop-shadow',
+  'glow',
+  'echo',
+  'outlined',
+  'background',
+  'stroke',
+  'neon',
+]);
+
 function isTextVerticalAlign(value: unknown): value is TextVerticalAlign {
   return value === 'top' || value === 'middle' || value === 'bottom';
 }
@@ -21,6 +36,22 @@ function isTextTransform(value: unknown): value is TextTransform {
 
 function isTextSizingMode(value: unknown): value is TextSizingMode {
   return value === 'auto' || value === 'fixed';
+}
+
+function isTextEffect(value: unknown): value is CanvasTextEffect | null {
+  if (value === null) {
+    return true;
+  }
+  if (typeof value !== 'object') {
+    return false;
+  }
+  const candidate = value as { type?: unknown; params?: unknown };
+  return (
+    typeof candidate.type === 'string' &&
+    TEXT_EFFECT_TYPES.has(candidate.type as CanvasTextEffectType) &&
+    typeof candidate.params === 'object' &&
+    candidate.params !== null
+  );
 }
 
 function isCanvasTextPlaceholder(element: CanvasElement): element is CanvasTextPlaceholder {
@@ -40,6 +71,7 @@ export function normalizeTextPlaceholderElement(element: CanvasElement): CanvasE
     verticalAlign?: TextVerticalAlign;
     textTransform?: TextTransform;
     textSizingMode?: TextSizingMode;
+    effect?: unknown;
   };
 
   return {
@@ -53,6 +85,7 @@ export function normalizeTextPlaceholderElement(element: CanvasElement): CanvasE
     verticalAlign: isTextVerticalAlign(text.verticalAlign) ? text.verticalAlign : 'top',
     textTransform: isTextTransform(text.textTransform) ? text.textTransform : 'none',
     textSizingMode: isTextSizingMode(text.textSizingMode) ? text.textSizingMode : 'auto',
+    effect: isTextEffect(text.effect) ? text.effect : null,
   };
 }
 

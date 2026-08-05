@@ -27,6 +27,8 @@ export interface EditorElementVisualsContext {
   shapeCircleConfig: Ref<Record<string, unknown> | null>
   shapeLineConfig: Ref<Record<string, unknown> | null>
   textConfig: Ref<Konva.TextConfig | null>
+  textEchoLayerConfigs: Ref<Record<string, unknown>[] | null>
+  textBackgroundConfig: Ref<Record<string, unknown> | null>
   isEditingText: Ref<boolean>
 }
 

@@ -88,10 +88,10 @@ export const PHOTO_DOUBLE_CLICK_MS = 400
 
 export const PHOTO_REPOSITION_WHEEL_ZOOM_STEP = 0.08
 
-/** Konva Transformer chrome — Canva-like purple selection frame. */
-export const TRANSFORMER_BORDER_STROKE = '#8B3DFF'
+/** Konva Transformer chrome — pink selection frame (matches the panel's effect-demo accent). */
+export const TRANSFORMER_BORDER_STROKE = '#F775BB'
 
-export const TRANSFORMER_ANCHOR_STROKE = '#8B3DFF'
+export const TRANSFORMER_ANCHOR_STROKE = '#F775BB'
 
 export const TRANSFORMER_ANCHOR_FILL = '#FFFFFF'
 
@@ -111,7 +111,7 @@ export const TRANSFORMER_ROTATE_ANCHOR_ANGLE = 180
 /** Opaque white background for the rotate handle. */
 export const TRANSFORMER_ROTATE_ANCHOR_FILL = '#FFFFFF'
 
-/** Rotate handle fill on hover — matches selection purple. */
+/** Rotate handle fill on hover — matches the selection pink. */
 export const TRANSFORMER_ROTATE_ANCHOR_FILL_HOVER = TRANSFORMER_BORDER_STROKE
 
 export const TRANSFORMER_ROTATE_ICON_COLOR = '#111111'

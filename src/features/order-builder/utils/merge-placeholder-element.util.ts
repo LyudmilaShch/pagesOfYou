@@ -103,7 +103,8 @@ export function mergeElementWithPlaceholderValue(
       textAlign:
         json.textAlign === 'left' ||
         json.textAlign === 'center' ||
-        json.textAlign === 'right'
+        json.textAlign === 'right' ||
+        json.textAlign === 'justify'
           ? (json.textAlign as TextAlign)
           : text.textAlign,
       letterSpacing: pickNumber(json.letterSpacing, text.letterSpacing),

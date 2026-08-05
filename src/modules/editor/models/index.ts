@@ -8,6 +8,19 @@ export type {
   TextTransform,
   TextVerticalAlign,
 } from './text-placeholder.model'
+export type {
+  TextEffect,
+  TextEffectType,
+  TextEffectCardDef,
+  DropShadowEffectParams,
+  GlowEffectParams,
+  EchoEffectParams,
+  OutlinedEffectParams,
+  BackgroundEffectParams,
+  StrokeEffectParams,
+  NeonEffectParams,
+} from './text-effect.model'
+export { TEXT_EFFECT_CARDS, getTextEffectCardDef } from './text-effect.model'
 export type { TitlePlaceholder, SubtitlePlaceholder } from './title-placeholder.model'
 export type { ShapeElement } from './shape-element.model'
 export type { GroupElement } from './group-element.model'

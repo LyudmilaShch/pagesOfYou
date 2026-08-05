@@ -45,7 +45,7 @@ export type OrderElementPatch = Partial<{
   fontWeight: number
   fontItalic: boolean
   textTransform: 'none' | 'uppercase'
-  textAlign: 'left' | 'center' | 'right'
+  textAlign: 'left' | 'center' | 'right' | 'justify'
   letterSpacing: number
   lineHeight: number
   verticalAlign: 'top' | 'middle' | 'bottom'
@@ -367,6 +367,18 @@ export function useOrderFillSession(options: OrderFillSessionOptions) {
     )
   }
 
+  /** Re-measures every text element on the current page — used after custom fonts finish
+   * loading: text already on the page when it opened was measured once, synchronously, possibly
+   * before its font's FontFace had registered, so its wrap width may still reflect a fallback
+   * font. This is a silent visual correction, not a user edit. */
+  function recalculateAllTextElementSizes(): void {
+    for (const element of currentElements.value) {
+      if (isTextPlaceholderType(element.type)) {
+        recalculateTextElementSize(element.id)
+      }
+    }
+  }
+
   function applyDecorativeLayoutDrafts(canvas: CanvasData): CanvasData {
     const normalized = normalizeCanvasData(canvas)
 
@@ -617,6 +629,7 @@ export function useOrderFillSession(options: OrderFillSessionOptions) {
     updatePhotoCrop,
     patchElement,
     recalculateTextElementSize,
+    recalculateAllTextElementSizes,
     alignSelectedToPageCenter,
     updateText,
     clearPhoto,

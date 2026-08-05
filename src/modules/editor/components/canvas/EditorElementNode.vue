@@ -144,11 +144,12 @@ import {
   getShapeLineConfig,
   getShapeRectConfig,
   getTextConfig,
+  getTextEchoLayerConfigs,
 } from '../../adapters/konva/element-node.adapter'
 
 import { resolveAssetUrl } from '@/shared/config/assets'
 
-import { MIN_TEXT_BOX_WIDTH } from '../../constants/text.constants'
+import { MIN_TEXT_BOX_HEIGHT, MIN_TEXT_BOX_WIDTH, TEXT_BOX_PADDING } from '../../constants/text.constants'
 import {
   PHOTO_DOUBLE_CLICK_MS,
 } from '../../constants/page.constants'
@@ -235,7 +236,6 @@ const photoRepositionDragOrigin = ref<{
 } | null>(null)
 const activePhotoScaleCorner = ref<PhotoScaleCorner | null>(null)
 const photoScalePointerState = ref<{ corner: PhotoScaleCorner } | null>(null)
-const transformAnchor = ref<{ x: number; y: number } | null>(null)
 const activeTransformerAnchor = ref<string | null>(null)
 const isTransforming = ref(false)
 const dragPosition = ref<{ x: number; y: number } | null>(null)
@@ -650,6 +650,39 @@ const shapeLineConfig = computed(() => getShapeLineConfig(props.element))
 
 const textConfig = computed(() => getTextConfig(props.element, displayText.value))
 
+const textEchoLayerConfigs = computed(() =>
+  getTextEchoLayerConfigs(props.element, displayText.value),
+)
+
+// Always returns a config (never null) whenever the element is text, toggling visible instead of
+// adding/removing the node later — see the comment on getTextEchoLayerConfigs for why: Konva's vue
+// bindings append a node to its parent the instant it first mounts, so a rect that only starts
+// mounting once the user picks the 'background' effect would render on top of the already-mounted
+// text instead of behind it.
+const textBackgroundConfig = computed(() => {
+  if (!isTextPlaceholderElement(props.element)) {
+    return null
+  }
+
+  const effect = props.element.effect
+  const isBackground = effect?.type === 'background'
+  const { color, cornerRadius, padding, opacity } = effect?.type === 'background'
+    ? effect.params
+    : { color: 'transparent', cornerRadius: 0, padding: 0, opacity: 0 }
+
+  return {
+    x: -padding,
+    y: -padding,
+    width: props.element.size.width + padding * 2,
+    height: props.element.size.height + padding * 2,
+    fill: color,
+    opacity: opacity / 100,
+    cornerRadius,
+    listening: false,
+    visible: isBackground,
+  }
+})
+
 const isEditingText = computed(
   () => store.textEditingElementId === props.element.id,
 )
@@ -676,6 +709,8 @@ provide(EDITOR_ELEMENT_VISUALS_KEY, {
   shapeCircleConfig,
   shapeLineConfig,
   textConfig,
+  textEchoLayerConfigs,
+  textBackgroundConfig,
   isEditingText,
 })
 
@@ -1410,10 +1445,40 @@ function bakeBoxTransformFromNode(
   return { width: newWidth, height: newHeight, rotation }
 }
 
-function applyTextTransformFromNode(inner: Konva.Group): void {
+// Text only exposes 'middle-left'/'middle-right' handles, and Konva's Transformer (see
+// boundBoxFunc in EditorCanvas.vue) already computes and applies the correct box to `inner` for
+// whichever one is active — for 'middle-right' the left edge stays put, for 'middle-left' the
+// right edge does, entirely via Konva's own math. Position is read back from that (rather than
+// re-deriving "which edge is fixed" a second time here) via `inner.x() - inner.offsetX() * scaleX`
+// — `inner` is a centered-pivot node, so that's its current unscaled top-left relative to `outer`
+// (text never rotates, so no rotation term is needed).
+//
+// Unlike other elements, `inner`'s width/height/offset are NOT reactively synced from the store
+// during a live transform — syncInnerFromElement (the only thing that would do it) explicitly
+// no-ops while isTransforming is true, specifically so it doesn't fight Konva's own manipulation
+// of the node mid-gesture. That means nothing else will bake the new width into the node's actual
+// geometry — without doing it here, Konva just applies its own raw scale to the whole node, which
+// visibly stretches the glyphs instead of reflowing the text box. So this bakes width itself, every
+// tick.
+//
+// The frame is meant to be nothing more than an outline hugging the actual text — so its height
+// must track the ACTUAL rendered text, not a separately measured/estimated one. Re-measuring via a
+// throwaway Konva.Text node (as this used to, even if only periodically) is both expensive and, in
+// the gap between recalcs, visibly wrong — the outline would lag behind or cut into the text. The
+// real Konva.Text node already rendered inside `inner` (by EditorElementVisuals) has already done
+// this work for free, reactively re-wrapping itself as props.element.size.width changes each tick
+// (see the store commit below) — so we just read ITS height back, at zero extra cost, every tick.
+function applyTextTransformFromNode(
+  inner: Konva.Group,
+): void {
   const scaleX = inner.scaleX()
+  const scaleY = inner.scaleY()
 
-  if (Math.abs(scaleX - 1) < 0.001) {
+  // Bail only when NEITHER axis has drifted — checking scaleX alone left scaleY unreset (still
+  // baked below regardless of which axis triggered this) on ticks where boundBoxFunc's constant
+  // forced height produced a small Y-scale delta from Konva's own math while X happened to land
+  // back near 1, which visibly stretched the glyphs vertically for that tick.
+  if (Math.abs(scaleX - 1) < 0.001 && Math.abs(scaleY - 1) < 0.001) {
     return
   }
 
@@ -1422,61 +1487,54 @@ function applyTextTransformFromNode(inner: Konva.Group): void {
     return
   }
 
-  const anchor = transformAnchor.value ?? {
-    x: props.element.position.x,
-    y: props.element.position.y,
+  const maxWidth = getTextMaxWidth(props.element.position.x, store.pageWidth, store.pageHeight)
+  const newWidth = Math.max(MIN_TEXT_BOX_WIDTH, Math.min(inner.width() * scaleX, maxWidth))
+
+  const localTopLeftX = inner.x() - inner.offsetX() * scaleX
+  const newX = toLogicalX(outer.x() + localTopLeftX)
+
+  const renderedText = inner.findOne('Text') as Konva.Text | undefined
+  if (renderedText) {
+    // The store commit below would normally push the new wrap width to this node reactively (via
+    // textConfig), but that only lands on Vue's next flush — reading .height() now would still
+    // reflect last tick's wrap, one tick stale, which is exactly what let the frame cut into
+    // fast-moving text. Setting .width() imperatively triggers Konva's own synchronous re-wrap
+    // (Text listens for widthChange) immediately, so the height read right after already matches
+    // what we're about to commit below. The later reactive write is then a no-op.
+    renderedText.width(Math.max(1, newWidth - TEXT_BOX_PADDING * 2))
   }
+  const newHeight = renderedText
+    ? Math.max(MIN_TEXT_BOX_HEIGHT, Math.ceil(renderedText.height() + TEXT_BOX_PADDING * 2))
+    : props.element.size.height
+  syncInnerTransformNode(inner, { width: newWidth, height: newHeight }, 0)
 
-  const baseWidth = inner.width() > 0 ? inner.width() : props.element.size.width
-  const maxWidth = getTextMaxWidth(anchor.x, store.pageWidth, store.pageHeight)
-  const newWidth = Math.max(
-    MIN_TEXT_BOX_WIDTH,
-    Math.min(baseWidth * scaleX, maxWidth),
-  )
-  const height = inner.height() > 0 ? inner.height() : props.element.size.height
-
-  syncInnerTransformNode(inner, { width: newWidth, height }, inner.rotation())
-  applyOuterPosition(outer, { x: anchor.x, y: anchor.y })
-
+  // Commit this SAME height to the store — not just the width — and tell it to skip its own
+  // separate re-measure (shouldRecalculateTextLayout would otherwise trigger one, rebuilding a
+  // throwaway Konva.Text). That measurement is a parallel, independently-implemented computation
+  // from the read above; when the two disagreed (even slightly), handleTransformEnd's later read of
+  // the store's own recalculated height overwrote what was already correctly on screen, producing a
+  // visible snap right on release. Using one measurement end-to-end — the actually-rendered node,
+  // which is also the cheapest option — removes that discrepancy entirely.
   store.updateElement(
     props.element.id,
     {
       textSizingMode: 'fixed',
       position: {
-        x: anchor.x,
-        y: anchor.y,
+        x: newX,
       },
       size: {
         width: newWidth,
+        height: newHeight,
       },
-      rotation: inner.rotation(),
     },
-    { live: true },
+    { live: true, skipTextLayoutRecalc: true },
   )
-
-  const updated = findElementById(props.element.id)
-  if (updated) {
-    syncInnerTransformNode(
-      inner,
-      { width: newWidth, height: updated.size.height },
-      inner.rotation(),
-    )
-  }
 }
 
 function handleTransformStart(): void {
   const inner = getTransformNode()
   activeTransformerAnchor.value = inner ? getActiveTransformerAnchor(inner) : null
   isTransforming.value = true
-
-  if (!isTextPlaceholderElement(props.element)) {
-    return
-  }
-
-  transformAnchor.value = {
-    x: props.element.position.x,
-    y: props.element.position.y,
-  }
 }
 
 function handleTransform(event: Konva.KonvaEventObject<Event>): void {
@@ -1538,23 +1596,27 @@ function handleTransformEnd(event: Konva.KonvaEventObject<Event>): void {
     inner.scaleY(1)
 
     const size = getPivotSize()
+    // For text, applyTextTransformFromNode already committed the fresh width/position to the
+    // store above — read them back from there rather than from `outer`/`inner` (see topLeft
+    // below): `outer`'s own x/y only reflect that commit once Vue's next reactive flush runs,
+    // i.e. they're one tick behind here and would silently discard the position just computed.
+    const updatedText =
+      isText && isResizing && !isTextRotation ? findElementById(props.element.id) : null
+
     if (!isText) {
       size.width = Math.max(8, resizedBox?.width ?? inner.width())
       size.height = Math.max(
         props.element.type === 'shape-line' ? 0 : 8,
         resizedBox?.height ?? inner.height(),
       )
-    } else if (isResizing && !isTextRotation) {
-      const updated = findElementById(props.element.id)
-      if (updated) {
-        size.width = updated.size.width
-        size.height = updated.size.height
-      }
+    } else if (updatedText) {
+      size.width = updatedText.size.width
+      size.height = updatedText.size.height
     }
 
     syncInnerTransformNode(inner, size, isText ? props.element.rotation : inner.rotation())
 
-    let topLeft = readLogicalTopLeftFromOuter(outer)
+    let topLeft = updatedText ? updatedText.position : readLogicalTopLeftFromOuter(outer)
 
     if (store.snapToGridEnabled && !isTextRotation) {
       topLeft = {
@@ -1565,6 +1627,10 @@ function handleTransformEnd(event: Konva.KonvaEventObject<Event>): void {
     }
 
     if (isText) {
+      // Width/height are already correct here — applyTextTransformFromNode committed them from the
+      // actually-rendered node above, and re-triggering the store's OWN separate re-measure (by
+      // omitting skipTextLayoutRecalc, as this used to) is a second, independent computation that
+      // can disagree with the first, snapping the frame right on release.
       store.updateElement(
         props.element.id,
         isResizing && !isTextRotation
@@ -1576,6 +1642,7 @@ function handleTransformEnd(event: Konva.KonvaEventObject<Event>): void {
           : {
               position: topLeft,
             },
+        { skipTextLayoutRecalc: true },
       )
     } else {
       store.updateElement(props.element.id, {
@@ -1592,7 +1659,6 @@ function handleTransformEnd(event: Konva.KonvaEventObject<Event>): void {
     store.finalizeLiveTransform()
   } finally {
     isTransforming.value = false
-    transformAnchor.value = null
     activeTransformerAnchor.value = null
   }
 }

@@ -3,6 +3,8 @@ import { randomUUID } from 'crypto';
 import { extname } from 'path';
 import { YandexStorageProvider } from './providers/yandex-storage.provider';
 
+const ALLOWED_FONT_EXTENSIONS = ['.ttf', '.otf', '.woff', '.woff2'];
+
 /**
  * Uploads admin-provided images (magazine type covers, page previews,
  * photo frames…) straight to Yandex Object Storage — the backend's own
@@ -20,6 +22,24 @@ export class AdminUploadsService {
 
     const ext = extname(file.originalname).toLowerCase() || '.jpg';
     const key = `magazine-types/${randomUUID()}${ext}`;
+    const url = await this.storage.uploadBuffer(key, file.buffer, file.mimetype);
+
+    return { url };
+  }
+
+  async uploadFont(file: Express.Multer.File | undefined): Promise<{ url: string }> {
+    if (!file) {
+      throw new BadRequestException('Файл не передан.');
+    }
+
+    const ext = extname(file.originalname).toLowerCase();
+    if (!ALLOWED_FONT_EXTENSIONS.includes(ext)) {
+      throw new BadRequestException(
+        'Неподдерживаемый формат шрифта. Разрешены: TTF, OTF, WOFF, WOFF2.',
+      );
+    }
+
+    const key = `fonts/${randomUUID()}${ext}`;
     const url = await this.storage.uploadBuffer(key, file.buffer, file.mimetype);
 
     return { url };

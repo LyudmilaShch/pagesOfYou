@@ -18,8 +18,7 @@
     </nav>
 
     <div v-if="activeCategory" class="editor-left-panel__flyout">
-      <EditorPropertiesPanel v-if="activeCategory === 'page'" />
-      <EditorLayersPanel v-else-if="activeCategory === 'layers'" />
+      <EditorLayersPanel v-if="activeCategory === 'layers'" />
       <EditorLibraryPanel v-else :category="activeCategory" />
 
       <button
@@ -39,11 +38,10 @@ import { ref, watch } from 'vue'
 
 import EditorLayersPanel from './EditorLayersPanel.vue'
 import EditorLibraryPanel from './EditorLibraryPanel.vue'
-import EditorPropertiesPanel from './EditorPropertiesPanel.vue'
 import type { LibraryElementCategory } from '../factories/create-element.factory'
 import { useEditorStore } from '../store/editor.store'
 
-type RailKey = LibraryElementCategory | 'layers' | 'page'
+type RailKey = LibraryElementCategory | 'layers'
 
 const emit = defineEmits<{
   expanded: [value: boolean]
@@ -57,15 +55,19 @@ const railItems: { key: RailKey; label: string; icon: string }[] = [
   { key: 'text', label: 'Текст', icon: 'mdi-format-text' },
   { key: 'shape', label: 'Фигуры', icon: 'mdi-shape-outline' },
   { key: 'layers', label: 'Слои', icon: 'mdi-layers-outline' },
-  { key: 'page', label: 'Страница', icon: 'mdi-file-document-outline' },
 ]
 
+// Only one side panel is open at a time — opening a rail flyout deselects the canvas and drops any
+// pending page-properties request (see EditorPage.vue's store.showPropertiesPanel) so the two
+// don't show together.
 function toggleCategory(key: RailKey): void {
   const next = activeCategory.value === key ? null : key
 
-  // Only one side panel is open at a time — opening a rail flyout closes the properties column.
-  if (next !== null && store.hasSelection) {
-    store.clearSelection()
+  if (next !== null) {
+    if (store.hasSelection) {
+      store.clearSelection()
+    }
+    store.dismissPageProperties()
   }
 
   activeCategory.value = next
@@ -73,12 +75,12 @@ function toggleCategory(key: RailKey): void {
 
 watch(activeCategory, (value) => emit('expanded', value !== null), { immediate: true })
 
-// Only one side panel is open at a time — the dedicated properties column (EditorPage.vue)
-// appears once something is selected, so close whatever rail flyout is open then.
+// The properties column is about to show (element selected, or page properties explicitly
+// requested via a canvas background click) — close this panel so they don't overlap.
 watch(
-  () => store.hasSelection,
-  (hasSelection) => {
-    if (hasSelection) {
+  () => store.showPropertiesPanel,
+  (shouldShow) => {
+    if (shouldShow) {
       activeCategory.value = null
     }
   },
@@ -153,7 +155,9 @@ watch(
 .editor-left-panel__flyout {
   position: relative;
   flex-shrink: 0;
-  width: 280px;
+  // Matches the properties column's width (EditorPage.vue) — the two panels are mutually
+  // exclusive, so keeping them the same size avoids a visible width jump when switching.
+  width: 320px;
   height: 100%;
   border-right: 1px solid $border-light;
   background: $bg-primary;

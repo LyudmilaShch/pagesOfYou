@@ -511,6 +511,29 @@ model PhotoFrame {
   @@map("photo_frames")
 }
 
+/// Пользовательские шрифты, загружаемые администратором и доступные для выбора в
+/// редакторе шаблонов и в order-builder. fontFamily генерируется один раз при
+/// создании и не меняется при переименовании — он уже сохранён в canvasData
+/// существующих страниц/заказов, поэтому должен оставаться стабильным.
+model Font {
+  id                String   @id @default(cuid())
+  name              String
+  fontFamily        String   @unique
+  regularFileUrl    String
+  boldFileUrl       String?
+  italicFileUrl     String?
+  boldItalicFileUrl String?
+  sortOrder         Int      @default(0)
+  isActive          Boolean  @default(true)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([isActive, sortOrder])
+  @@map("fonts")
+}
+
 /// Конкретная страница журнала пользователя (экземпляр в заказе)
 model JournalPage {
   id             String @id @default(cuid())

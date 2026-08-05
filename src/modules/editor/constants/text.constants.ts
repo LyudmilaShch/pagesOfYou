@@ -1,4 +1,4 @@
-export const TEXT_BOX_PADDING = 4
+export const TEXT_BOX_PADDING = 0
 
 export const PAGE_TEXT_MARGIN = 8
 

@@ -235,6 +235,15 @@
               title="Справа"
               @click="setTextAlign('right')"
             />
+            <v-btn
+              :variant="textElement.textAlign === 'justify' ? 'flat' : 'outlined'"
+              :color="textElement.textAlign === 'justify' ? 'primary' : undefined"
+              size="small"
+              class="editor-properties__style-btn"
+              icon="mdi-format-align-justify"
+              title="По ширине"
+              @click="setTextAlign('justify')"
+            />
 
             <span class="editor-properties__typo-divider" aria-hidden="true" />
 
@@ -455,8 +464,8 @@ import { computed, ref, watch } from 'vue'
 import {
   A4_SPREAD_PAGE_HEIGHT,
   A4_SPREAD_PAGE_WIDTH,
-  EDITOR_FONT_OPTIONS,
 } from '@/modules/editor/constants/page.constants'
+import { mergedFontOptions } from '@/modules/editor/utils/custom-fonts.util'
 import {
   getSpreadPageSide,
   getSpreadPageSideLabel,
@@ -506,7 +515,7 @@ const LETTER_SPACING_MAX = 20
 const LINE_HEIGHT_MIN = 0.5
 const LINE_HEIGHT_MAX = 3
 
-const fontOptions = EDITOR_FONT_OPTIONS
+const fontOptions = mergedFontOptions
 const fitModeOptions = [
   { label: 'Cover', value: 'cover' },
   { label: 'Fill', value: 'fill' },

@@ -17,7 +17,7 @@ export interface PlaceholderJsonValue {
   fontWeight?: number
   fontItalic?: boolean
   textTransform?: 'none' | 'uppercase'
-  textAlign?: 'left' | 'center' | 'right'
+  textAlign?: 'left' | 'center' | 'right' | 'justify'
   letterSpacing?: number
   lineHeight?: number
   verticalAlign?: 'top' | 'middle' | 'bottom'

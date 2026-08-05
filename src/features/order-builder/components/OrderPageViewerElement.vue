@@ -90,6 +90,8 @@ import {
 
   getTextConfig,
 
+  getTextEchoLayerConfigs,
+
 } from '@/modules/editor/adapters/konva/element-node.adapter'
 
 import EditorElementVisuals from '@/modules/editor/components/canvas/EditorElementVisuals.vue'
@@ -490,6 +492,37 @@ const shapeLineConfig = computed(() => getShapeLineConfig(renderElement.value))
 
 const textConfig = computed(() => getTextConfig(layoutElement.value, displayText.value))
 
+const textEchoLayerConfigs = computed(() =>
+  getTextEchoLayerConfigs(layoutElement.value, displayText.value),
+)
+
+// Always returns a config (never null) whenever the element is text — see the matching comment
+// in EditorElementNode.vue for why (Konva's vue bindings append newly-mounted nodes on top of
+// already-mounted siblings, so this toggles visibility instead of mounting the rect on demand).
+const textBackgroundConfig = computed(() => {
+  if (!isTextPlaceholderElement(layoutElement.value)) {
+    return null
+  }
+
+  const effect = layoutElement.value.effect
+  const isBackground = effect?.type === 'background'
+  const { color, cornerRadius, padding, opacity } = effect?.type === 'background'
+    ? effect.params
+    : { color: 'transparent', cornerRadius: 0, padding: 0, opacity: 0 }
+
+  return {
+    x: -padding,
+    y: -padding,
+    width: layoutElement.value.size.width + padding * 2,
+    height: layoutElement.value.size.height + padding * 2,
+    fill: color,
+    opacity: opacity / 100,
+    cornerRadius,
+    listening: false,
+    visible: isBackground,
+  }
+})
+
 
 
 const photoImageConfig = computed(() => {
@@ -557,6 +590,10 @@ provide(EDITOR_ELEMENT_VISUALS_KEY, {
   shapeLineConfig,
 
   textConfig,
+
+  textEchoLayerConfigs,
+
+  textBackgroundConfig,
 
   isEditingText: computed(() => false),
 

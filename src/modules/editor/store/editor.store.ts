@@ -96,6 +96,11 @@ export type ElementPatch = {
 
 export interface UpdateElementOptions {
   live?: boolean
+  /** Skips the automatic text re-measure/re-wrap this patch would otherwise trigger — for callers
+   * that already know they'll request it again shortly (e.g. once per animation tick during a
+   * live text resize) and don't need the result until a later, final call. Re-measuring rebuilds a
+   * throwaway Konva.Text node to compute wrapping, which is too expensive to redo on every tick. */
+  skipTextLayoutRecalc?: boolean
 }
 
 export interface PageSettingsPatch {
@@ -155,6 +160,15 @@ export const useEditorStore = defineStore('editor', () => {
   const liveDragPositions = ref<Record<string, Position>>({})
   /** Outermost → innermost currently-entered container ids; [] = at page/root level. */
   const groupEditingPath = ref<string[]>([])
+  /** In-app copy/paste clipboard — deep-cloned snapshots, independent of the live document so
+   * later edits to the originals (or undo/redo) can't leak into what gets pasted. */
+  const clipboard = ref<PageElement[]>([])
+  /** Set when the canvas background is clicked (deselecting) — the properties column should show
+   * page settings then, not just disappear. Distinct from selection so that manually collapsing
+   * the left panel (with nothing selected) does NOT also spring the properties column open —
+   * only an explicit background click, or an actual selection, should. Cleared once the user
+   * deliberately navigates to a left-panel rail category. */
+  const pagePropertiesRequested = ref(false)
 
   const historyPast = ref<CanvasSnapshot[]>([])
   const historyFuture = ref<CanvasSnapshot[]>([])
@@ -163,6 +177,9 @@ export const useEditorStore = defineStore('editor', () => {
   let debouncedHistorySnapshot: CanvasSnapshot | null = null
   let historyDebounceTimer: ReturnType<typeof setTimeout> | null = null
   let liveTransformActive = ref(false)
+  /** Cascades successive pastes of the same copy diagonally instead of stacking them exactly on
+   * top of each other — reset whenever a fresh copy is made. */
+  let pasteCount = 0
 
   /** Root-level nodes, in paint order (array order = bottom → top). */
   const elements = computed(() => document.value?.canvasData.elements ?? [])
@@ -193,6 +210,28 @@ export const useEditorStore = defineStore('editor', () => {
   const isMultiSelection = computed(() => selectedElementIds.value.length >= 2)
   const hasSelection = computed(() => selectedElementIds.value.length > 0)
   const selectionCount = computed(() => selectedElementIds.value.length)
+
+  /** Whether the properties column (element or page settings) should be visible — an element
+   * selection always shows it; an explicit page-properties request (background click) does too,
+   * until the user navigates to a left-panel rail category. */
+  const showPropertiesPanel = computed(() => hasSelection.value || pagePropertiesRequested.value)
+
+  function requestPageProperties(): void {
+    pagePropertiesRequested.value = true
+  }
+
+  function dismissPageProperties(): void {
+    pagePropertiesRequested.value = false
+  }
+
+  /** Closes the properties column outright — clears whatever is currently making it show
+   * (selection and/or a pending page-properties request). */
+  function closePropertiesPanel(): void {
+    if (hasSelection.value) {
+      clearSelection()
+    }
+    dismissPageProperties()
+  }
 
   function isElementSelected(id: string): boolean {
     return selectedElementIds.value.includes(id)
@@ -723,6 +762,27 @@ export const useEditorStore = defineStore('editor', () => {
     } as PageElement
   }
 
+  /** Re-measures every text element in the document — used after custom fonts finish loading:
+   * text elements already on the canvas when the page opened were measured once, synchronously,
+   * possibly before their font's FontFace had registered, so their wrap width may still reflect a
+   * fallback font. This is a silent visual correction, not a user edit — no history/isDirty. */
+  function recalculateAllTextElementSizes(): void {
+    if (!document.value) {
+      return
+    }
+
+    const textElementIds: string[] = []
+    walkTree(document.value.canvasData.elements, (node) => {
+      if (isTextPlaceholderType(node.type)) {
+        textElementIds.push(node.id)
+      }
+    })
+
+    for (const id of textElementIds) {
+      recalculateTextElementSize(id)
+    }
+  }
+
   function setLiveDragPosition(id: string, position: Position): void {
     liveDragPositions.value = {
       ...liveDragPositions.value,
@@ -897,6 +957,70 @@ export const useEditorStore = defineStore('editor', () => {
     selectedElementIds.value = clones.map((clone) => clone.id)
     isDirty.value = true
     return clones[clones.length - 1]
+  }
+
+  const hasClipboardContent = computed(() => clipboard.value.length > 0)
+
+  function copySelection(): void {
+    if (!document.value || selectedElementIds.value.length === 0) {
+      return
+    }
+
+    const root = document.value.canvasData.elements
+    const copied: PageElement[] = []
+
+    for (const id of selectedElementIds.value) {
+      const node = findNodeById(root, id)
+      if (node) {
+        copied.push(cloneSubtree(node))
+      }
+    }
+
+    if (copied.length === 0) {
+      return
+    }
+
+    clipboard.value = copied
+    pasteCount = 0
+  }
+
+  /** Pastes into whatever container is currently isolated (groupEditingId), same anchor
+   * insertNewElement uses — root when nothing is isolated. */
+  function pasteClipboard(): PageElement[] {
+    if (!document.value || clipboard.value.length === 0) {
+      return []
+    }
+
+    pushHistoryImmediate()
+
+    const root = document.value.canvasData.elements
+    const parentId = groupEditingId.value
+    const parent = parentId != null ? findNodeById(root, parentId) : null
+    const siblings = parent && isGroupElement(parent) ? parent.children : root
+
+    pasteCount += 1
+    const offset = 20 * pasteCount
+    const pasted: PageElement[] = []
+
+    for (const item of clipboard.value) {
+      const clone = cloneSubtree(item)
+      clone.position = {
+        x: clone.position.x + offset,
+        y: clone.position.y + offset,
+      }
+      siblings.push(clone)
+      pasted.push(clone)
+    }
+
+    walkTree(pasted, (node) => {
+      if (isTextPlaceholderType(node.type)) {
+        recalculateTextElementSize(node.id)
+      }
+    })
+
+    selectedElementIds.value = pasted.map((clone) => clone.id)
+    isDirty.value = true
+    return pasted
   }
 
   /** Truncates the isolation breadcrumb at the first id no longer present after a removal/undo. */
@@ -1305,7 +1429,7 @@ export const useEditorStore = defineStore('editor', () => {
     } as PageElement
 
     const updated = location.siblings[location.index]
-    if (shouldRecalculateTextLayout(patch, updated)) {
+    if (!options?.skipTextLayoutRecalc && shouldRecalculateTextLayout(patch, updated)) {
       recalculateTextElementSize(id, undefined, { adjustAnchor: true })
     }
 
@@ -2188,6 +2312,10 @@ export const useEditorStore = defineStore('editor', () => {
     hasSelection,
     selectionCount,
     isElementSelected,
+    showPropertiesPanel,
+    requestPageProperties,
+    dismissPageProperties,
+    closePropertiesPanel,
     pageWidth,
     pageHeight,
     backgroundColor,
@@ -2214,6 +2342,9 @@ export const useEditorStore = defineStore('editor', () => {
     addElement,
     addFramedPhoto,
     duplicateElement,
+    hasClipboardContent,
+    copySelection,
+    pasteClipboard,
     removeElement,
     removeSelectedElements,
     selectElement,
@@ -2236,6 +2367,7 @@ export const useEditorStore = defineStore('editor', () => {
     applyDistributionGap,
     updateElement,
     recalculateTextElementSize,
+    recalculateAllTextElementSizes,
     setLiveDragPosition,
     setLiveDragPositions,
     clearLiveDragPosition,

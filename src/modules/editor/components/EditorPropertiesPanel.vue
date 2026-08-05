@@ -2,21 +2,45 @@
 
   <aside class="editor-properties" aria-label="Свойства элемента">
 
-    <div class="editor-properties__header">
+    <div v-if="panelStack.isRoot.value" class="editor-properties__header">
 
-      <p class="editor-properties__eyebrow">Свойства</p>
+      <div class="editor-properties__header-text">
 
-      <h2 class="editor-properties__title">
+        <p class="editor-properties__eyebrow">Свойства</p>
 
-        {{ panelTitle }}
+        <h2 class="editor-properties__title">
 
-      </h2>
+          {{ panelTitle }}
+
+        </h2>
+
+      </div>
+
+      <v-btn
+        icon
+        size="x-small"
+        variant="text"
+        class="editor-properties__close"
+        aria-label="Закрыть панель свойств"
+        @click="store.closePropertiesPanel()"
+      >
+        <v-icon size="18">mdi-close</v-icon>
+      </v-btn>
 
     </div>
 
-
+    <PropertiesPanelScreenHeader
+      v-else
+      :title="panelStack.current.value.title ?? ''"
+      @back="panelStack.pop"
+    />
 
     <div class="editor-properties__body">
+
+      <div class="editor-properties__screen-viewport">
+        <Transition :name="panelStack.direction.value === 'forward' ? 'panel-slide-forward' : 'panel-slide-back'">
+          <div :key="panelStack.current.value.id" class="editor-properties__screen">
+            <template v-if="panelStack.isRoot.value">
 
       <div v-if="!selected && !store.isMultiSelection" class="editor-properties__section">
 
@@ -596,141 +620,161 @@
 
           <div class="editor-properties__typo-toolbar">
 
-            <v-btn
+            <div class="editor-properties__typo-group">
 
-              :variant="isTextBold ? 'flat' : 'outlined'"
+              <v-btn
 
-              :color="isTextBold ? 'primary' : undefined"
+                :variant="isTextBold ? 'flat' : 'text'"
 
-              size="small"
+                :color="isTextBold ? 'primary' : undefined"
 
-              class="editor-properties__style-btn"
+                size="small"
 
-              title="Жирный"
+                class="editor-properties__style-btn"
 
-              @click="toggleBold"
+                title="Жирный"
 
-            >
+                @click="toggleBold"
 
-              <span class="editor-properties__style-icon editor-properties__style-icon--bold">B</span>
+              >
 
-            </v-btn>
+                <span class="editor-properties__style-icon editor-properties__style-icon--bold">B</span>
 
-            <v-btn
+              </v-btn>
 
-              :variant="isTextItalic ? 'flat' : 'outlined'"
+              <v-btn
 
-              :color="isTextItalic ? 'primary' : undefined"
+                :variant="isTextItalic ? 'flat' : 'text'"
 
-              size="small"
+                :color="isTextItalic ? 'primary' : undefined"
 
-              class="editor-properties__style-btn"
+                size="small"
 
-              title="Курсив"
+                class="editor-properties__style-btn"
 
-              @click="toggleItalic"
+                title="Курсив"
 
-            >
+                @click="toggleItalic"
 
-              <span class="editor-properties__style-icon editor-properties__style-icon--italic">I</span>
+              >
 
-            </v-btn>
+                <span class="editor-properties__style-icon editor-properties__style-icon--italic">I</span>
 
-            <v-btn
+              </v-btn>
 
-              :variant="isTextUppercase ? 'flat' : 'outlined'"
+              <v-btn
 
-              :color="isTextUppercase ? 'primary' : undefined"
+                :variant="isTextUppercase ? 'flat' : 'text'"
 
-              size="small"
+                :color="isTextUppercase ? 'primary' : undefined"
 
-              class="editor-properties__style-btn"
+                size="small"
 
-              icon="mdi-format-letter-case-upper"
+                class="editor-properties__style-btn"
 
-              title="Все заглавные"
+                icon="mdi-format-letter-case-upper"
 
-              @click="toggleUppercase"
+                title="Все заглавные"
 
-            />
+                @click="toggleUppercase"
 
+              />
 
+            </div>
 
-            <span class="editor-properties__typo-divider" aria-hidden="true" />
 
 
+            <div class="editor-properties__typo-group">
 
-            <v-btn
+              <v-btn
 
-              :variant="textElement.textAlign === 'left' ? 'flat' : 'outlined'"
+                :variant="textElement.textAlign === 'left' ? 'flat' : 'text'"
 
-              :color="textElement.textAlign === 'left' ? 'primary' : undefined"
+                :color="textElement.textAlign === 'left' ? 'primary' : undefined"
 
-              size="small"
+                size="small"
 
-              class="editor-properties__style-btn"
+                class="editor-properties__style-btn"
 
-              icon="mdi-format-align-left"
+                icon="mdi-format-align-left"
 
-              title="Слева"
+                title="Слева"
 
-              @click="setTextAlign('left')"
+                @click="setTextAlign('left')"
 
-            />
+              />
 
-            <v-btn
+              <v-btn
 
-              :variant="textElement.textAlign === 'center' ? 'flat' : 'outlined'"
+                :variant="textElement.textAlign === 'center' ? 'flat' : 'text'"
 
-              :color="textElement.textAlign === 'center' ? 'primary' : undefined"
+                :color="textElement.textAlign === 'center' ? 'primary' : undefined"
 
-              size="small"
+                size="small"
 
-              class="editor-properties__style-btn"
+                class="editor-properties__style-btn"
 
-              icon="mdi-format-align-center"
+                icon="mdi-format-align-center"
 
-              title="По центру"
+                title="По центру"
 
-              @click="setTextAlign('center')"
+                @click="setTextAlign('center')"
 
-            />
+              />
 
-            <v-btn
+              <v-btn
 
-              :variant="textElement.textAlign === 'right' ? 'flat' : 'outlined'"
+                :variant="textElement.textAlign === 'right' ? 'flat' : 'text'"
 
-              :color="textElement.textAlign === 'right' ? 'primary' : undefined"
+                :color="textElement.textAlign === 'right' ? 'primary' : undefined"
 
-              size="small"
+                size="small"
 
-              class="editor-properties__style-btn"
+                class="editor-properties__style-btn"
 
-              icon="mdi-format-align-right"
+                icon="mdi-format-align-right"
 
-              title="Справа"
+                title="Справа"
 
-              @click="setTextAlign('right')"
+                @click="setTextAlign('right')"
 
-            />
+              />
 
+              <v-btn
 
+                :variant="textElement.textAlign === 'justify' ? 'flat' : 'text'"
 
-            <span class="editor-properties__typo-divider" aria-hidden="true" />
+                :color="textElement.textAlign === 'justify' ? 'primary' : undefined"
 
+                size="small"
 
+                class="editor-properties__style-btn"
 
-            <v-menu
+                icon="mdi-format-align-justify"
 
-              v-model="textSpacingMenuOpen"
+                title="По ширине"
 
-              :close-on-content-click="false"
+                @click="setTextAlign('justify')"
 
-              location="bottom start"
+              />
 
-              offset="8"
+            </div>
 
-            >
+
+
+            <div class="editor-properties__typo-group">
+
+              <v-menu
+
+                v-model="textSpacingMenuOpen"
+
+                :close-on-content-click="false"
+
+                location="bottom start"
+
+                offset="8"
+
+              >
 
               <template #activator="{ props: menuProps }">
 
@@ -738,7 +782,7 @@
 
                   v-bind="menuProps"
 
-                  :variant="textSpacingMenuOpen || hasAdvancedTextSpacing ? 'flat' : 'outlined'"
+                  :variant="textSpacingMenuOpen || hasAdvancedTextSpacing ? 'flat' : 'text'"
 
                   :color="textSpacingMenuOpen || hasAdvancedTextSpacing ? 'primary' : undefined"
 
@@ -934,6 +978,8 @@
 
             </v-menu>
 
+            </div>
+
           </div>
 
 
@@ -960,6 +1006,18 @@
             @update:model-value="patchElement({ required: Boolean($event) })"
 
           />
+
+
+
+          <button
+            type="button"
+            class="editor-properties__row-link"
+            @click="panelStack.push({ id: 'text-effects', title: 'Эффекты' })"
+          >
+            <span class="editor-properties__row-link-label">Эффекты</span>
+            <span class="editor-properties__row-link-preview">{{ effectPreviewLabel }}</span>
+            <v-icon size="16">mdi-chevron-right</v-icon>
+          </button>
 
         </div>
 
@@ -1133,30 +1191,34 @@
 
 
 
-          <v-btn
-            variant="outlined"
-            size="small"
-            prepend-icon="mdi-content-copy"
-            class="editor-properties__duplicate"
-            :disabled="store.previewMode"
-            @click="handleDuplicate"
-          >
-            Дублировать
-          </v-btn>
+          <div class="editor-properties__element-actions">
 
-          <v-btn
-            variant="outlined"
-            color="error"
-            size="small"
-            prepend-icon="mdi-delete-outline"
-            class="editor-properties__delete"
-            :disabled="store.previewMode"
-            @click="handleRemove"
-          >
+            <v-btn
+              variant="outlined"
+              size="x-small"
+              prepend-icon="mdi-content-copy"
+              class="editor-properties__duplicate"
+              :disabled="store.previewMode"
+              @click="handleDuplicate"
+            >
+              Дублировать
+            </v-btn>
 
-            Удалить элемент
+            <v-btn
+              variant="outlined"
+              color="error"
+              size="x-small"
+              prepend-icon="mdi-delete-outline"
+              class="editor-properties__delete"
+              :disabled="store.previewMode"
+              @click="handleRemove"
+            >
 
-          </v-btn>
+              Удалить
+
+            </v-btn>
+
+          </div>
 
         </div>
 
@@ -1172,6 +1234,12 @@
 
       </div>
 
+            </template>
+            <component :is="panelScreenComponent" v-else-if="panelScreenComponent" />
+          </div>
+        </Transition>
+      </div>
+
     </div>
 
   </aside>
@@ -1182,9 +1250,15 @@
 
 <script setup lang="ts">
 
-import { computed, ref, watch } from 'vue'
+import { computed, provide, ref, watch } from 'vue'
 
 import { storeToRefs } from 'pinia'
+
+import { usePropertiesPanelStack } from '../composables/use-properties-panel-stack'
+import { PROPERTIES_PANEL_STACK_KEY } from '../composables/properties-panel-stack.context'
+import PropertiesPanelScreenHeader from './properties-panel/PropertiesPanelScreenHeader.vue'
+import { PANEL_SCREENS, type PanelScreenId } from './properties-panel/panel-screen-registry'
+import { TEXT_EFFECT_CARDS } from '../models/text-effect.model'
 
 
 
@@ -1198,11 +1272,12 @@ import {
 
   A4_SPREAD_PAGE_HEIGHT,
   A4_SPREAD_PAGE_WIDTH,
-  EDITOR_FONT_OPTIONS,
 
   PAGE_SIZE_PRESETS,
 
 } from '../constants/page.constants'
+
+import { mergedFontOptions } from '../utils/custom-fonts.util'
 
 import type { ElementPatch } from '../store/editor.store'
 
@@ -1244,6 +1319,31 @@ const store = useEditorStore()
 const { showErrorMessageModal } = useErrorMessageModal()
 
 const { selectedElement: selected } = storeToRefs(store)
+
+const panelStack = usePropertiesPanelStack(() => ({ id: 'root' }))
+
+provide(PROPERTIES_PANEL_STACK_KEY, {
+  push: panelStack.push,
+  pop: panelStack.pop,
+  isRoot: panelStack.isRoot,
+})
+
+watch(
+  () => selected.value?.id,
+  () => panelStack.reset({ id: 'root' }),
+)
+
+const panelScreenComponent = computed(() =>
+  panelStack.isRoot.value ? null : PANEL_SCREENS[panelStack.current.value.id as PanelScreenId],
+)
+
+const effectPreviewLabel = computed(() => {
+  const effect = textElement.value?.effect
+  if (!effect) {
+    return 'Без эффекта'
+  }
+  return TEXT_EFFECT_CARDS.find((card) => card.type === effect.type)?.label ?? 'Без эффекта'
+})
 
 const selectedSpreadSide = computed(() => {
   if (!store.isSpreadPage || !selected.value) {
@@ -1333,7 +1433,7 @@ const LINE_HEIGHT_MAX = 3
 
 
 
-const fontOptions = EDITOR_FONT_OPTIONS
+const fontOptions = mergedFontOptions
 
 const fitModeOptions = [
 
@@ -1878,11 +1978,20 @@ function handleRemove(): void {
 
   flex-direction: column;
 
-  height: 100%;
+  // Margin (instead of height: 100%) so CSS Grid's default stretch sizing accounts for it,
+  // leaving the rounded corners/shadow visible on every side — reads as a floating window rather
+  // than a flush panel.
+  margin: $spacing-3;
 
-  border-right: 1px solid $border-light;
+  border: 1px solid $border-light;
+
+  border-radius: $radius-md;
 
   background: $bg-primary;
+
+  box-shadow: $shadow-sm;
+
+  overflow: hidden;
 
 }
 
@@ -1890,9 +1999,29 @@ function handleRemove(): void {
 
 .editor-properties__header {
 
+  display: flex;
+
+  align-items: flex-start;
+
+  justify-content: space-between;
+
+  gap: $spacing-2;
+
   padding: $spacing-6 $spacing-4 $spacing-4;
 
   border-bottom: 1px solid $border-light;
+
+}
+
+
+
+.editor-properties__close {
+
+  flex-shrink: 0;
+
+  margin-top: -$spacing-1;
+
+  margin-right: -$spacing-1;
 
 }
 
@@ -1936,12 +2065,89 @@ function handleRemove(): void {
 
   flex-direction: column;
 
-  gap: $spacing-4;
-
-  padding: $spacing-4;
-
   overflow-y: auto;
 
+}
+
+.editor-properties__screen-viewport {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  overflow-x: hidden;
+}
+
+.editor-properties__screen {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-4;
+  padding: $spacing-4;
+}
+
+.panel-slide-forward-enter-active,
+.panel-slide-forward-leave-active,
+.panel-slide-back-enter-active,
+.panel-slide-back-leave-active {
+  transition:
+    transform 250ms $ease-out-editorial,
+    opacity 250ms $ease-out-editorial;
+}
+
+.panel-slide-forward-enter-from {
+  transform: translateX(100%);
+  opacity: 0;
+}
+
+.panel-slide-forward-leave-to {
+  transform: translateX(-30%);
+  opacity: 0;
+}
+
+.panel-slide-back-enter-from {
+  transform: translateX(-30%);
+  opacity: 0;
+}
+
+.panel-slide-back-leave-to {
+  transform: translateX(100%);
+  opacity: 0;
+}
+
+.editor-properties__row-link {
+  display: flex;
+  align-items: center;
+  gap: $spacing-2;
+  width: 100%;
+  padding: $spacing-3 0;
+  border: none;
+  border-top: 1px solid $border-light;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  color: $text-primary;
+  text-align: left;
+
+  &:hover {
+    background: $state-hover-bg;
+  }
+}
+
+.editor-properties__row-link-label {
+  flex-shrink: 0;
+}
+
+.editor-properties__row-link-preview {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  color: $text-muted;
+  font-size: $font-size-body-sm;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 
@@ -2159,23 +2365,28 @@ function handleRemove(): void {
 
   align-items: center;
 
-  gap: $spacing-1;
+  gap: $spacing-2;
 
 }
 
 
 
-.editor-properties__typo-divider {
+// Each logical cluster (style/case, alignment, spacing) sits in its own rounded "well" — reads as
+// one grouped control at a glance, the way Figma/Canva group related toolbar buttons, instead of
+// a flat row of individually-bordered buttons.
+.editor-properties__typo-group {
 
-  width: 1px;
+  display: inline-flex;
 
-  height: 24px;
+  align-items: center;
 
-  margin: 0 $spacing-1;
+  gap: 2px;
 
-  background: $border-light;
+  padding: 2px;
 
-  flex-shrink: 0;
+  border-radius: $radius-sm;
+
+  background: $bg-muted;
 
 }
 
@@ -2309,13 +2520,15 @@ function handleRemove(): void {
 
 .editor-properties__style-btn {
 
-  min-width: 36px;
+  min-width: 28px;
 
-  width: 36px;
+  width: 28px;
 
-  height: 36px;
+  height: 28px;
 
   padding: 0;
+
+  border-radius: $radius-xs;
 
 }
 
@@ -2327,7 +2540,7 @@ function handleRemove(): void {
 
   font-family: Georgia, 'Times New Roman', serif;
 
-  font-size: 16px;
+  font-size: 14px;
 
   line-height: 1;
 
@@ -2414,9 +2627,33 @@ function handleRemove(): void {
 
 
 
+.editor-properties__element-actions {
+
+  display: flex;
+
+  gap: $spacing-2;
+
+}
+
+
+
+.editor-properties__duplicate,
+
 .editor-properties__delete {
 
-  align-self: flex-start;
+  // Vuetify's v-btn lays out prepend/content/append as CSS grid columns that don't shrink below
+  // their own content size — at the default "small" size, icon + "Дублировать" didn't fit the
+  // ~140px each button gets at flex: 1 in a 320px panel, and (grid content doesn't clip by
+  // default) visibly overflowed the button's own border. size="x-small" (smaller font/icon) plus
+  // this tighter padding is what makes it fit; min-width: 0 lets the button honor flex: 1 instead
+  // of Vuetify's own min-width, and overflow: hidden is a safety net.
+  flex: 1;
+
+  min-width: 0;
+
+  padding: 0 $spacing-2;
+
+  overflow: hidden;
 
 }
 

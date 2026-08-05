@@ -195,6 +195,22 @@ function handleKeyDown(event: KeyboardEvent): void {
     return
   }
 
+  if (withCtrl && code === 'KeyC') {
+    event.preventDefault()
+    if (!store.previewMode && store.hasSelection) {
+      store.copySelection()
+    }
+    return
+  }
+
+  if (withCtrl && code === 'KeyV') {
+    event.preventDefault()
+    if (!store.previewMode && store.hasClipboardContent) {
+      store.pasteClipboard()
+    }
+    return
+  }
+
   if (withCtrl && code === 'KeyG' && event.shiftKey) {
     event.preventDefault()
     if (!store.previewMode) {

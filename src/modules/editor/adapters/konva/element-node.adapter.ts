@@ -2,6 +2,8 @@ import type { PageElement } from '../../models'
 import type { PhotoPlaceholder } from '../../models/photo-placeholder.model'
 import { hasPhotoStroke } from '../../utils/element-stroke.util'
 import type { TextPlaceholder } from '../../models/text-placeholder.model'
+import type { TextEffect } from '../../models/text-effect.model'
+import { parseCssColor, formatCssColor } from '../../utils/color-format.util'
 import {
   TEXT_BOX_PADDING,
 } from '../../constants/text.constants'
@@ -580,16 +582,7 @@ export function resolveTextContent(
   return raw
 }
 
-export function getTextConfig(element: PageElement, displayText?: string | null) {
-  if (
-    element.type !== 'text-placeholder' &&
-    element.type !== 'title-placeholder' &&
-    element.type !== 'subtitle-placeholder'
-  ) {
-    return null
-  }
-
-  const textEl = element as TextPlaceholder
+function buildBaseTextConfig(textEl: TextPlaceholder, displayText?: string | null) {
   const text = resolveTextContent(textEl, displayText)
   const innerWidth = Math.max(1, textEl.size.width - TEXT_BOX_PADDING * 2)
   const useWrap = shouldWrapTextContent(text, textEl, innerWidth)
@@ -608,6 +601,150 @@ export function getTextConfig(element: PageElement, displayText?: string | null)
     verticalAlign: textEl.verticalAlign ?? TEXT_VERTICAL_ALIGN_DEFAULT,
     wrap: useWrap ? 'word' : 'none',
     ...(useWrap ? { width: innerWidth } : {}),
+  }
+}
+
+function getTextPlaceholderElement(element: PageElement): TextPlaceholder | null {
+  if (
+    element.type !== 'text-placeholder' &&
+    element.type !== 'title-placeholder' &&
+    element.type !== 'subtitle-placeholder'
+  ) {
+    return null
+  }
+
+  return element as TextPlaceholder
+}
+
+export function getTextConfig(element: PageElement, displayText?: string | null) {
+  const textEl = getTextPlaceholderElement(element)
+  if (!textEl) {
+    return null
+  }
+
+  return {
+    ...buildBaseTextConfig(textEl, displayText),
+    ...getTextEffectKonvaProps(textEl.effect),
+  }
+}
+
+/**
+ * Echo copies must be siblings the caller renders *before* the main text node so Konva draws
+ * them underneath it. But Konva's vue bindings append a node to its parent the moment it first
+ * mounts — regardless of where it sits in the template — so a layer that mounts *after* the main
+ * text (e.g. the first time the user turns the echo effect on) would render on top of it instead
+ * of behind it. To sidestep that, this always returns a fixed-length array of layer slots (so
+ * they all mount once, together with the main text, before any effect is ever chosen) and toggles
+ * unused slots via `visible: false` rather than adding/removing nodes later.
+ */
+const ECHO_MAX_COPIES = 8
+
+export function getTextEchoLayerConfigs(element: PageElement, displayText?: string | null) {
+  const textEl = getTextPlaceholderElement(element)
+  if (!textEl) {
+    return null
+  }
+
+  const base = buildBaseTextConfig(textEl, displayText)
+  const effect = textEl.effect
+  const isEcho = effect?.type === 'echo'
+  const { color, copies, offset, opacity } = effect?.type === 'echo'
+    ? effect.params
+    : { color: base.fill, copies: 0, offset: 0, opacity: 0 }
+  const baseOpacity = opacity / 100
+
+  const layers = []
+  for (let slot = 1; slot <= ECHO_MAX_COPIES; slot += 1) {
+    const active = isEcho && slot <= copies
+    layers.push({
+      ...base,
+      x: base.x + offset * slot,
+      y: base.y + offset * slot,
+      fill: color,
+      opacity: active ? baseOpacity * ((copies - slot + 1) / (copies + 1)) : 0,
+      visible: active,
+      listening: false,
+      shadowEnabled: false,
+      stroke: undefined,
+    })
+  }
+
+  return layers
+}
+
+/** Applies opacity to a CSS color via rgba(), reusing the shared color-parsing helpers. */
+function withAlpha(color: string, opacity: number): string {
+  const parsed = parseCssColor(color)
+  return formatCssColor({ ...parsed, alpha: opacity })
+}
+
+/**
+ * Konva-specific rendering for text effects. 'background' needs a sibling Rect (see
+ * EditorElementNode.vue's textBackgroundConfig) and 'echo' needs sibling Text layers (see
+ * getTextEchoLayerConfigs above) — both are handled outside this function since a single Text
+ * config object can't express them.
+ */
+function getTextEffectKonvaProps(effect: TextEffect | null): Record<string, unknown> {
+  if (!effect) {
+    return {}
+  }
+
+  switch (effect.type) {
+    case 'drop-shadow':
+      return {
+        shadowColor: effect.params.color,
+        shadowOpacity: effect.params.opacity / 100,
+        shadowBlur: effect.params.blur,
+        shadowOffsetX: effect.params.offsetX,
+        shadowOffsetY: effect.params.offsetY,
+        shadowEnabled: true,
+      }
+    case 'glow':
+      // Approximates a uniform glow by reusing the same Konva shadow mechanism as drop-shadow,
+      // with zero offset so the blur radiates evenly in all directions.
+      return {
+        shadowColor: effect.params.color,
+        shadowOpacity: effect.params.opacity / 100,
+        shadowBlur: effect.params.blur,
+        shadowOffsetX: 0,
+        shadowOffsetY: 0,
+        shadowEnabled: true,
+      }
+    case 'stroke':
+      // "Контур" — only the outline remains, the letters' interior fill is hidden.
+      return {
+        fillEnabled: false,
+        stroke:
+          effect.params.opacity < 100
+            ? withAlpha(effect.params.color, effect.params.opacity / 100)
+            : effect.params.color,
+        strokeWidth: effect.params.width,
+      }
+    case 'outlined':
+      // "С контуром" — the normal filled text, with an outline traced around it.
+      return {
+        stroke:
+          effect.params.opacity < 100
+            ? withAlpha(effect.params.color, effect.params.opacity / 100)
+            : effect.params.color,
+        strokeWidth: effect.params.width,
+        fillAfterStrokeEnabled: true,
+      }
+    case 'neon':
+      // Tints the text itself to the neon color and radiates a colored shadow — 'glow' and
+      // 'blur' both widen the halo (Konva only exposes one shadowBlur radius per node), while
+      // 'intensity' drives how opaque/bright that halo reads.
+      return {
+        fill: effect.params.color,
+        shadowColor: effect.params.color,
+        shadowOpacity: Math.min(1, effect.params.intensity / 100),
+        shadowBlur: effect.params.blur + effect.params.glow,
+        shadowOffsetX: 0,
+        shadowOffsetY: 0,
+        shadowEnabled: true,
+      }
+    default:
+      return {}
   }
 }
 

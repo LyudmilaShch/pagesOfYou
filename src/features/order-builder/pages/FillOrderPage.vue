@@ -120,6 +120,7 @@ import { useOrderFillSession } from '../composables/useOrderFillSession'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
 import type { SetJournalPageTemplatePayload } from '../api/orders.api'
 import type { JournalPage } from '../types/order.types'
+import { ensureCustomFontsLoaded } from '@/modules/editor/utils/custom-fonts.util'
 
 const router = useRouter()
 const store = useOrderBuilderStore()
@@ -147,6 +148,7 @@ const {
   startPhotoCropEditing,
   stopPhotoCropEditing,
   syncLocalValues,
+  recalculateAllTextElementSizes,
 } = fillSession
 
 const selectedTextValue = computed(() =>
@@ -298,8 +300,16 @@ async function handleSubmit(): Promise<void> {
   }
 }
 
-onMounted(() => {
-  void initialize()
+onMounted(async () => {
+  // Runs alongside the order/page load below, not blocking it — the font picker (and any custom
+  // fonts already used on the page) fill in reactively once this resolves.
+  const fontsReady = ensureCustomFontsLoaded()
+
+  await initialize()
+
+  // Text elements already on the current page may have been measured (above) before their custom
+  // font finished registering — fix up their wrap width/height now that it has.
+  void fontsReady.then(() => recalculateAllTextElementSizes())
 })
 </script>
 

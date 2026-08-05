@@ -1,6 +1,7 @@
 import type { PageElementBase } from './page-element.model'
+import type { TextEffect } from './text-effect.model'
 
-export type TextAlign = 'left' | 'center' | 'right'
+export type TextAlign = 'left' | 'center' | 'right' | 'justify'
 
 export type TextVerticalAlign = 'top' | 'middle' | 'bottom'
 
@@ -25,4 +26,5 @@ export interface TextPlaceholder extends PageElementBase {
   maxLength: number
   required: boolean
   defaultText?: string
+  effect: TextEffect | null
 }

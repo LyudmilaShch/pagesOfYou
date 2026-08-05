@@ -81,44 +81,54 @@ export function computeTextBoxLayout(input: TextLayoutInput): TextLayoutResult {
   const availableWidth = getAvailableWidth(element, pageWidth, input.pageHeight)
   const oldSize = { ...element.size }
 
-  let contentWidth: number
-  let contentHeight: number
-
   if (element.textSizingMode === 'fixed') {
-    const wrapWidth = Math.max(MIN_TEXT_BOX_WIDTH, Math.min(element.size.width, availableWidth))
+    // Fixed mode: the box WIDTH is user-set and must never change here — only height (from
+    // re-wrapping) does. `wrapWidth` is the CONTENT area (box width minus padding), matching what
+    // getTextConfig actually feeds Konva.Text as its wrap width; measuring against the full box
+    // width instead (as this used to) made lines wrap slightly wider than they're actually
+    // rendered. The previous version also fed that box-sized `wrapWidth` back through the shared
+    // `ceil(contentWidth + padding + 2)` formula below — meant for converting a *content*
+    // measurement into a box size — which re-added padding on every recalculation, growing the box
+    // by ~10 units each time it was called (e.g. on every element move, since drag-end
+    // unconditionally recalculates text size).
+    const boxWidth = Math.max(MIN_TEXT_BOX_WIDTH, Math.min(element.size.width, availableWidth))
+    const wrapWidth = Math.max(1, boxWidth - padding)
     const measured = measureKonvaText({
       text,
       element,
       maxWidth: wrapWidth,
     })
 
-    contentWidth = wrapWidth
-    contentHeight = measured.textHeight
-  } else {
-    const singleLineWidth = measureTextLineWidthWithBuffer(text, element)
-    const maxContentWidth = Math.max(MIN_TEXT_BOX_WIDTH, availableWidth - padding)
-
-    if (singleLineWidth <= maxContentWidth) {
-      contentWidth = singleLineWidth
-      contentHeight = measureKonvaText({ text, element }).textHeight
-    } else {
-      contentWidth = maxContentWidth
-      const wrapped = measureKonvaText({
-        text,
-        element,
-        maxWidth: contentWidth,
-      })
-      contentHeight = wrapped.textHeight
+    return {
+      size: {
+        width: boxWidth,
+        height: Math.max(MIN_TEXT_BOX_HEIGHT, Math.ceil(measured.textHeight + padding + 2)),
+      },
     }
+  }
+
+  let contentWidth: number
+  let contentHeight: number
+
+  const singleLineWidth = measureTextLineWidthWithBuffer(text, element)
+  const maxContentWidth = Math.max(MIN_TEXT_BOX_WIDTH, availableWidth - padding)
+
+  if (singleLineWidth <= maxContentWidth) {
+    contentWidth = singleLineWidth
+    contentHeight = measureKonvaText({ text, element }).textHeight
+  } else {
+    contentWidth = maxContentWidth
+    const wrapped = measureKonvaText({
+      text,
+      element,
+      maxWidth: contentWidth,
+    })
+    contentHeight = wrapped.textHeight
   }
 
   const size: Size = {
     width: Math.max(MIN_TEXT_BOX_WIDTH, Math.ceil(contentWidth + padding + 2)),
     height: Math.max(MIN_TEXT_BOX_HEIGHT, Math.ceil(contentHeight + padding + 2)),
-  }
-
-  if (element.textSizingMode === 'fixed') {
-    return { size }
   }
 
   if (!adjustAnchor) {

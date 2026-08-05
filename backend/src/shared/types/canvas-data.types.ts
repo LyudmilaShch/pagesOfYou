@@ -75,6 +75,71 @@ export interface CanvasPhotoPlaceholder extends CanvasElementBase {
   frame?: CanvasPhotoFrame | null;
 }
 
+export type CanvasTextEffectType =
+  | 'drop-shadow'
+  | 'glow'
+  | 'echo'
+  | 'outlined'
+  | 'background'
+  | 'stroke'
+  | 'neon';
+
+export interface CanvasDropShadowEffectParams {
+  color: string;
+  opacity: number;
+  blur: number;
+  offsetX: number;
+  offsetY: number;
+}
+
+export interface CanvasGlowEffectParams {
+  color: string;
+  blur: number;
+  opacity: number;
+}
+
+export interface CanvasEchoEffectParams {
+  color: string;
+  copies: number;
+  offset: number;
+  opacity: number;
+}
+
+export interface CanvasOutlinedEffectParams {
+  color: string;
+  width: number;
+  opacity: number;
+}
+
+export interface CanvasBackgroundEffectParams {
+  color: string;
+  cornerRadius: number;
+  padding: number;
+  opacity: number;
+}
+
+export interface CanvasStrokeEffectParams {
+  color: string;
+  width: number;
+  opacity: number;
+}
+
+export interface CanvasNeonEffectParams {
+  color: string;
+  glow: number;
+  blur: number;
+  intensity: number;
+}
+
+export type CanvasTextEffect =
+  | { type: 'drop-shadow'; params: CanvasDropShadowEffectParams }
+  | { type: 'glow'; params: CanvasGlowEffectParams }
+  | { type: 'echo'; params: CanvasEchoEffectParams }
+  | { type: 'outlined'; params: CanvasOutlinedEffectParams }
+  | { type: 'background'; params: CanvasBackgroundEffectParams }
+  | { type: 'stroke'; params: CanvasStrokeEffectParams }
+  | { type: 'neon'; params: CanvasNeonEffectParams };
+
 export interface CanvasTextPlaceholder extends CanvasElementBase {
   type: 'text-placeholder' | 'title-placeholder' | 'subtitle-placeholder';
   label: string;
@@ -84,7 +149,7 @@ export interface CanvasTextPlaceholder extends CanvasElementBase {
   fontItalic: boolean;
   lineHeight: number;
   letterSpacing: number;
-  textAlign: 'left' | 'center' | 'right';
+  textAlign: 'left' | 'center' | 'right' | 'justify';
   verticalAlign: 'top' | 'middle' | 'bottom';
   textTransform: 'none' | 'uppercase';
   textSizingMode: 'auto' | 'fixed';
@@ -93,6 +158,7 @@ export interface CanvasTextPlaceholder extends CanvasElementBase {
   required: boolean;
   /** Admin default text — shown until user replaces it */
   defaultText?: string;
+  effect: CanvasTextEffect | null;
 }
 
 export interface CanvasShapeElement extends CanvasElementBase {

@@ -253,6 +253,7 @@
             v-if="!store.previewMode"
             ref="transformerRef"
             :config="transformerConfig"
+            @transformstart="handleTransformerTransformStart"
             @transform="handleTransformerTransform"
             @transformend="handleTransformerTransformEnd"
           />
@@ -306,7 +307,6 @@ import {
   buildSpreadFoldLineConfig,
   getSpreadPageSheets,
   getSpreadVisualWidth,
-  spreadLogicalXToVisual,
   spreadVisualXToLogical,
 } from '../../utils/spread.util'
 import {
@@ -353,6 +353,12 @@ const { showErrorMessageModal } = useErrorMessageModal()
 const containerRef = ref<HTMLElement | null>(null)
 const stageRef = ref<{ getNode: () => Konva.Stage } | null>(null)
 const transformerRef = ref<{ getNode: () => Konva.Transformer } | null>(null)
+/** Captured once per transform gesture — text's `boundBoxFunc` must clamp against a STABLE
+ * height, not the live store value: text height is recalculated (line-wrap reflow) on every
+ * 'transform' tick as width changes, and feeding that live-changing height back into Konva's own
+ * boundBoxFunc created a feedback loop (Konva's resize math got thrown off by its own reference
+ * box changing height every tick), which showed up as erratic jitter while dragging a width handle. */
+const transformStartSize = ref<{ width: number; height: number } | null>(null)
 const isPhotoFileDragActive = ref(false)
 const photoDropUploading = ref(false)
 let photoDragDepth = 0
@@ -565,25 +571,47 @@ const transformerConfig = computed(() => {
           return oldBox
         }
 
-        const maxWidth = getTextMaxWidth(
-          selected.position.x,
-          store.pageWidth,
-          store.pageHeight,
-        )
-        const boxX = store.isSpreadPage
-          ? spreadLogicalXToVisual(
-              selected.position.x,
-              store.pageWidth,
-              store.pageHeight,
-              selected.size.width,
-            )
-          : selected.position.x
+        // oldBox/newBox are in STAGE-ABSOLUTE pixel space — Konva's Transformer always works in
+        // absolute coordinates (see _getNodeRect()/node.getAbsoluteTransform() in Konva's own
+        // source), which includes the page's own render zoom (pageScale, applied to the group
+        // these nodes render inside). MIN_TEXT_BOX_WIDTH/getTextMaxWidth/transformStartSize are
+        // page/logical units — comparing them against newBox directly is a unit mismatch: at
+        // typical zoom levels it clamps width to a near-constant stage-pixel value regardless of
+        // how far the handle is dragged, while position (which passes newBox.x/y through
+        // untouched) keeps tracking the mouse — i.e. exactly "moves but doesn't resize".
+        const scale = pageScale.value || 1
+        const minWidth = MIN_TEXT_BOX_WIDTH * scale
+        const height = (transformStartSize.value?.height ?? selected.size.height) * scale
+        const activeAnchor = transformerRef.value?.getNode()?.getActiveAnchor() ?? null
+
+        if (activeAnchor === 'middle-left') {
+          // Right edge stays fixed for this anchor. Derive it from Konva's own newBox (already in
+          // stage-absolute space) instead of recomputing it from selected.position — mixing the
+          // two spaces is what previously made the box drift.
+          const rightEdge = newBox.x + newBox.width
+          const maxWidth = Math.max(minWidth, rightEdge)
+          const width = Math.max(minWidth, Math.min(newBox.width, maxWidth))
+
+          return {
+            x: rightEdge - width,
+            y: newBox.y,
+            width,
+            height,
+            rotation: oldBox.rotation,
+          }
+        }
+
+        // 'middle-right' (default): left edge stays fixed — trust Konva's own newBox.x/y, only
+        // the width needs clamping to the page bound.
+        const maxWidth =
+          getTextMaxWidth(selected.position.x, store.pageWidth, store.pageHeight) * scale
+        const width = Math.max(minWidth, Math.min(newBox.width, maxWidth))
 
         return {
-          x: boxX,
-          y: selected.position.y,
-          width: Math.max(MIN_TEXT_BOX_WIDTH, Math.min(newBox.width, maxWidth)),
-          height: selected.size.height,
+          x: newBox.x,
+          y: newBox.y,
+          width,
+          height,
           rotation: oldBox.rotation,
         }
       }
@@ -698,6 +726,11 @@ function getNodeLogicalPosition(node: Konva.Group): { x: number; y: number } | n
   }
 }
 
+function handleTransformerTransformStart(): void {
+  const selected = store.selectedElement
+  transformStartSize.value = selected ? { width: selected.size.width, height: selected.size.height } : null
+}
+
 function handleTransformerTransform(): void {
   const nodes = getTransformerNodes()
 
@@ -779,6 +812,7 @@ function handleStagePointerDown(event: Konva.KonvaEventObject<MouseEvent | Touch
   if (!event.evt.shiftKey) {
     store.clearSelection()
     store.exitGroupEditingToRoot()
+    store.requestPageProperties()
   }
 
   const pageGroup = getPageGroup(stage)
