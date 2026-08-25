@@ -2,6 +2,14 @@ export type { Position, Size } from './geometry.model'
 export type { PageElementType, PageElementBase } from './page-element.model'
 export type { PhotoFitMode, PhotoPlaceholder } from './photo-placeholder.model'
 export type {
+  PhotoMask,
+  PhotoMaskType,
+  PhotoMaskDescriptor,
+  PhotoMaskBox,
+  PhotoMaskClipContext,
+} from './photo-mask.model'
+export { PHOTO_MASK_DESCRIPTORS, getPhotoMaskDescriptor } from './photo-mask.model'
+export type {
   PhotoFilter,
   PhotoFilterPresetKey,
   PhotoFilterPresetDef,

@@ -511,6 +511,26 @@ model PhotoFrame {
   @@map("photo_frames")
 }
 
+/// Пользовательские маски для фото, загружаемые администратором из SVG-файла.
+/// `points` — уже нормализованный (0..1, objectBoundingBox-style) многоугольник,
+/// полученный сэмплированием исходного SVG-path на клиенте при загрузке
+/// (SVGGeometryElement.getPointAtLength) — сам SVG-файл не хранится, только
+/// геометрия, которую редактор клиппует так же, как встроенные маски-фигуры.
+model CustomPhotoMask {
+  id        String   @id @default(cuid())
+  name      String
+  points    Json
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([isActive, sortOrder])
+  @@map("custom_photo_masks")
+}
+
 /// Пользовательские шрифты, загружаемые администратором и доступные для выбора в
 /// редакторе шаблонов и в order-builder. fontFamily генерируется один раз при
 /// создании и не меняется при переименовании — он уже сохранён в canvasData

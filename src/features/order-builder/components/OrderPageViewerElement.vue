@@ -587,9 +587,13 @@ provide(EDITOR_ELEMENT_VISUALS_KEY, {
 
   photoClipConfig: computed(() => null),
 
+  photoMaskClipConfig: computed(() => null),
+
   photoRepositionInsideConfig: computed(() => null),
 
   photoDimBorderConfig: computed(() => null),
+
+  photoMaskOutlineConfig: computed(() => null),
 
   frameSliceConfigs,
 

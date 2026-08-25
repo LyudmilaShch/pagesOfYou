@@ -19,8 +19,10 @@ export interface EditorElementVisualsContext {
   isPhotoDimmed: Ref<boolean>
   photoRepositionOutsideConfig: Ref<Record<string, unknown> | null>
   photoClipConfig: Ref<Record<string, unknown> | null>
+  photoMaskClipConfig: Ref<Record<string, unknown> | null>
   photoRepositionInsideConfig: Ref<Record<string, unknown> | null>
   photoDimBorderConfig: Ref<Record<string, unknown> | null>
+  photoMaskOutlineConfig: Ref<Record<string, unknown> | null>
   photoBorderDrawNodes: Ref<PhotoBorderDrawNode[]>
   frameSliceConfigs: Ref<NineSliceImageConfig[]>
   loadedFrameImage: Ref<HTMLImageElement | null>

@@ -15,11 +15,13 @@
 
   <v-rect v-if="ctx.photoDropHighlightConfig.value" :config="ctx.photoDropHighlightConfig.value" />
 
-  <v-image
-    v-if="ctx.photoImageConfig.value && ctx.loadedImage.value && !ctx.isPhotoCropEditing.value && !ctx.isPhotoDimmed.value"
-    ref="photoImageRef"
-    :config="{ ...ctx.photoImageConfig.value, image: ctx.loadedImage.value }"
-  />
+  <v-group v-if="ctx.photoMaskClipConfig.value" :config="ctx.photoMaskClipConfig.value">
+    <v-image
+      v-if="ctx.photoImageConfig.value && ctx.loadedImage.value && !ctx.isPhotoCropEditing.value && !ctx.isPhotoDimmed.value"
+      ref="photoImageRef"
+      :config="{ ...ctx.photoImageConfig.value, image: ctx.loadedImage.value }"
+    />
+  </v-group>
 
   <template v-for="(borderNode, index) in ctx.photoBorderDrawNodes.value" :key="`photo-border-${index}`">
     <v-rect v-if="borderNode.node === 'rect'" :config="borderNode.config" />
@@ -47,6 +49,7 @@
   </v-group>
 
   <v-rect v-if="ctx.photoDimBorderConfig.value" :config="ctx.photoDimBorderConfig.value" />
+  <v-shape v-if="ctx.photoMaskOutlineConfig.value" :config="ctx.photoMaskOutlineConfig.value" />
 
   <v-group :config="{ listening: false }">
     <EffectExtraNode

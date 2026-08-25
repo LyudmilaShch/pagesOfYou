@@ -45,6 +45,7 @@ import {
   type NineSliceImageConfig,
 } from '../../utils/photo-frame.util'
 import { getElementTransformNodeId } from '../../utils/element-pivot.util'
+import { buildPhotoMaskClipPath } from '../../models/photo-mask.model'
 
 export { resolveKonvaFontStyle }
 
@@ -267,6 +268,23 @@ export function getPhotoCropEditingBorderConfig(
   }
 }
 
+/** Centers rotation on the image's own box instead of Konva's default top-left pivot. */
+function getPhotoImageRotationAttrs(
+  layoutX: number,
+  layoutY: number,
+  width: number,
+  height: number,
+  rotationDeg: number,
+) {
+  return {
+    x: layoutX + width / 2,
+    y: layoutY + height / 2,
+    offsetX: width / 2,
+    offsetY: height / 2,
+    rotation: rotationDeg,
+  }
+}
+
 export function getPhotoClipGroupConfig(element: PageElement) {
   if (element.type !== 'photo-placeholder') {
     return null
@@ -274,6 +292,17 @@ export function getPhotoClipGroupConfig(element: PageElement) {
 
   const box = getPhotoRenderBox(element.frame, element.size.width, element.size.height)
   const { x, y, width, height } = box
+
+  // The mask, when set, fully owns the display shape — it takes priority over the plain
+  // borderRadius rounding used when no mask is selected.
+  if (element.mask) {
+    const mask = element.mask
+    return {
+      listening: false,
+      clipFunc: (ctx: CanvasRenderingContext2D) => buildPhotoMaskClipPath(mask, ctx, box),
+    }
+  }
+
   const radius = element.borderRadius
 
   if (radius > 0) {
@@ -303,6 +332,33 @@ export function getPhotoClipGroupConfig(element: PageElement) {
       width,
       height,
     },
+  }
+}
+
+/**
+ * Always returns a config (never null) for a photo-placeholder, whether or not a mask is active —
+ * the caller wraps the normal-render image in this group unconditionally so it's always mounted
+ * from the start (see the matching note on getTextEchoLayerConfigs for why: vue-konva appends a
+ * newly-mounted node to the end of its parent's children regardless of template position, so a
+ * group that only starts existing once a mask is picked would end up drawn on top of whatever
+ * mounted after it, e.g. frame decoration). With no mask, this is a plain no-op wrapper — no
+ * clipFunc/clip is set, so it doesn't affect the existing cornerRadius-on-Image rendering at all.
+ */
+export function getPhotoMaskClipConfig(element: PageElement) {
+  if (element.type !== 'photo-placeholder') {
+    return null
+  }
+
+  if (!element.mask) {
+    return { listening: false }
+  }
+
+  const box = getPhotoRenderBox(element.frame, element.size.width, element.size.height)
+  const mask = element.mask
+
+  return {
+    listening: false,
+    clipFunc: (ctx: CanvasRenderingContext2D) => buildPhotoMaskClipPath(mask, ctx, box),
   }
 }
 
@@ -389,6 +445,37 @@ export function getPhotoScaleHandleConfigs(element: PageElement, image: HTMLImag
   }))
 }
 
+/**
+ * A single handle for rotating the photo *inside* its box (independent of the element's own
+ * `rotation`) — orbits the box's center at a fixed radius, following the image's current
+ * imageRotation angle, the same way Konva's own Transformer rotate anchor orbits its box.
+ */
+export function getPhotoRotateHandleConfig(element: PageElement) {
+  if (element.type !== 'photo-placeholder') {
+    return null
+  }
+
+  const box = getPhotoRenderBox(element.frame, element.size.width, element.size.height)
+  const cx = box.x + box.width / 2
+  const cy = box.y + box.height / 2
+  const distance = Math.max(box.width, box.height) / 2 + 28
+  const angleRad = (((element.imageRotation ?? 0) - 90) * Math.PI) / 180
+
+  return {
+    x: cx + Math.cos(angleRad) * distance,
+    y: cy + Math.sin(angleRad) * distance,
+    radius: TRANSFORMER_CORNER_ANCHOR_SIZE / 2,
+    fill: '#FFFFFF',
+    stroke: TRANSFORMER_ANCHOR_STROKE,
+    strokeWidth: TRANSFORMER_ANCHOR_STROKE_WIDTH,
+    hitStrokeWidth: 14,
+    name: 'photo-rotate-handle',
+    listening: true,
+    draggable: false,
+    perfectDrawEnabled: false,
+  }
+}
+
 export function getPhotoRepositionPanHitConfig(element: PageElement, image: HTMLImageElement) {
   const layout = getPhotoCoverLayout(element, image)
 
@@ -439,10 +526,12 @@ export function getPhotoRepositionLayerConfig(
     return null
   }
 
+  const rotation = element.type === 'photo-placeholder' ? element.imageRotation ?? 0 : 0
+  const rotationAttrs = getPhotoImageRotationAttrs(layout.x, layout.y, layout.width, layout.height, rotation)
+
   if (layer === 'outside') {
     return {
-      x: layout.x,
-      y: layout.y,
+      ...rotationAttrs,
       width: layout.width,
       height: layout.height,
       opacity: PHOTO_PLACEHOLDER_DIM_OUTSIDE_OPACITY,
@@ -452,8 +541,7 @@ export function getPhotoRepositionLayerConfig(
   }
 
   return {
-    x: layout.x,
-    y: layout.y,
+    ...rotationAttrs,
     width: layout.width,
     height: layout.height,
     opacity: 1,
@@ -463,7 +551,9 @@ export function getPhotoRepositionLayerConfig(
 }
 
 export function getPhotoDimBorderConfig(element: PageElement, isActive: boolean) {
-  if (!isActive || element.type !== 'photo-placeholder') {
+  // While a mask is active, getPhotoMaskOutlineConfig below traces its exact silhouette instead
+  // of this plain box — required so the visible boundary during edit mode matches the mask shape.
+  if (!isActive || element.type !== 'photo-placeholder' || element.mask) {
     return null
   }
 
@@ -478,6 +568,28 @@ export function getPhotoDimBorderConfig(element: PageElement, isActive: boolean)
     strokeWidth: TRANSFORMER_BORDER_STROKE_WIDTH,
     cornerRadius: element.borderRadius,
     listening: false,
+  }
+}
+
+/** Traces the active mask's exact silhouette (instead of just its bounding box) while editing. */
+export function getPhotoMaskOutlineConfig(element: PageElement, isActive: boolean) {
+  if (!isActive || element.type !== 'photo-placeholder' || !element.mask) {
+    return null
+  }
+
+  const box = getPhotoRenderBox(element.frame, element.size.width, element.size.height)
+  const mask = element.mask
+
+  return {
+    stroke: TRANSFORMER_BORDER_STROKE,
+    strokeWidth: TRANSFORMER_BORDER_STROKE_WIDTH,
+    listening: false,
+    sceneFunc: (ctx: Konva.Context, shape: Konva.Shape) => {
+      ctx.beginPath()
+      buildPhotoMaskClipPath(mask, ctx as unknown as CanvasRenderingContext2D, box)
+      ctx.closePath()
+      ctx.fillStrokeShape(shape)
+    },
   }
 }
 
@@ -504,12 +616,19 @@ export function getPhotoImageKonvaConfig(element: PageElement, image: HTMLImageE
   }
 
   return {
-    x: konvaLayout.x + box.x,
-    y: konvaLayout.y + box.y,
+    ...getPhotoImageRotationAttrs(
+      konvaLayout.x + box.x,
+      konvaLayout.y + box.y,
+      konvaLayout.width,
+      konvaLayout.height,
+      photo.imageRotation ?? 0,
+    ),
     width: konvaLayout.width,
     height: konvaLayout.height,
     crop: konvaLayout.crop,
-    cornerRadius: photo.borderRadius,
+    // The mask (when set) owns the display shape via its own clip group — plain corner rounding
+    // would just be redundant (and visually wrong once the mask isn't itself a rounded rect).
+    cornerRadius: photo.mask ? 0 : photo.borderRadius,
     listening: false,
     ...getPhotoFilterKonvaAttrs(photo.filter),
   }

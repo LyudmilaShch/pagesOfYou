@@ -101,6 +101,15 @@
       @touchstart="handlePhotoScalePointerDown(handle.corner, $event)"
     />
 
+    <v-circle
+      v-if="photoRotateHandleConfig"
+      :config="photoRotateHandleConfig"
+      @mouseenter="handlePhotoRotateHandleEnter"
+      @mouseleave="handlePhotoRotateHandleLeave"
+      @mousedown="handlePhotoRotatePointerDown"
+      @touchstart="handlePhotoRotatePointerDown"
+    />
+
     <v-rect v-if="photoCropBorderConfig" :config="photoCropBorderConfig" />
 
     <v-rect v-if="selectionOutlineConfig" :config="selectionOutlineConfig" />
@@ -127,6 +136,9 @@ import {
   getElementHitAreaConfig,
   getElementOuterGroupConfig,
   getPhotoClipGroupConfig,
+  getPhotoMaskClipConfig,
+  getPhotoMaskOutlineConfig,
+  getPhotoRotateHandleConfig,
   getPhotoCropEditingBorderConfig,
   getPhotoDimBorderConfig,
   getPhotoDropHighlightConfig,
@@ -185,6 +197,8 @@ import {
 import { getPhotoBorderDrawNodes } from '../../utils/element-stroke.util'
 import { getPhotoRenderBox } from '../../utils/photo-frame.util'
 import { isPageBackgroundCropTransformerTarget } from '../../utils/canvas-background.util'
+import { buildRotateCursorStyle } from '../../utils/rotate-cursor.util'
+import { normalizeElementRotation } from '../../utils/transformer.util'
 
 import {
   applyOuterTopLeftPosition,
@@ -555,6 +569,8 @@ const isPhotoDimmed = computed(() => photoDimElementId.value === props.element.i
 
 const photoClipConfig = computed(() => getPhotoClipGroupConfig(props.element))
 
+const photoMaskClipConfig = computed(() => getPhotoMaskClipConfig(props.element))
+
 const photoRepositionOutsideConfig = computed(() => {
   if (!loadedImage.value || props.element.type !== 'photo-placeholder' || !isPhotoDimmed.value) {
     return null
@@ -609,6 +625,10 @@ const photoDimBorderConfig = computed(() =>
   getPhotoDimBorderConfig(props.element, isPhotoDimmed.value && Boolean(photoUrl.value)),
 )
 
+const photoMaskOutlineConfig = computed(() =>
+  getPhotoMaskOutlineConfig(props.element, isPhotoDimmed.value && Boolean(photoUrl.value)),
+)
+
 const photoBorderDrawNodes = computed(() => getPhotoBorderDrawNodes(props.element))
 
 const photoRepositionBoundsConfig = computed(() => {
@@ -625,6 +645,14 @@ const photoScaleHandles = computed(() => {
   }
 
   return getPhotoScaleHandleConfigs(props.element, loadedImage.value)
+})
+
+const photoRotateHandleConfig = computed(() => {
+  if (!loadedImage.value || props.element.type !== 'photo-placeholder' || !isPhotoDimmed.value) {
+    return null
+  }
+
+  return getPhotoRotateHandleConfig(props.element)
 })
 
 const photoCropBorderConfig = computed(() =>
@@ -711,8 +739,10 @@ provide(EDITOR_ELEMENT_VISUALS_KEY, {
   isPhotoDimmed,
   photoRepositionOutsideConfig,
   photoClipConfig,
+  photoMaskClipConfig,
   photoRepositionInsideConfig,
   photoDimBorderConfig,
+  photoMaskOutlineConfig,
   photoBorderDrawNodes,
   frameSliceConfigs,
   loadedFrameImage,
@@ -1247,7 +1277,84 @@ function handlePhotoScalePointerDown(
   outerGroupRef.value?.getNode()?.getLayer()?.batchDraw()
 }
 
+const isPhotoRotatePointerActive = ref(false)
 
+function applyPhotoRotationFromPointer(): void {
+  const local = getPointerInElementLocal()
+
+  if (!local || props.element.type !== 'photo-placeholder') {
+    return
+  }
+
+  const box = getPhotoRenderBox(props.element.frame, props.element.size.width, props.element.size.height)
+  const cx = box.x + box.width / 2
+  const cy = box.y + box.height / 2
+  const angleDeg = (Math.atan2(local.y - cy, local.x - cx) * 180) / Math.PI + 90
+  const rotation = normalizeElementRotation(angleDeg, props.element.imageRotation)
+
+  store.updateElement(props.element.id, { imageRotation: rotation }, { live: true })
+}
+
+function stopPhotoRotatePointerTracking(): void {
+  window.removeEventListener('mousemove', handlePhotoRotatePointerMove)
+  window.removeEventListener('mouseup', handlePhotoRotatePointerUp)
+  window.removeEventListener('touchmove', handlePhotoRotatePointerMove)
+  window.removeEventListener('touchend', handlePhotoRotatePointerUp)
+}
+
+function handlePhotoRotatePointerMove(event: MouseEvent | TouchEvent): void {
+  if (!isPhotoRotatePointerActive.value) {
+    return
+  }
+
+  event.preventDefault()
+  setStageCursor(buildRotateCursorStyle(props.element.type === 'photo-placeholder' ? props.element.imageRotation : 0))
+  applyPhotoRotationFromPointer()
+  outerGroupRef.value?.getNode()?.getLayer()?.batchDraw()
+}
+
+function handlePhotoRotatePointerUp(): void {
+  if (!isPhotoRotatePointerActive.value) {
+    return
+  }
+
+  isPhotoRotatePointerActive.value = false
+  stopPhotoRotatePointerTracking()
+  resetStageCursor()
+  store.finalizeLiveTransform()
+  outerGroupRef.value?.getNode()?.getLayer()?.batchDraw()
+}
+
+function handlePhotoRotatePointerDown(event: Konva.KonvaEventObject<MouseEvent | TouchEvent>): void {
+  if (props.element.type !== 'photo-placeholder') {
+    return
+  }
+
+  event.cancelBubble = true
+  event.evt.preventDefault()
+
+  isPhotoRotatePointerActive.value = true
+  setStageCursor(buildRotateCursorStyle(props.element.imageRotation))
+  stopPhotoRotatePointerTracking()
+  window.addEventListener('mousemove', handlePhotoRotatePointerMove)
+  window.addEventListener('mouseup', handlePhotoRotatePointerUp)
+  window.addEventListener('touchmove', handlePhotoRotatePointerMove, { passive: false })
+  window.addEventListener('touchend', handlePhotoRotatePointerUp)
+  applyPhotoRotationFromPointer()
+  outerGroupRef.value?.getNode()?.getLayer()?.batchDraw()
+}
+
+function handlePhotoRotateHandleEnter(): void {
+  setStageCursor(buildRotateCursorStyle(props.element.type === 'photo-placeholder' ? props.element.imageRotation : 0))
+}
+
+function handlePhotoRotateHandleLeave(): void {
+  if (isPhotoRotatePointerActive.value) {
+    return
+  }
+
+  resetStageCursor()
+}
 
 function applySnapToOuter(outer: Konva.Group): void {
   if (props.parentId != null) {
@@ -1688,9 +1795,11 @@ function handleTransformEnd(event: Konva.KonvaEventObject<Event>): void {
 onBeforeUnmount(() => {
   stopPhotoPanPointerTracking()
   stopPhotoScalePointerTracking()
+  stopPhotoRotatePointerTracking()
   photoRepositionDragOrigin.value = null
   photoScalePointerState.value = null
   activePhotoScaleCorner.value = null
+  isPhotoRotatePointerActive.value = false
   resetStageCursor()
 })
 

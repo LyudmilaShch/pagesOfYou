@@ -4,9 +4,53 @@ import type {
   CanvasPhotoFilter,
   CanvasPhotoFilterPresetKey,
   CanvasPhotoFrame,
+  CanvasPhotoMask,
+  CanvasPhotoMaskType,
   CanvasPhotoPlaceholder,
 } from '../types/canvas-data.types';
 import { toStoredAssetPath } from '../../common/utils/asset-url.util';
+
+const PHOTO_MASK_GEOMETRIC_TYPES = new Set<CanvasPhotoMaskType>([
+  'circle',
+  'oval',
+  'rectangle',
+  'rounded-rectangle',
+  'heart',
+  'star',
+  'diamond',
+]);
+
+function isCanvasPhotoMaskPoint(value: unknown): value is { x: number; y: number } {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const point = value as { x?: unknown; y?: unknown };
+  return typeof point.x === 'number' && typeof point.y === 'number';
+}
+
+function normalizePhotoMask(value: unknown): CanvasPhotoMask | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const candidate = value as { type?: unknown; name?: unknown; points?: unknown };
+
+  if (candidate.type === 'custom') {
+    if (!Array.isArray(candidate.points) || !candidate.points.every(isCanvasPhotoMaskPoint)) {
+      return null;
+    }
+    return {
+      type: 'custom',
+      name: typeof candidate.name === 'string' && candidate.name.trim() ? candidate.name : 'Своя маска',
+      points: candidate.points as Array<{ x: number; y: number }>,
+    };
+  }
+
+  return typeof candidate.type === 'string' &&
+    PHOTO_MASK_GEOMETRIC_TYPES.has(candidate.type as CanvasPhotoMaskType)
+    ? { type: candidate.type as Exclude<CanvasPhotoMaskType, 'custom'> }
+    : null;
+}
 
 const PHOTO_FILTER_PRESET_KEYS = new Set<CanvasPhotoFilterPresetKey>([
   'editorial',
@@ -193,7 +237,12 @@ export function normalizePhotoPlaceholderElement(element: CanvasElement): Canvas
     cropY: typeof photo.cropY === 'number' ? photo.cropY : 0,
     imageScale:
       typeof photo.imageScale === 'number' && photo.imageScale > 0 ? photo.imageScale : 1,
+    imageRotation:
+      typeof photo.imageRotation === 'number' && Number.isFinite(photo.imageRotation)
+        ? photo.imageRotation
+        : 0,
     frame: normalizePhotoFrame(photo.frame),
     filter: normalizePhotoFilter(photo.filter),
+    mask: normalizePhotoMask(photo.mask),
   };
 }

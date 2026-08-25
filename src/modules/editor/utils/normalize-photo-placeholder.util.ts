@@ -8,6 +8,7 @@ import type {
 } from '../models/photo-placeholder.model'
 import type { PhotoCorrectionParams, PhotoFilter, PhotoFilterPresetKey } from '../models/photo-filter.model'
 import { PHOTO_CORRECTION_NEUTRAL } from '../models/photo-filter.model'
+import type { PhotoMask, PhotoMaskType } from '../models/photo-mask.model'
 import { toStoredAssetPath } from '@/shared/config/assets'
 import {
   normalizePhotoStrokePosition,
@@ -74,6 +75,47 @@ function normalizePhotoFilter(value: unknown): PhotoFilter | null {
     intensity: isFiniteNumber(candidate.intensity) ? Math.min(100, Math.max(0, candidate.intensity)) : 100,
     correction: normalizePhotoCorrection(candidate.correction),
   }
+}
+
+const PHOTO_MASK_GEOMETRIC_TYPES = new Set<PhotoMaskType>([
+  'circle',
+  'oval',
+  'rectangle',
+  'rounded-rectangle',
+  'heart',
+  'star',
+  'diamond',
+])
+
+function isPhotoMaskPoint(value: unknown): value is { x: number; y: number } {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+  const point = value as { x?: unknown; y?: unknown }
+  return isFiniteNumber(point.x) && isFiniteNumber(point.y)
+}
+
+function normalizePhotoMask(value: unknown): PhotoMask | null {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+
+  const candidate = value as { type?: unknown; name?: unknown; points?: unknown }
+
+  if (candidate.type === 'custom') {
+    if (!Array.isArray(candidate.points) || !candidate.points.every(isPhotoMaskPoint)) {
+      return null
+    }
+    return {
+      type: 'custom',
+      name: typeof candidate.name === 'string' && candidate.name.trim() ? candidate.name : 'Своя маска',
+      points: candidate.points as Array<{ x: number; y: number }>,
+    }
+  }
+
+  return typeof candidate.type === 'string' && PHOTO_MASK_GEOMETRIC_TYPES.has(candidate.type as PhotoMaskType)
+    ? { type: candidate.type as Exclude<PhotoMaskType, 'custom'> }
+    : null
 }
 
 function normalizePhotoFrame(value: unknown): PhotoFrameRef | null {
@@ -172,8 +214,10 @@ export function normalizePhotoPlaceholderElement(element: PageElement): PageElem
     cropY: typeof photo.cropY === 'number' ? photo.cropY : 0,
     imageScale:
       typeof photo.imageScale === 'number' && photo.imageScale > 0 ? photo.imageScale : 1,
+    imageRotation: typeof photo.imageRotation === 'number' && Number.isFinite(photo.imageRotation) ? photo.imageRotation : 0,
     frame: normalizePhotoFrame(photo.frame),
     filter: normalizePhotoFilter(photo.filter),
+    mask: normalizePhotoMask(photo.mask),
   }
 }
 

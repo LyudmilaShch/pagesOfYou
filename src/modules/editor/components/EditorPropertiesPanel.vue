@@ -1090,6 +1090,17 @@
             Кадрировать
           </v-btn>
 
+          <v-btn
+            v-if="photoElement.defaultImageUrl"
+            variant="outlined"
+            size="small"
+            prepend-icon="mdi-image-edit-outline"
+            :disabled="store.previewMode"
+            @click="store.startPhotoDim(selected.id)"
+          >
+            Редактировать
+          </v-btn>
+
 
 
           <v-select
@@ -1170,6 +1181,16 @@
           >
             <span class="editor-properties__row-link-label">Фильтры</span>
             <span class="editor-properties__row-link-preview">{{ photoFilterPreviewLabel }}</span>
+            <v-icon size="16">mdi-chevron-right</v-icon>
+          </button>
+
+          <button
+            type="button"
+            class="editor-properties__row-link"
+            @click="panelStack.push({ id: 'photo-mask', title: 'Маска' })"
+          >
+            <span class="editor-properties__row-link-label">Маска</span>
+            <span class="editor-properties__row-link-preview">{{ photoMaskPreviewLabel }}</span>
             <v-icon size="16">mdi-chevron-right</v-icon>
           </button>
 
@@ -1293,6 +1314,7 @@ import { TEXT_EFFECT_CARDS } from '../models/text-effect.model'
 import { getPhotoFilterLabel } from '../models/photo-filter.model'
 import { SHAPE_SHADOW_DESCRIPTORS } from '../models/shape-shadow.model'
 import { SHAPE_VISUAL_EFFECT_DESCRIPTORS } from '../models/shape-visual-effect.model'
+import { PHOTO_MASK_DESCRIPTORS } from '../models/photo-mask.model'
 
 
 
@@ -1395,6 +1417,17 @@ const shapeVisualEffectPreviewLabel = computed(() => {
     return 'Без эффекта'
   }
   return SHAPE_VISUAL_EFFECT_DESCRIPTORS.find((def) => def.type === effect.type)?.label ?? 'Без эффекта'
+})
+
+const photoMaskPreviewLabel = computed(() => {
+  const mask = photoElement.value?.mask
+  if (!mask) {
+    return 'Без маски'
+  }
+  if (mask.type === 'custom') {
+    return mask.name
+  }
+  return PHOTO_MASK_DESCRIPTORS.find((def) => def.type === mask.type)?.label ?? 'Без маски'
 })
 
 const selectedSpreadSide = computed(() => {

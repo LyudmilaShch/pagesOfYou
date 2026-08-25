@@ -82,6 +82,25 @@ export interface CanvasPhotoFilter {
   correction: CanvasPhotoCorrectionParams;
 }
 
+export type CanvasPhotoMaskType =
+  | 'circle'
+  | 'oval'
+  | 'rectangle'
+  | 'rounded-rectangle'
+  | 'heart'
+  | 'star'
+  | 'diamond'
+  | 'custom';
+
+export interface CanvasPhotoMaskPoint {
+  x: number;
+  y: number;
+}
+
+export type CanvasPhotoMask =
+  | { type: Exclude<CanvasPhotoMaskType, 'custom'> }
+  | { type: 'custom'; name: string; points: CanvasPhotoMaskPoint[] };
+
 export interface CanvasPhotoPlaceholder extends CanvasElementBase {
   type: 'photo-placeholder';
   label: string;
@@ -98,8 +117,11 @@ export interface CanvasPhotoPlaceholder extends CanvasElementBase {
   cropX?: number;
   cropY?: number;
   imageScale?: number;
+  /** Degrees — the photo's own rotation inside its box, independent of the element's `rotation`. */
+  imageRotation?: number;
   frame?: CanvasPhotoFrame | null;
   filter?: CanvasPhotoFilter | null;
+  mask?: CanvasPhotoMask | null;
 }
 
 export type CanvasTextEffectType =

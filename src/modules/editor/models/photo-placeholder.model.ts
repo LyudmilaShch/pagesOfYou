@@ -1,5 +1,6 @@
 import type { PageElementBase } from './page-element.model'
 import type { PhotoFilter } from './photo-filter.model'
+import type { PhotoMask } from './photo-mask.model'
 
 export type PhotoFitMode = 'cover' | 'contain' | 'fill'
 export type PhotoStrokeStyle = 'solid' | 'dashed'
@@ -38,7 +39,11 @@ export interface PhotoPlaceholder extends PageElementBase {
   cropY: number
   /** Multiplier on top of fit scale (>= 1 for cover) */
   imageScale: number
+  /** Degrees — the photo's own rotation inside its box, independent of the element's `rotation`. */
+  imageRotation: number
   /** Decorative frame overlay; when set, the plain stroke is not rendered */
   frame?: PhotoFrameRef | null
   filter: PhotoFilter | null
+  /** Clips display to a shape; the source image itself is never modified or duplicated. */
+  mask: PhotoMask | null
 }
