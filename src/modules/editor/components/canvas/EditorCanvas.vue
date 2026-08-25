@@ -549,7 +549,8 @@ const transformerConfig = computed(() => {
   const selected = store.selectedElement
 
   return buildTransformerChromeConfig({
-    rotateEnabled: !isMultiSelection && Boolean(selected && !isTextPlaceholderType(selected.type)),
+    rotateEnabled: !isMultiSelection && Boolean(selected),
+    coarseRotationSnap: isShiftRotationSnap.value,
     enabledAnchors: getTransformerEnabledAnchors({
       isMultiSelection,
       isText: Boolean(selected && isTextPlaceholderType(selected.type)),
@@ -564,6 +565,15 @@ const transformerConfig = computed(() => {
       }
 
       if (selected && isTextPlaceholderType(selected.type)) {
+        const activeAnchor = transformerRef.value?.getNode()?.getActiveAnchor() ?? null
+
+        // The rotate handle is the one gesture allowed to actually change rotation — let Konva's
+        // own newBox through untouched. Every other anchor keeps the rejection below, so a resize
+        // drag can never smuggle in an incidental rotation delta.
+        if (activeAnchor === 'rotater') {
+          return newBox
+        }
+
         const rotationChanged =
           Math.abs(oldBox.rotation - newBox.rotation) > 0.001
 
@@ -582,7 +592,6 @@ const transformerConfig = computed(() => {
         const scale = pageScale.value || 1
         const minWidth = MIN_TEXT_BOX_WIDTH * scale
         const height = (transformStartSize.value?.height ?? selected.size.height) * scale
-        const activeAnchor = transformerRef.value?.getNode()?.getActiveAnchor() ?? null
 
         if (activeAnchor === 'middle-left') {
           // Right edge stays fixed for this anchor. Derive it from Konva's own newBox (already in
@@ -1099,6 +1108,24 @@ watch(pageScale, () => {
   void syncTransformer()
 })
 
+const isShiftRotationSnap = ref(false)
+
+function handleRotationSnapKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Shift') {
+    isShiftRotationSnap.value = true
+  }
+}
+
+function handleRotationSnapKeyup(event: KeyboardEvent): void {
+  if (event.key === 'Shift') {
+    isShiftRotationSnap.value = false
+  }
+}
+
+function resetRotationSnap(): void {
+  isShiftRotationSnap.value = false
+}
+
 function handleCanvasKeydown(event: KeyboardEvent): void {
   if (event.key !== 'Escape') {
     return
@@ -1132,12 +1159,18 @@ onMounted(() => {
   }
 
   window.addEventListener('keydown', handleCanvasKeydown)
+  window.addEventListener('keydown', handleRotationSnapKeydown)
+  window.addEventListener('keyup', handleRotationSnapKeyup)
+  window.addEventListener('blur', resetRotationSnap)
   void syncTransformer()
 })
 
 onBeforeUnmount(() => {
   resizeObserver?.disconnect()
   window.removeEventListener('keydown', handleCanvasKeydown)
+  window.removeEventListener('keydown', handleRotationSnapKeydown)
+  window.removeEventListener('keyup', handleRotationSnapKeyup)
+  window.removeEventListener('blur', resetRotationSnap)
 })
 </script>
 

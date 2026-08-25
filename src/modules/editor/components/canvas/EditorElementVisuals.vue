@@ -48,9 +48,25 @@
 
   <v-rect v-if="ctx.photoDimBorderConfig.value" :config="ctx.photoDimBorderConfig.value" />
 
-  <v-rect v-if="ctx.shapeRectConfig.value" :config="ctx.shapeRectConfig.value" />
-  <v-circle v-if="ctx.shapeCircleConfig.value" :config="ctx.shapeCircleConfig.value" />
-  <v-line v-if="ctx.shapeLineConfig.value" :config="ctx.shapeLineConfig.value" />
+  <v-group :config="{ listening: false }">
+    <EffectExtraNode
+      v-for="(node, index) in ctx.shapeExtraNodesBehind.value"
+      :key="`shape-extra-behind-${index}`"
+      :spec="node"
+    />
+  </v-group>
+
+  <v-rect v-if="ctx.shapeRectConfig.value" ref="shapeRectRef" :config="ctx.shapeRectConfig.value" />
+  <v-circle v-if="ctx.shapeCircleConfig.value" ref="shapeCircleRef" :config="ctx.shapeCircleConfig.value" />
+  <v-line v-if="ctx.shapeLineConfig.value" ref="shapeLineRef" :config="ctx.shapeLineConfig.value" />
+
+  <v-group :config="{ listening: false }">
+    <EffectExtraNode
+      v-for="(node, index) in ctx.shapeExtraNodesFront.value"
+      :key="`shape-extra-front-${index}`"
+      :spec="node"
+    />
+  </v-group>
 
   <v-rect
     v-if="ctx.textBackgroundConfig.value && !ctx.isEditingText.value"
@@ -79,6 +95,7 @@ import type Konva from 'konva'
 import {
   EDITOR_ELEMENT_VISUALS_KEY,
 } from './editor-element-visuals.context'
+import EffectExtraNode from './EffectExtraNode.vue'
 
 const ctx = inject(EDITOR_ELEMENT_VISUALS_KEY)
 
@@ -100,17 +117,60 @@ watch(
       return
     }
 
-    const hasFilters = Boolean(
-      (ctx.photoImageConfig.value as { filters?: unknown[] } | null)?.filters?.length,
-    )
+    const config = ctx.photoImageConfig.value as { filters?: unknown[]; blurRadius?: number } | null
+    const hasFilters = Boolean(config?.filters?.length)
 
     if (hasFilters) {
-      node.cache()
+      // Blur needs extra canvas around the node's own bounds to spread into — caching with no
+      // offset clips the cache buffer exactly to the node's silhouette, so the blur has nowhere
+      // to bleed and reads as a no-op.
+      node.cache({ offset: Math.ceil(config?.blurRadius ?? 0) + 4 })
     } else if (node.isCached()) {
       node.clearCache()
     }
 
     node.getLayer()?.batchDraw()
+  },
+  { deep: true },
+)
+
+// Same caching requirement as the photo image above — the 'blur' and 'glass' shape visual
+// effects apply a Konva.Filters.Blur pixel filter, which only takes effect on a cached node.
+type CacheableNodeRef = { getNode: () => Konva.Node } | null
+const shapeRectRef = ref<CacheableNodeRef>(null)
+const shapeCircleRef = ref<CacheableNodeRef>(null)
+const shapeLineRef = ref<CacheableNodeRef>(null)
+
+watch(
+  () => [ctx.shapeRectConfig.value, ctx.shapeCircleConfig.value, ctx.shapeLineConfig.value],
+  async () => {
+    await nextTick()
+
+    const candidates: Array<[CacheableNodeRef, Record<string, unknown> | null]> = [
+      [shapeRectRef.value, ctx.shapeRectConfig.value],
+      [shapeCircleRef.value, ctx.shapeCircleConfig.value],
+      [shapeLineRef.value, ctx.shapeLineConfig.value],
+    ]
+
+    for (const [nodeRef, rawConfig] of candidates) {
+      const node = nodeRef?.getNode?.()
+      if (!node) {
+        continue
+      }
+
+      const config = rawConfig as { filters?: unknown[]; blurRadius?: number } | null
+      const hasFilters = Boolean(config?.filters?.length)
+
+      if (hasFilters) {
+        // See the photo image watcher above — without an offset, the cache buffer is clipped to
+        // the shape's own bounds and the blur has no room to spread, so it looks like nothing happened.
+        node.cache({ offset: Math.ceil(config?.blurRadius ?? 0) + 4 })
+      } else if (node.isCached()) {
+        node.clearCache()
+      }
+
+      node.getLayer()?.batchDraw()
+    }
   },
   { deep: true },
 )

@@ -64,7 +64,6 @@
               @update:model-value="updateSize('height', $event)"
             />
             <v-text-field
-              v-if="!isTextElement"
               :model-value="displayRotation"
               label="Угол"
               type="number"
@@ -447,6 +446,7 @@
           <EditorShapeStrokeFields
             :element="shapeElement"
             :show-fill="!isLineElement"
+            :show-corner-radius="isRectangleElement"
             :optional-stroke="!isLineElement"
             stroke-label="Цвет"
             :stroke-width-label="isLineElement ? 'Толщина' : 'Толщина'"
@@ -590,6 +590,8 @@ const isShapeElement = computed(
 
 const isLineElement = computed(() => props.selectedElement?.type === 'shape-line')
 
+const isRectangleElement = computed(() => props.selectedElement?.type === 'shape-rectangle')
+
 const shapeElement = computed(() => props.selectedElement as ShapeElement)
 
 const textElement = computed(() => props.selectedElement as TextPlaceholder)
@@ -684,7 +686,7 @@ function updateSize(axis: 'width' | 'height', value: string | number | null | un
 }
 
 function updateRotation(value: string | number | null | undefined): void {
-  if (!props.selectedElement || isTextPlaceholderElement(props.selectedElement)) {
+  if (!props.selectedElement) {
     return
   }
 

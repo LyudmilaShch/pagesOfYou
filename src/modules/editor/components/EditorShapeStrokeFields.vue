@@ -8,6 +8,18 @@
       @update:model-value="emitPatch({ fill: $event })"
     />
 
+    <v-text-field
+      v-if="showCornerRadius"
+      :model-value="element.cornerRadius"
+      label="Скругление углов"
+      type="number"
+      min="0"
+      variant="outlined"
+      density="compact"
+      hide-details
+      @update:model-value="emitPatch({ cornerRadius: toNumber($event, element.cornerRadius) })"
+    />
+
     <template v-if="optionalStroke">
       <v-switch
         :model-value="strokeEnabled"
@@ -75,18 +87,21 @@ export interface ShapeStrokePatch {
   fill?: string
   stroke?: string
   strokeWidth?: number
+  cornerRadius?: number
 }
 
 const props = withDefaults(
   defineProps<{
     element: ShapeElement
     showFill?: boolean
+    showCornerRadius?: boolean
     optionalStroke?: boolean
     strokeLabel?: string
     strokeWidthLabel?: string
   }>(),
   {
     showFill: true,
+    showCornerRadius: false,
     optionalStroke: false,
     strokeLabel: 'Цвет обводки',
     strokeWidthLabel: 'Толщина',
@@ -106,6 +121,11 @@ function clampStrokeWidth(value: string | number | null | undefined): number {
   }
 
   return Math.min(SHAPE_STROKE_WIDTH_MAX, Math.max(1, Math.round(parsed)))
+}
+
+function toNumber(value: string | number | null | undefined, fallback: number): number {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : fallback
 }
 
 function emitPatch(patch: ShapeStrokePatch): void {

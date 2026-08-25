@@ -195,6 +195,9 @@ export function createElementFromLibrary(
         fill: DEFAULT_SHAPE_FILL,
         stroke: DEFAULT_SHAPE_STROKE,
         strokeWidth: 0,
+        cornerRadius: 0,
+        shadow: null,
+        visualEffect: null,
       }
 
     case 'shape-circle':
@@ -203,6 +206,9 @@ export function createElementFromLibrary(
         fill: DEFAULT_SHAPE_FILL,
         stroke: DEFAULT_SHAPE_STROKE,
         strokeWidth: 0,
+        cornerRadius: 0,
+        shadow: null,
+        visualEffect: null,
       }
 
     case 'shape-line':
@@ -211,6 +217,9 @@ export function createElementFromLibrary(
         fill: 'transparent',
         stroke: DEFAULT_SHAPE_STROKE,
         strokeWidth: 2,
+        cornerRadius: 0,
+        shadow: null,
+        visualEffect: null,
       }
   }
 }

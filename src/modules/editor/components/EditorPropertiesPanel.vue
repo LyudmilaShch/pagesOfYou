@@ -451,8 +451,6 @@
             />
 
             <v-text-field
-              v-if="!isTextElement"
-
               :model-value="displayRotation"
 
               label="Угол"
@@ -1186,10 +1184,31 @@
           <EditorShapeStrokeFields
             :element="shapeElement"
             :show-fill="!isLineElement"
+            :show-corner-radius="isRectangleElement"
             :optional-stroke="!isLineElement"
             :stroke-width-label="isLineElement ? 'Толщина' : 'Толщина'"
             @patch="(patch) => patchElement(patch as ElementPatch)"
           />
+
+          <button
+            type="button"
+            class="editor-properties__row-link"
+            @click="panelStack.push({ id: 'shape-shadow', title: 'Тени' })"
+          >
+            <span class="editor-properties__row-link-label">Тени</span>
+            <span class="editor-properties__row-link-preview">{{ shapeShadowPreviewLabel }}</span>
+            <v-icon size="16">mdi-chevron-right</v-icon>
+          </button>
+
+          <button
+            type="button"
+            class="editor-properties__row-link"
+            @click="panelStack.push({ id: 'shape-visual-effect', title: 'Эффекты' })"
+          >
+            <span class="editor-properties__row-link-label">Эффекты</span>
+            <span class="editor-properties__row-link-preview">{{ shapeVisualEffectPreviewLabel }}</span>
+            <v-icon size="16">mdi-chevron-right</v-icon>
+          </button>
 
         </div>
 
@@ -1272,6 +1291,8 @@ import PropertiesPanelScreenHeader from './properties-panel/PropertiesPanelScree
 import { PANEL_SCREENS, type PanelScreenId } from './properties-panel/panel-screen-registry'
 import { TEXT_EFFECT_CARDS } from '../models/text-effect.model'
 import { getPhotoFilterLabel } from '../models/photo-filter.model'
+import { SHAPE_SHADOW_DESCRIPTORS } from '../models/shape-shadow.model'
+import { SHAPE_VISUAL_EFFECT_DESCRIPTORS } from '../models/shape-visual-effect.model'
 
 
 
@@ -1359,6 +1380,22 @@ const effectPreviewLabel = computed(() => {
 })
 
 const photoFilterPreviewLabel = computed(() => getPhotoFilterLabel(photoElement.value?.filter ?? null))
+
+const shapeShadowPreviewLabel = computed(() => {
+  const shadow = shapeElement.value?.shadow
+  if (!shadow) {
+    return 'Без тени'
+  }
+  return SHAPE_SHADOW_DESCRIPTORS.find((def) => def.type === shadow.type)?.label ?? 'Без тени'
+})
+
+const shapeVisualEffectPreviewLabel = computed(() => {
+  const effect = shapeElement.value?.visualEffect
+  if (!effect) {
+    return 'Без эффекта'
+  }
+  return SHAPE_VISUAL_EFFECT_DESCRIPTORS.find((def) => def.type === effect.type)?.label ?? 'Без эффекта'
+})
 
 const selectedSpreadSide = computed(() => {
   if (!store.isSpreadPage || !selected.value) {
@@ -1491,6 +1528,8 @@ const isShapeElement = computed(
 )
 
 const isLineElement = computed(() => selected.value?.type === 'shape-line')
+
+const isRectangleElement = computed(() => selected.value?.type === 'shape-rectangle')
 
 
 
@@ -1767,7 +1806,7 @@ function updateSize(axis: 'width' | 'height', value: string | number | null | un
 
 
 function updateRotation(value: string | number | null | undefined): void {
-  if (!selected.value || isTextPlaceholderElement(selected.value)) {
+  if (!selected.value) {
     return
   }
 

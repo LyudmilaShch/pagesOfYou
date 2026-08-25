@@ -84,6 +84,8 @@ import {
 
   getShapeCircleConfig,
 
+  getShapeExtraNodes,
+
   getShapeLineConfig,
 
   getShapeRectConfig,
@@ -270,7 +272,7 @@ const innerGroupConfig = computed(() => {
 
     height: size.height,
 
-    rotation: isTextPlaceholderElement(layoutElement.value) ? 0 : layoutElement.value.rotation,
+    rotation: layoutElement.value.rotation,
 
   }
 
@@ -490,6 +492,16 @@ const shapeCircleConfig = computed(() => getShapeCircleConfig(renderElement.valu
 
 const shapeLineConfig = computed(() => getShapeLineConfig(renderElement.value))
 
+const shapeExtraNodes = computed(() => getShapeExtraNodes(renderElement.value))
+
+const shapeExtraNodesBehind = computed(() =>
+  shapeExtraNodes.value.filter((node) => node.layer === 'behind'),
+)
+
+const shapeExtraNodesFront = computed(() =>
+  shapeExtraNodes.value.filter((node) => node.layer === 'front'),
+)
+
 const textConfig = computed(() => getTextConfig(layoutElement.value, displayText.value))
 
 const textEchoLayerConfigs = computed(() =>
@@ -588,6 +600,10 @@ provide(EDITOR_ELEMENT_VISUALS_KEY, {
   shapeCircleConfig,
 
   shapeLineConfig,
+
+  shapeExtraNodesBehind,
+
+  shapeExtraNodesFront,
 
   textConfig,
 

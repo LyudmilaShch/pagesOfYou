@@ -234,7 +234,7 @@ export function normalizeElementRotation(
     angle += 360
   }
 
-  return Math.round(angle * 10) / 10
+  return Math.round(angle)
 }
 
 export function applyTransformerAnchorStyle(anchor: Konva.Rect): void {
@@ -348,15 +348,33 @@ export function getTransformerEnabledAnchors(options: {
   ]
 }
 
+// Snap targets are spaced `step` degrees apart, with a tolerance of half that spacing — so any
+// angle the pointer lands on is guaranteed to have one within reach, and rotation always lands
+// exactly on a multiple of `step`, live during the drag itself (Konva re-reads these on every
+// pointer-move of the rotate gesture, not just once at drag-start).
+function buildRotationSnaps(step: number): number[] {
+  const count = Math.round(360 / step)
+  return Array.from({ length: count }, (_, index) => index * step)
+}
+
+const WHOLE_DEGREE_ROTATION_SNAPS = buildRotationSnaps(1)
+const COARSE_ROTATION_SNAPS = buildRotationSnaps(15)
+
 export function buildTransformerChromeConfig(
   options: {
     rotateEnabled?: boolean
+    /** True while the user holds Shift during a rotate drag — snaps to 15° steps instead of 1°. */
+    coarseRotationSnap?: boolean
     enabledAnchors?: string[]
     boundBoxFunc?: Konva.TransformerConfig['boundBoxFunc']
   } = {},
 ): Konva.TransformerConfig {
+  const coarse = options.coarseRotationSnap ?? false
+
   return {
     rotateEnabled: options.rotateEnabled ?? true,
+    rotationSnaps: coarse ? COARSE_ROTATION_SNAPS : WHOLE_DEGREE_ROTATION_SNAPS,
+    rotationSnapTolerance: coarse ? 7.5 : 0.5,
     borderEnabled: true,
     borderStroke: TRANSFORMER_BORDER_STROKE,
     borderStrokeWidth: TRANSFORMER_BORDER_STROKE_WIDTH,

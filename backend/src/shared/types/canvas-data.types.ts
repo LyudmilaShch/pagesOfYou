@@ -188,11 +188,29 @@ export interface CanvasTextPlaceholder extends CanvasElementBase {
   effect: CanvasTextEffect | null;
 }
 
+export type CanvasShapeShadowType = 'drop' | 'inner' | 'soft' | 'long';
+
+export interface CanvasShapeShadow {
+  type: CanvasShapeShadowType;
+  params: Record<string, number | string>;
+}
+
+export type CanvasShapeVisualEffectType = 'glow' | 'neon' | 'blur' | 'glass' | 'gradient';
+
+export interface CanvasShapeVisualEffect {
+  type: CanvasShapeVisualEffectType;
+  params: Record<string, number | string>;
+}
+
 export interface CanvasShapeElement extends CanvasElementBase {
   type: 'shape-rectangle' | 'shape-circle' | 'shape-line';
   fill: string;
   stroke: string;
   strokeWidth: number;
+  /** Corner radius — only meaningful for 'shape-rectangle'. */
+  cornerRadius: number;
+  shadow?: CanvasShapeShadow | null;
+  visualEffect?: CanvasShapeVisualEffect | null;
 }
 
 export type CanvasLeafElement =

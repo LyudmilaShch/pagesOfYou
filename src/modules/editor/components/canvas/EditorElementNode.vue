@@ -141,6 +141,7 @@ import {
   getPhotoPlaceholderPanHitConfig,
   getPhotoScaleHandleConfigs,
   getShapeCircleConfig,
+  getShapeExtraNodes,
   getShapeLineConfig,
   getShapeRectConfig,
   getTextConfig,
@@ -648,6 +649,16 @@ const shapeCircleConfig = computed(() => getShapeCircleConfig(props.element))
 
 const shapeLineConfig = computed(() => getShapeLineConfig(props.element))
 
+const shapeExtraNodes = computed(() => getShapeExtraNodes(props.element))
+
+const shapeExtraNodesBehind = computed(() =>
+  shapeExtraNodes.value.filter((node) => node.layer === 'behind'),
+)
+
+const shapeExtraNodesFront = computed(() =>
+  shapeExtraNodes.value.filter((node) => node.layer === 'front'),
+)
+
 const textConfig = computed(() => getTextConfig(props.element, displayText.value))
 
 const textEchoLayerConfigs = computed(() =>
@@ -708,6 +719,8 @@ provide(EDITOR_ELEMENT_VISUALS_KEY, {
   shapeRectConfig,
   shapeCircleConfig,
   shapeLineConfig,
+  shapeExtraNodesBehind,
+  shapeExtraNodesFront,
   textConfig,
   textEchoLayerConfigs,
   textBackgroundConfig,
@@ -1614,7 +1627,11 @@ function handleTransformEnd(event: Konva.KonvaEventObject<Event>): void {
       size.height = updatedText.size.height
     }
 
-    syncInnerTransformNode(inner, size, isText ? props.element.rotation : inner.rotation())
+    syncInnerTransformNode(
+      inner,
+      size,
+      isText ? (isTextRotation ? inner.rotation() : props.element.rotation) : inner.rotation(),
+    )
 
     let topLeft = updatedText ? updatedText.position : readLogicalTopLeftFromOuter(outer)
 
@@ -1639,16 +1656,21 @@ function handleTransformEnd(event: Konva.KonvaEventObject<Event>): void {
               position: topLeft,
               size: { width: size.width, height: size.height },
             }
-          : {
-              position: topLeft,
-            },
+          : isTextRotation
+            ? {
+                position: topLeft,
+                rotation: Math.round(inner.rotation()),
+              }
+            : {
+                position: topLeft,
+              },
         { skipTextLayoutRecalc: true },
       )
     } else {
       store.updateElement(props.element.id, {
         position: topLeft,
         size,
-        rotation: inner.rotation(),
+        rotation: Math.round(inner.rotation()),
       })
 
       if (isPhotoPlaceholderElement(props.element) && resizedBox) {

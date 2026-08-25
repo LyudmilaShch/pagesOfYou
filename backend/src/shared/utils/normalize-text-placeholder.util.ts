@@ -76,7 +76,7 @@ export function normalizeTextPlaceholderElement(element: CanvasElement): CanvasE
 
   return {
     ...text,
-    rotation: 0,
+    rotation: typeof text.rotation === 'number' && Number.isFinite(text.rotation) ? text.rotation : 0,
     lineHeight:
       typeof text.lineHeight === 'number' && text.lineHeight > 0 ? text.lineHeight : 1.4,
     letterSpacing: typeof text.letterSpacing === 'number' ? text.letterSpacing : 0,

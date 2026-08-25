@@ -468,7 +468,8 @@ const transformerConfig = computed(() => {
   const selected = canvasStore.selectedElement
 
   return buildTransformerChromeConfig({
-    rotateEnabled: Boolean(selected && !isTextPlaceholderType(selected.type)),
+    rotateEnabled: Boolean(selected),
+    coarseRotationSnap: isShiftRotationSnap.value,
     enabledAnchors: getTransformerEnabledAnchors({
       isText: Boolean(selected && isTextPlaceholderType(selected.type)),
       isLine: Boolean(selected && selected.type === 'shape-line'),
@@ -478,6 +479,12 @@ const transformerConfig = computed(() => {
       newBox: { x: number; y: number; width: number; height: number; rotation: number },
     ) => {
       if (selected && isTextPlaceholderType(selected.type)) {
+        const activeAnchor = transformerRef.value?.getNode()?.getActiveAnchor() ?? null
+
+        if (activeAnchor === 'rotater') {
+          return newBox
+        }
+
         const rotationChanged =
           Math.abs(oldBox.rotation - newBox.rotation) > 0.001
 
@@ -777,6 +784,24 @@ watch(
   { deep: true },
 )
 
+const isShiftRotationSnap = ref(false)
+
+function handleRotationSnapKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Shift') {
+    isShiftRotationSnap.value = true
+  }
+}
+
+function handleRotationSnapKeyup(event: KeyboardEvent): void {
+  if (event.key === 'Shift') {
+    isShiftRotationSnap.value = false
+  }
+}
+
+function resetRotationSnap(): void {
+  isShiftRotationSnap.value = false
+}
+
 onMounted(() => {
   updateStageSize()
 
@@ -785,11 +810,17 @@ onMounted(() => {
     resizeObserver.observe(containerRef.value)
   }
 
+  window.addEventListener('keydown', handleRotationSnapKeydown)
+  window.addEventListener('keyup', handleRotationSnapKeyup)
+  window.addEventListener('blur', resetRotationSnap)
   void syncTransformer()
 })
 
 onBeforeUnmount(() => {
   resizeObserver?.disconnect()
+  window.removeEventListener('keydown', handleRotationSnapKeydown)
+  window.removeEventListener('keyup', handleRotationSnapKeyup)
+  window.removeEventListener('blur', resetRotationSnap)
 })
 </script>
 

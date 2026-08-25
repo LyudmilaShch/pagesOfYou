@@ -6,6 +6,10 @@ import { hasPhotoStroke } from '../../utils/element-stroke.util'
 import type { TextPlaceholder } from '../../models/text-placeholder.model'
 import type { TextEffect } from '../../models/text-effect.model'
 import type { PhotoFilter } from '../../models/photo-filter.model'
+import { SHAPE_SHADOW_DESCRIPTORS } from '../../models/shape-shadow.model'
+import { SHAPE_VISUAL_EFFECT_DESCRIPTORS } from '../../models/shape-visual-effect.model'
+import { findDescriptor } from '../../models/effect-descriptor.model'
+import type { EffectExtraNodeSpec, ShapeGeometry } from '../../models/effect-descriptor.model'
 import { parseCssColor, formatCssColor } from '../../utils/color-format.util'
 import {
   TEXT_BOX_PADDING,
@@ -87,7 +91,7 @@ export function getElementInnerGroupConfig(element: PageElement) {
     offsetY: height / 2,
     width,
     height,
-    rotation: isTextPlaceholderType(element.type) ? 0 : element.rotation,
+    rotation: element.rotation,
   }
 }
 
@@ -586,6 +590,74 @@ export function getPhotoFrameImageConfigs(element: PageElement): NineSliceImageC
   return buildFrameNineSliceConfigs(photo.frame, element.size.width, element.size.height)
 }
 
+type ShapeLikeElement = Extract<PageElement, { type: 'shape-rectangle' | 'shape-circle' | 'shape-line' }>
+
+function isShapeLikeElement(element: PageElement): element is ShapeLikeElement {
+  return (
+    element.type === 'shape-rectangle' ||
+    element.type === 'shape-circle' ||
+    element.type === 'shape-line'
+  )
+}
+
+function getShapeGeometry(element: ShapeLikeElement): ShapeGeometry {
+  return {
+    type: element.type,
+    width: element.size.width,
+    height: element.size.height,
+    cornerRadius: element.type === 'shape-rectangle' ? element.cornerRadius ?? 0 : 0,
+  }
+}
+
+/**
+ * Merges the active shadow's and active visual effect's Konva attrs onto the shape's own config.
+ * Konva only supports one native shadow per node — if both the shadow AND the chosen effect use
+ * the shadow* mechanism (glow/neon do), the effect's values win since it's spread in last. This
+ * is a known, accepted limitation of layering two shadow-based treatments at once.
+ */
+function getShapeEffectKonvaAttrs(element: ShapeLikeElement): Record<string, unknown> {
+  const geometry = getShapeGeometry(element)
+
+  const shadowAttrs = element.shadow
+    ? (findDescriptor(SHAPE_SHADOW_DESCRIPTORS, element.shadow.type).getKonvaAttrs?.(
+        element.shadow.params,
+        geometry,
+      ) ?? {})
+    : {}
+  const effectAttrs = element.visualEffect
+    ? (findDescriptor(SHAPE_VISUAL_EFFECT_DESCRIPTORS, element.visualEffect.type).getKonvaAttrs?.(
+        element.visualEffect.params,
+        geometry,
+      ) ?? {})
+    : {}
+
+  return { ...shadowAttrs, ...effectAttrs }
+}
+
+/** Sibling nodes the active shadow/effect need beyond plain attrs (offset copies, tint overlays, clipped insets). */
+export function getShapeExtraNodes(element: PageElement): EffectExtraNodeSpec[] {
+  if (!isShapeLikeElement(element)) {
+    return []
+  }
+
+  const geometry = getShapeGeometry(element)
+
+  const shadowNodes = element.shadow
+    ? (findDescriptor(SHAPE_SHADOW_DESCRIPTORS, element.shadow.type).getExtraNodes?.(
+        element.shadow.params,
+        geometry,
+      ) ?? [])
+    : []
+  const effectNodes = element.visualEffect
+    ? (findDescriptor(SHAPE_VISUAL_EFFECT_DESCRIPTORS, element.visualEffect.type).getExtraNodes?.(
+        element.visualEffect.params,
+        geometry,
+      ) ?? [])
+    : []
+
+  return [...shadowNodes, ...effectNodes]
+}
+
 export function getShapeRectConfig(element: PageElement) {
   if (element.type !== 'shape-rectangle') {
     return null
@@ -597,6 +669,8 @@ export function getShapeRectConfig(element: PageElement) {
     fill: element.fill,
     stroke: element.stroke,
     strokeWidth: element.strokeWidth,
+    cornerRadius: element.cornerRadius ?? 0,
+    ...getShapeEffectKonvaAttrs(element),
   }
 }
 
@@ -612,6 +686,7 @@ export function getShapeCircleConfig(element: PageElement) {
     fill: element.fill,
     stroke: element.stroke,
     strokeWidth: element.strokeWidth,
+    ...getShapeEffectKonvaAttrs(element),
   }
 }
 
@@ -626,6 +701,7 @@ export function getShapeLineConfig(element: PageElement) {
     strokeWidth: element.strokeWidth,
     lineCap: 'round',
     hitStrokeWidth: 16,
+    ...getShapeEffectKonvaAttrs(element),
   }
 }
 

@@ -37,6 +37,32 @@ export type {
 export { TEXT_EFFECT_CARDS, getTextEffectCardDef } from './text-effect.model'
 export type { TitlePlaceholder, SubtitlePlaceholder } from './title-placeholder.model'
 export type { ShapeElement } from './shape-element.model'
+export type {
+  ShapeShadow,
+  ShapeShadowType,
+  DropShapeShadowParams,
+  InnerShapeShadowParams,
+  SoftShapeShadowParams,
+  LongShapeShadowParams,
+} from './shape-shadow.model'
+export { SHAPE_SHADOW_DESCRIPTORS } from './shape-shadow.model'
+export type {
+  ShapeVisualEffect,
+  ShapeVisualEffectType,
+  GlowShapeEffectParams,
+  NeonShapeEffectParams,
+  BlurShapeEffectParams,
+  GlassShapeEffectParams,
+  GradientShapeEffectParams,
+} from './shape-visual-effect.model'
+export { SHAPE_VISUAL_EFFECT_DESCRIPTORS } from './shape-visual-effect.model'
+export type {
+  EffectDescriptor,
+  EffectFieldDef,
+  EffectExtraNodeSpec,
+  ShapeGeometry,
+} from './effect-descriptor.model'
+export { findDescriptor } from './effect-descriptor.model'
 export type { GroupElement } from './group-element.model'
 export type { EditorDocument } from './page-template.model'
 export type { CanvasData } from './canvas-data.model'

@@ -71,7 +71,10 @@ export function normalizeTextPlaceholderElement(element: PageElement): PageEleme
   const normalized: TextPlaceholder = {
     ...element,
     type: element.type,
-    rotation: 0,
+    rotation:
+      typeof element.rotation === 'number' && Number.isFinite(element.rotation)
+        ? element.rotation
+        : 0,
     fontSize:
       typeof element.fontSize === 'number' && element.fontSize > 0
         ? element.fontSize

@@ -4,6 +4,7 @@ import type Konva from 'konva'
 
 import type { PhotoBorderDrawNode } from '../../utils/element-stroke.util'
 import type { NineSliceImageConfig } from '../../utils/photo-frame.util'
+import type { EffectExtraNodeSpec } from '../../models/effect-descriptor.model'
 
 export interface EditorElementVisualsContext {
   photoRectConfig: Ref<Record<string, unknown> | null>
@@ -26,6 +27,8 @@ export interface EditorElementVisualsContext {
   shapeRectConfig: Ref<Record<string, unknown> | null>
   shapeCircleConfig: Ref<Record<string, unknown> | null>
   shapeLineConfig: Ref<Record<string, unknown> | null>
+  shapeExtraNodesBehind: Ref<EffectExtraNodeSpec[]>
+  shapeExtraNodesFront: Ref<EffectExtraNodeSpec[]>
   textConfig: Ref<Konva.TextConfig | null>
   textEchoLayerConfigs: Ref<Record<string, unknown>[] | null>
   textBackgroundConfig: Ref<Record<string, unknown> | null>
