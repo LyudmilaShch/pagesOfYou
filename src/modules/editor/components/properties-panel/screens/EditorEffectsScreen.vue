@@ -2,6 +2,18 @@
   <div class="editor-effects-screen">
     <div class="editor-effects-screen__grid">
       <button
+        type="button"
+        class="editor-effects-screen__card"
+        :class="{ 'editor-effects-screen__card--active': !activeEffect }"
+        @click="removeEffect"
+      >
+        <span class="editor-effects-screen__card-box">
+          <span class="editor-effects-screen__card-demo">Аа</span>
+        </span>
+        <span class="editor-effects-screen__card-label">Без эффекта</span>
+      </button>
+
+      <button
         v-for="card in TEXT_EFFECT_CARDS"
         :key="card.type"
         type="button"
@@ -18,7 +30,7 @@
           >
             mdi-eye-off-outline
           </v-icon>
-          <span class="editor-effects-screen__card-demo" :style="getCardDemoStyle(card.type)">Эф</span>
+          <span class="editor-effects-screen__card-demo" :style="getTextEffectDemoStyle(card.type)">Аа</span>
         </span>
         <span class="editor-effects-screen__card-label">{{ card.label }}</span>
       </button>
@@ -29,18 +41,6 @@
       :effect="activeEffect"
       @patch="patchEffectParams"
     />
-
-    <v-btn
-      v-if="activeEffect"
-      block
-      variant="outlined"
-      color="error"
-      prepend-icon="mdi-close-circle-outline"
-      class="editor-effects-screen__remove"
-      @click="removeEffect"
-    >
-      Удалить эффект
-    </v-btn>
   </div>
 </template>
 
@@ -50,58 +50,10 @@ import { storeToRefs } from 'pinia'
 
 import { useEditorStore } from '../../../store/editor.store'
 import type { ElementPatch } from '../../../store/editor.store'
-import { TEXT_EFFECT_CARDS } from '../../../models/text-effect.model'
-import type { TextEffect, TextEffectCardDef, TextEffectType } from '../../../models/text-effect.model'
+import { TEXT_EFFECT_CARDS, getTextEffectDemoStyle } from '../../../models/text-effect.model'
+import type { TextEffect, TextEffectCardDef } from '../../../models/text-effect.model'
 import type { TextPlaceholder } from '../../../models/text-placeholder.model'
 import EditorEffectSettingsForm from '../EditorEffectSettingsForm.vue'
-
-/** Accent used only for the effect demo letters on this screen's cards — not a global design token. */
-const EFFECT_DEMO_ACCENT = '#F775BB'
-const EFFECT_DEMO_ACCENT_RGB = '247, 117, 187'
-
-function getCardDemoStyle(type: TextEffectType): Record<string, string> {
-  switch (type) {
-    case 'drop-shadow':
-      return {
-        color: '#111111',
-        textShadow: `3px 3px 0 ${EFFECT_DEMO_ACCENT}`,
-      }
-    case 'glow':
-      return {
-        color: '#111111',
-        textShadow: `0 0 8px ${EFFECT_DEMO_ACCENT}`,
-      }
-    case 'echo':
-      return {
-        color: EFFECT_DEMO_ACCENT,
-        textShadow: `2px 2px 0 rgba(${EFFECT_DEMO_ACCENT_RGB}, 0.55), 4px 4px 0 rgba(${EFFECT_DEMO_ACCENT_RGB}, 0.3)`,
-      }
-    case 'outlined':
-      return {
-        color: '#111111',
-        webkitTextStroke: `1px ${EFFECT_DEMO_ACCENT}`,
-      }
-    case 'background':
-      return {
-        color: '#ffffff',
-        background: EFFECT_DEMO_ACCENT,
-        padding: '0 6px',
-        borderRadius: '4px',
-      }
-    case 'stroke':
-      return {
-        color: 'transparent',
-        webkitTextStroke: `1.5px ${EFFECT_DEMO_ACCENT}`,
-      }
-    case 'neon':
-      return {
-        color: EFFECT_DEMO_ACCENT,
-        textShadow: `0 0 4px ${EFFECT_DEMO_ACCENT}, 0 0 10px rgba(${EFFECT_DEMO_ACCENT_RGB}, 0.7)`,
-      }
-    default:
-      return {}
-  }
-}
 
 const store = useEditorStore()
 const { selectedElement: selected } = storeToRefs(store)
@@ -141,6 +93,8 @@ function removeEffect(): void {
 </script>
 
 <style scoped lang="scss">
+@use '@/modules/editor/styles/properties-panel-theme' as pp;
+
 .editor-effects-screen {
   display: flex;
   flex-direction: column;
@@ -174,29 +128,29 @@ function removeEffect(): void {
   width: 100%;
   aspect-ratio: 1;
   padding: $spacing-2;
-  border: 1px solid $border-light;
-  border-radius: $radius-lg;
-  background: $bg-elevated;
-  box-shadow: $shadow-xs;
+  border: 1.5px solid pp.$border;
+  border-radius: $radius-sm;
+  background: $white;
   overflow: hidden;
+  transition: border-color 0.12s ease;
 
   .editor-effects-screen__card:hover & {
-    border-color: $border-strong;
+    border-color: pp.$border-strong;
   }
 }
 
 .editor-effects-screen__card--active .editor-effects-screen__card-box {
-  border-color: $text-primary;
-  box-shadow: $shadow-sm;
+  border-color: pp.$accent;
+  border-width: 2px;
 }
 
 .editor-effects-screen__card-label {
   font-size: $font-size-caption;
-  color: $text-secondary;
+  color: pp.$ink-soft;
 }
 
 .editor-effects-screen__card--active .editor-effects-screen__card-label {
-  color: $text-primary;
+  color: pp.$accent-deep;
   font-weight: $font-weight-semibold;
 }
 
@@ -204,17 +158,13 @@ function removeEffect(): void {
   position: absolute;
   top: $spacing-1;
   right: $spacing-1;
-  color: $text-muted;
+  color: pp.$ink-faint;
 }
 
 .editor-effects-screen__card-demo {
-  font-family: $font-family-display;
+  font-family: pp.$font-display;
   font-size: 34px;
-  font-weight: $font-weight-semibold;
+  font-weight: $font-weight-bold;
   line-height: 1.2;
-}
-
-.editor-effects-screen__remove {
-  margin-top: $spacing-2;
 }
 </style>

@@ -1179,7 +1179,7 @@ onBeforeUnmount(() => {
   position: relative;
   width: 100%;
   height: 100%;
-  background: $bg-tertiary;
+  background: $bg-primary;
 
   &--photo-drop {
     cursor: copy;

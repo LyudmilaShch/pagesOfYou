@@ -1,0 +1,23 @@
+// Локальные токены редизайна панели свойств.
+// Специально НЕ форвардятся глобально через src/styles/mixins.scss — используются
+// только явным @use в файлах, относящихся к панели свойств редактора, чтобы не менять
+// палитру/шрифты остального приложения.
+
+$accent: #e85a93;
+$accent-deep: #c13f73;
+$accent-tint: #fbdfe9;
+$accent-glow: rgba(232, 90, 147, 0.2);
+$accent-rgb: 232, 90, 147;
+
+$ink: #0d0d0d;
+$ink-soft: #6e6e6e;
+$ink-faint: #8a8a8a;
+
+$border: #dedede;
+$border-strong: #c9c9c9;
+
+$field-hover: rgba(13, 13, 13, 0.035);
+
+$radius: 6px;
+
+$font-display: 'Unbounded', 'Playfair Display', 'Georgia', serif;

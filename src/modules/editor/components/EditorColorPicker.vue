@@ -152,6 +152,8 @@ watch(
 </script>
 
 <style scoped lang="scss">
+@use '@/modules/editor/styles/properties-panel-theme' as pp;
+
 .editor-color-picker {
   display: flex;
   flex-direction: column;
@@ -161,7 +163,7 @@ watch(
 .editor-color-picker__label {
   margin: 0;
   font-size: $font-size-caption;
-  color: $text-secondary;
+  color: pp.$ink-soft;
 }
 
 .editor-color-picker__control {
@@ -171,9 +173,21 @@ watch(
   gap: $spacing-2;
   min-height: 40px;
   padding: 0 $spacing-3;
-  border: 1px solid $border-default;
-  border-radius: $radius-sm;
+  border: 1px solid pp.$border;
+  border-radius: pp.$radius;
   background: transparent;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+
+  &:hover {
+    border-color: pp.$border-strong;
+    background: pp.$field-hover;
+  }
+
+  &:focus-within {
+    border-color: pp.$accent;
+    box-shadow: 0 0 0 3px pp.$accent-glow;
+  }
 }
 
 .editor-color-picker__swatch {
@@ -232,7 +246,7 @@ watch(
   font-size: $font-size-body;
   font-weight: 500;
   letter-spacing: 0.04em;
-  color: $text-primary;
+  color: pp.$ink;
   text-transform: uppercase;
   outline: none;
 }
@@ -241,7 +255,7 @@ watch(
   flex: 0 0 auto;
   width: 1px;
   height: 22px;
-  background: $border-default;
+  background: pp.$border;
 }
 
 .editor-color-picker__alpha {
@@ -252,7 +266,7 @@ watch(
   background: transparent;
   font-size: $font-size-body;
   font-weight: 500;
-  color: $text-primary;
+  color: pp.$ink;
   text-align: right;
   outline: none;
 
@@ -269,6 +283,6 @@ watch(
 .editor-color-picker__alpha-suffix {
   flex: 0 0 auto;
   font-size: $font-size-caption;
-  color: $text-muted;
+  color: pp.$ink-faint;
 }
 </style>

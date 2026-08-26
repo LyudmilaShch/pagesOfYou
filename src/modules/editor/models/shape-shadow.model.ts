@@ -48,6 +48,13 @@ export type ShapeShadow =
   | { type: 'soft'; params: SoftShapeShadowParams }
   | { type: 'long'; params: LongShapeShadowParams }
 
+export const SHAPE_SHADOW_ICONS: Record<ShapeShadowType, string> = {
+  drop: 'mdi-box-shadow',
+  inner: 'mdi-square-opacity',
+  soft: 'mdi-blur',
+  long: 'mdi-arrow-bottom-right-thin',
+}
+
 const COLOR_FIELD = { key: 'color', label: 'Цвет', kind: 'color' as const }
 
 function shapeExtraNodeBase(geometry: ShapeGeometry): Record<string, unknown> {

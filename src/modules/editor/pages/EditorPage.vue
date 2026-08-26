@@ -43,7 +43,7 @@ const leftPanelExpanded = ref(true)
   // Matches the canvas background so the properties panel's margin gap (see
   // EditorPropertiesPanel.vue) doesn't read as a separate white "backing plate" behind it — the
   // floating panel sits directly on the same surface as the canvas.
-  background: $bg-tertiary;
+  background: $bg-primary;
   transition: grid-template-columns 0.18s ease;
 }
 

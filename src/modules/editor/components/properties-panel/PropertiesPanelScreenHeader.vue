@@ -14,13 +14,15 @@ const emit = defineEmits<{ back: [] }>()
 </script>
 
 <style scoped lang="scss">
+@use '@/modules/editor/styles/properties-panel-theme' as pp;
+
 .panel-screen-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: $spacing-2;
   padding: $spacing-4 $spacing-4;
-  border-bottom: 1px solid $border-light;
+  border-bottom: 1px solid pp.$border;
 }
 
 .panel-screen-header__title {
@@ -29,7 +31,7 @@ const emit = defineEmits<{ back: [] }>()
   text-align: center;
   font-size: $font-size-body-lg;
   font-weight: $font-weight-semibold;
-  color: $text-primary;
+  color: pp.$ink;
 }
 
 .panel-screen-header__spacer {

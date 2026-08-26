@@ -22,7 +22,7 @@
         @click="selectEffect(def.type)"
       >
         <span class="editor-shape-effect-screen__thumb">
-          <span class="editor-shape-effect-screen__swatch" :style="getPreviewStyle(def.type)" />
+          <span class="editor-shape-effect-screen__swatch" :style="getShapeVisualEffectPreviewStyle(def.type, baseFill)" />
           <v-icon
             v-if="activeEffect?.type === def.type"
             size="14"
@@ -63,7 +63,7 @@ import { storeToRefs } from 'pinia'
 
 import { useEditorStore } from '../../../store/editor.store'
 import type { ElementPatch } from '../../../store/editor.store'
-import { SHAPE_VISUAL_EFFECT_DESCRIPTORS } from '../../../models/shape-visual-effect.model'
+import { SHAPE_VISUAL_EFFECT_DESCRIPTORS, getShapeVisualEffectPreviewStyle } from '../../../models/shape-visual-effect.model'
 import type { ShapeVisualEffect, ShapeVisualEffectType } from '../../../models/shape-visual-effect.model'
 import { findDescriptor } from '../../../models/effect-descriptor.model'
 import type { ShapeElement } from '../../../models/shape-element.model'
@@ -79,28 +79,6 @@ const activeDescriptor = computed(() =>
 )
 
 const baseFill = computed(() => shapeElement.value?.fill || '#E3DDD5')
-
-function getPreviewStyle(type: ShapeVisualEffectType): Record<string, string> {
-  const fill = baseFill.value
-
-  switch (type) {
-    case 'glow':
-      return { background: fill, boxShadow: '0 0 10px 2px #F775BB' }
-    case 'neon':
-      return { background: fill, border: '2px solid #4AD9FF', boxShadow: '0 0 12px 3px #4AD9FF' }
-    case 'blur':
-      return { background: fill, filter: 'blur(2px)' }
-    case 'glass':
-      return {
-        background: `linear-gradient(${fill}, ${fill})`,
-        boxShadow: 'inset 0 0 0 100px rgba(255,255,255,0.45)',
-      }
-    case 'gradient':
-      return { background: 'linear-gradient(45deg, #F775BB, #4AD9FF)' }
-    default:
-      return { background: fill }
-  }
-}
 
 function patchElement(patch: ElementPatch): void {
   if (!selected.value) {
@@ -132,6 +110,8 @@ function patchParams(partial: Record<string, number | string>): void {
 </script>
 
 <style scoped lang="scss">
+@use '@/modules/editor/styles/properties-panel-theme' as pp;
+
 .editor-shape-effect-screen {
   display: flex;
   flex-direction: column;
@@ -164,14 +144,14 @@ function patchParams(partial: Record<string, number | string>): void {
   width: 100%;
   aspect-ratio: 1;
   padding: $spacing-2;
-  border: 1px solid $border-light;
-  border-radius: $radius-lg;
-  background: $bg-elevated;
-  box-shadow: $shadow-xs;
+  border: 1.5px solid pp.$border;
+  border-radius: $radius-sm;
+  background: $white;
   overflow: hidden;
+  transition: border-color 0.12s ease;
 
   .editor-shape-effect-screen__card:hover & {
-    border-color: $border-strong;
+    border-color: pp.$border-strong;
   }
 }
 
@@ -182,9 +162,9 @@ function patchParams(partial: Record<string, number | string>): void {
 }
 
 .editor-shape-effect-screen__card--active .editor-shape-effect-screen__thumb {
-  border-color: $text-primary;
-  background: $bg-primary;
-  box-shadow: $shadow-sm;
+  border-color: pp.$accent;
+  border-width: 2px;
+  background: pp.$accent-tint;
 }
 
 .editor-shape-effect-screen__check {
@@ -192,23 +172,30 @@ function patchParams(partial: Record<string, number | string>): void {
   top: 2px;
   right: 2px;
   color: #ffffff;
-  background: $text-primary;
+  background: pp.$accent;
   border-radius: 50%;
   padding: 1px;
 }
 
 .editor-shape-effect-screen__label {
   font-size: $font-size-caption;
-  color: $text-secondary;
+  color: pp.$ink-soft;
 }
 
 .editor-shape-effect-screen__card--active .editor-shape-effect-screen__label {
-  color: $text-primary;
+  color: pp.$accent-deep;
   font-weight: $font-weight-semibold;
 }
 
 .editor-shape-effect-screen__mode {
   display: flex;
   justify-content: center;
+
+  // color="primary" alone renders black — Vuetify's .v-theme--light class re-declares the theme
+  // variables on the component itself, beating an inherited override from .editor-properties.
+  :deep(.v-btn--variant-flat) {
+    background: pp.$accent !important;
+    color: #fff !important;
+  }
 }
 </style>

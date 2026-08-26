@@ -21,11 +21,9 @@
     />
 
     <template v-if="optionalStroke">
-      <v-switch
+      <EditorSwitch
         :model-value="strokeEnabled"
         label="Обводка"
-        color="primary"
-        hide-details
         @update:model-value="toggleStroke"
       />
 
@@ -82,6 +80,7 @@ import { computed } from 'vue'
 import { SHAPE_STROKE_WIDTH_MAX } from '../constants/page.constants'
 import type { ShapeElement } from '../models/shape-element.model'
 import EditorColorPicker from './EditorColorPicker.vue'
+import EditorSwitch from './EditorSwitch.vue'
 
 export interface ShapeStrokePatch {
   fill?: string

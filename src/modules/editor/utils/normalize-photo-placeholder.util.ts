@@ -80,8 +80,6 @@ function normalizePhotoFilter(value: unknown): PhotoFilter | null {
 const PHOTO_MASK_GEOMETRIC_TYPES = new Set<PhotoMaskType>([
   'circle',
   'oval',
-  'rectangle',
-  'rounded-rectangle',
   'heart',
   'star',
   'diamond',

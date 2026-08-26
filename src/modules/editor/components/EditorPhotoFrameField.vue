@@ -109,6 +109,8 @@ function selectFrame(item: AdminPhotoFrame): void {
 </script>
 
 <style scoped lang="scss">
+@use '@/modules/editor/styles/properties-panel-theme' as pp;
+
 .editor-photo-frame-field {
   display: flex;
   flex-direction: column;
@@ -118,7 +120,7 @@ function selectFrame(item: AdminPhotoFrame): void {
 .editor-photo-frame-field__label {
   margin: 0;
   font-size: $font-size-caption;
-  color: $text-muted;
+  color: pp.$ink-soft;
 }
 
 .editor-photo-frame-field__current {
@@ -131,8 +133,8 @@ function selectFrame(item: AdminPhotoFrame): void {
   width: 40px;
   height: 40px;
   flex-shrink: 0;
-  border: 1px solid $border-light;
-  border-radius: $radius-sm;
+  border: 1px solid pp.$border;
+  border-radius: pp.$radius;
   background:
     linear-gradient(45deg, $bg-muted 25%, transparent 25%, transparent 75%, $bg-muted 75%) 0 0 / 10px 10px,
     linear-gradient(45deg, $bg-muted 25%, transparent 25%, transparent 75%, $bg-muted 75%) 5px 5px / 10px 10px;
@@ -164,8 +166,8 @@ function selectFrame(item: AdminPhotoFrame): void {
 
 .editor-photo-frame-field__grid-item {
   aspect-ratio: 1;
-  border: 1px solid $border-light;
-  border-radius: $radius-sm;
+  border: 1px solid pp.$border;
+  border-radius: pp.$radius;
   background:
     linear-gradient(45deg, $bg-muted 25%, transparent 25%, transparent 75%, $bg-muted 75%) 0 0 / 10px 10px,
     linear-gradient(45deg, $bg-muted 25%, transparent 25%, transparent 75%, $bg-muted 75%) 5px 5px / 10px 10px;
@@ -173,7 +175,7 @@ function selectFrame(item: AdminPhotoFrame): void {
   padding: $spacing-1;
 
   &:hover {
-    border-color: $border-default;
+    border-color: pp.$accent;
   }
 
   img {

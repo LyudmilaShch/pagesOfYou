@@ -2,6 +2,21 @@
 
   <aside class="editor-properties" aria-label="Свойства элемента">
 
+    <!-- objectBoundingBox clip works at any thumbnail pixel size — needed for the heart mask
+         preview in the "Маска" strip below, which can't be expressed as a native CSS basic-shape
+         function. EditorPhotoMaskScreen.vue defines the same id for its own full-grid screen;
+         the two are never mounted at the same time (root strip vs. pushed screen), so there's no
+         duplicate-id conflict. -->
+    <svg width="0" height="0" style="position: absolute">
+      <defs>
+        <clipPath id="photo-mask-heart-clip" clipPathUnits="objectBoundingBox">
+          <path
+            d="M 0.5 0.85 C 0.2 0.65, 0 0.45, 0 0.25 C 0 0.05, 0.25 -0.05, 0.5 0.15 C 0.75 -0.05, 1 0.05, 1 0.25 C 1 0.45, 0.8 0.65, 0.5 0.85 Z"
+          />
+        </clipPath>
+      </defs>
+    </svg>
+
     <div v-if="panelStack.isRoot.value" class="editor-properties__header">
 
       <div class="editor-properties__header-text">
@@ -265,66 +280,72 @@
           <div class="editor-properties__align-row">
             <v-btn
               icon
+              rounded="circle"
               size="small"
               variant="outlined"
               title="По левому краю"
               :disabled="store.previewMode || store.alignableSelectedElements.length < 2"
               @click="alignMulti('left')"
             >
-              <v-icon size="18">mdi-format-horizontal-align-left</v-icon>
+              <v-icon size="20">mdi-format-horizontal-align-left</v-icon>
             </v-btn>
             <v-btn
               icon
+              rounded="circle"
               size="small"
               variant="outlined"
               title="По верхнему краю"
               :disabled="store.previewMode || store.alignableSelectedElements.length < 2"
               @click="alignMulti('top')"
             >
-              <v-icon size="18">mdi-format-vertical-align-top</v-icon>
+              <v-icon size="20">mdi-format-vertical-align-top</v-icon>
             </v-btn>
             <v-btn
               icon
+              rounded="circle"
               size="small"
               variant="outlined"
               title="По центру по горизонтали"
               :disabled="store.previewMode || store.alignableSelectedElements.length < 2"
               @click="alignMulti('center-horizontal')"
             >
-              <v-icon size="18">mdi-format-horizontal-align-center</v-icon>
+              <v-icon size="20">mdi-format-horizontal-align-center</v-icon>
             </v-btn>
             <v-btn
               icon
+              rounded="circle"
               size="small"
               variant="outlined"
               title="По центру по вертикали"
               :disabled="store.previewMode || store.alignableSelectedElements.length < 2"
               @click="alignMulti('center-vertical')"
             >
-              <v-icon size="18">mdi-format-vertical-align-center</v-icon>
+              <v-icon size="20">mdi-format-vertical-align-center</v-icon>
             </v-btn>
           </div>
 
           <div class="editor-properties__align-row">
             <v-btn
               icon
+              rounded="circle"
               size="small"
               variant="outlined"
               title="Распределить по горизонтали (3+)"
               :disabled="store.previewMode || store.alignableSelectedElements.length < 3"
               @click="alignMulti('distribute-horizontal')"
             >
-              <v-icon size="18">mdi-distribute-horizontal-center</v-icon>
+              <v-icon size="20">mdi-distribute-horizontal-center</v-icon>
             </v-btn>
             <v-btn
               icon
+              rounded="circle"
               size="small"
               variant="outlined"
               title="Распределить по вертикали (3+)"
               :disabled="store.previewMode || store.alignableSelectedElements.length < 3"
               @click="alignMulti('distribute-vertical')"
             >
-              <v-icon size="18">mdi-distribute-vertical-center</v-icon>
+              <v-icon size="20">mdi-distribute-vertical-center</v-icon>
             </v-btn>
           </div>
 
@@ -372,155 +393,11 @@
 
       <template v-else-if="selected">
 
-        <div class="editor-properties__section">
-
-          <p class="editor-properties__section-title">Позиция и размер</p>
-
-          <div class="editor-properties__grid">
-
-            <v-text-field
-
-              :model-value="displayPositionX"
-
-              :label="positionXLabel"
-
-              type="number"
-
-              variant="outlined"
-
-              density="compact"
-
-              hide-details
-
-              @update:model-value="updatePosition('x', $event)"
-
-            />
-
-            <v-text-field
-
-              :model-value="selected.position.y"
-
-              label="Y"
-
-              type="number"
-
-              variant="outlined"
-
-              density="compact"
-
-              hide-details
-
-              @update:model-value="updatePosition('y', $event)"
-
-            />
-
-            <v-text-field
-
-              :model-value="selected.size.width"
-
-              label="Ширина"
-
-              type="number"
-
-              variant="outlined"
-
-              density="compact"
-
-              hide-details
-
-              @update:model-value="updateSize('width', $event)"
-
-            />
-
-            <v-text-field
-
-              :model-value="selected.size.height"
-
-              label="Высота"
-
-              type="number"
-
-              variant="outlined"
-
-              density="compact"
-
-              hide-details
-
-              @update:model-value="updateSize('height', $event)"
-
-            />
-
-            <v-text-field
-              :model-value="displayRotation"
-
-              label="Угол"
-
-              type="number"
-
-              suffix="°"
-
-              step="1"
-
-              variant="outlined"
-
-              density="compact"
-
-              hide-details
-
-              prepend-inner-icon="mdi-rotate-right"
-
-              :disabled="store.previewMode || selected.locked"
-
-              @update:model-value="updateRotation($event)"
-
-            />
-
-          </div>
-
-          <div class="editor-properties__section">
-            <p class="editor-properties__section-title">Выравнивание</p>
-            <div class="editor-properties__align-row">
-              <v-btn
-                icon
-                size="small"
-                variant="outlined"
-                title="По центру по горизонтали"
-                :disabled="store.previewMode || selected.locked"
-                @click="alignToPageCenter('horizontal')"
-              >
-                <v-icon size="18">mdi-format-horizontal-align-center</v-icon>
-              </v-btn>
-              <v-btn
-                icon
-                size="small"
-                variant="outlined"
-                title="По центру по вертикали"
-                :disabled="store.previewMode || selected.locked"
-                @click="alignToPageCenter('vertical')"
-              >
-                <v-icon size="18">mdi-format-vertical-align-center</v-icon>
-              </v-btn>
-              <v-btn
-                icon
-                size="small"
-                variant="outlined"
-                title="По центру страницы"
-                :disabled="store.previewMode || selected.locked"
-                @click="alignToPageCenter('both')"
-              >
-                <v-icon size="18">mdi-target</v-icon>
-              </v-btn>
-            </div>
-          </div>
-        </div>
-
-
+        <EditorPositionFields v-if="!isTextElement" />
 
         <div v-if="isTextElement" class="editor-properties__section">
 
-          <p class="editor-properties__section-title">Текст по умолчанию</p>
-
-
+          <p class="editor-properties__section-title">Контент</p>
 
           <v-text-field
 
@@ -564,9 +441,11 @@
 
           />
 
+        </div>
 
+        <div v-if="isTextElement" class="editor-properties__section">
 
-          <p class="editor-properties__section-title editor-properties__section-title--nested">Типографика</p>
+          <p class="editor-properties__section-title">Типографика</p>
 
 
 
@@ -594,31 +473,25 @@
 
 
 
-          <v-text-field
+          <EditorStepperField
 
             :model-value="textElement.fontSize"
 
             label="Размер"
 
-            type="number"
+            suffix="px"
 
-            min="1"
+            :min="1"
 
-            variant="outlined"
-
-            density="compact"
-
-            hide-details
-
-            @update:model-value="patchElement({ fontSize: toNumber($event, textElement.fontSize) })"
+            @update:model-value="patchElement({ fontSize: $event })"
 
           />
 
 
 
-          <div class="editor-properties__typo-toolbar">
+          <p class="editor-properties__field-label">Начертание</p>
 
-            <div class="editor-properties__typo-group">
+          <div class="editor-properties__typo-group editor-properties__typo-group--stretch">
 
               <v-btn
 
@@ -629,6 +502,8 @@
                 size="small"
 
                 class="editor-properties__style-btn"
+
+                rounded="0"
 
                 title="Жирный"
 
@@ -650,6 +525,8 @@
 
                 class="editor-properties__style-btn"
 
+                rounded="0"
+
                 title="Курсив"
 
                 @click="toggleItalic"
@@ -670,19 +547,25 @@
 
                 class="editor-properties__style-btn"
 
-                icon="mdi-format-letter-case-upper"
+                rounded="0"
 
                 title="Все заглавные"
 
                 @click="toggleUppercase"
 
-              />
+              >
 
-            </div>
+                <span class="editor-properties__style-icon">Aa</span>
 
+              </v-btn>
 
+          </div>
 
-            <div class="editor-properties__typo-group">
+          <p class="editor-properties__field-label editor-properties__field-label--spaced">Выравнивание текста</p>
+
+          <div class="editor-properties__typo-toolbar">
+
+            <div class="editor-properties__typo-group editor-properties__typo-group--stretch editor-properties__typo-group--fill">
 
               <v-btn
 
@@ -694,13 +577,19 @@
 
                 class="editor-properties__style-btn"
 
-                icon="mdi-format-align-left"
+                rounded="0"
 
                 title="Слева"
 
                 @click="setTextAlign('left')"
 
-              />
+              >
+
+                <svg class="editor-properties__align-text-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <path d="M4 6h16M4 12h10M4 18h13" />
+                </svg>
+
+              </v-btn>
 
               <v-btn
 
@@ -712,13 +601,19 @@
 
                 class="editor-properties__style-btn"
 
-                icon="mdi-format-align-center"
+                rounded="0"
 
                 title="По центру"
 
                 @click="setTextAlign('center')"
 
-              />
+              >
+
+                <svg class="editor-properties__align-text-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <path d="M4 6h16M7 12h10M5.5 18h13" />
+                </svg>
+
+              </v-btn>
 
               <v-btn
 
@@ -730,13 +625,19 @@
 
                 class="editor-properties__style-btn"
 
-                icon="mdi-format-align-right"
+                rounded="0"
 
                 title="Справа"
 
                 @click="setTextAlign('right')"
 
-              />
+              >
+
+                <svg class="editor-properties__align-text-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <path d="M4 6h16M10 12h10M7 18h13" />
+                </svg>
+
+              </v-btn>
 
               <v-btn
 
@@ -748,13 +649,19 @@
 
                 class="editor-properties__style-btn"
 
-                icon="mdi-format-align-justify"
+                rounded="0"
 
                 title="По ширине"
 
                 @click="setTextAlign('justify')"
 
-              />
+              >
+
+                <svg class="editor-properties__align-text-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <path d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+
+              </v-btn>
 
             </div>
 
@@ -788,6 +695,8 @@
 
                   class="editor-properties__style-btn"
 
+                rounded="0"
+
                   icon="mdi-format-line-spacing"
 
                   title="Интервалы и выравнивание"
@@ -804,51 +713,23 @@
 
                   <span class="editor-properties__spacing-label">Межбуквенный интервал</span>
 
-                  <div class="editor-properties__spacing-control">
+                  <EditorStepperField
 
-                    <v-slider
+                    size="mini"
 
-                      :model-value="textElement.letterSpacing"
+                    :model-value="textElement.letterSpacing"
 
-                      :min="LETTER_SPACING_MIN"
+                    :min="LETTER_SPACING_MIN"
 
-                      :max="LETTER_SPACING_MAX"
+                    :max="LETTER_SPACING_MAX"
 
-                      :step="0.1"
+                    :step="0.1"
 
-                      color="primary"
+                    class="editor-properties__spacing-input"
 
-                      hide-details
+                    @update:model-value="patchElement({ letterSpacing: $event })"
 
-                      @update:model-value="patchElement({ letterSpacing: Number($event) })"
-
-                    />
-
-                    <v-text-field
-
-                      :model-value="textElement.letterSpacing"
-
-                      type="number"
-
-                      :min="LETTER_SPACING_MIN"
-
-                      :max="LETTER_SPACING_MAX"
-
-                      step="0.1"
-
-                      density="compact"
-
-                      variant="outlined"
-
-                      hide-details
-
-                      class="editor-properties__spacing-input"
-
-                      @update:model-value="patchElement({ letterSpacing: toNumber($event, textElement.letterSpacing) })"
-
-                    />
-
-                  </div>
+                  />
 
                 </div>
 
@@ -858,51 +739,23 @@
 
                   <span class="editor-properties__spacing-label">Расстояние между строками</span>
 
-                  <div class="editor-properties__spacing-control">
+                  <EditorStepperField
 
-                    <v-slider
+                    size="mini"
 
-                      :model-value="textElement.lineHeight"
+                    :model-value="textElement.lineHeight"
 
-                      :min="LINE_HEIGHT_MIN"
+                    :min="LINE_HEIGHT_MIN"
 
-                      :max="LINE_HEIGHT_MAX"
+                    :max="LINE_HEIGHT_MAX"
 
-                      :step="0.05"
+                    :step="0.05"
 
-                      color="primary"
+                    class="editor-properties__spacing-input"
 
-                      hide-details
+                    @update:model-value="patchElement({ lineHeight: $event })"
 
-                      @update:model-value="patchElement({ lineHeight: Number($event) })"
-
-                    />
-
-                    <v-text-field
-
-                      :model-value="textElement.lineHeight"
-
-                      type="number"
-
-                      :min="LINE_HEIGHT_MIN"
-
-                      :max="LINE_HEIGHT_MAX"
-
-                      step="0.05"
-
-                      density="compact"
-
-                      variant="outlined"
-
-                      hide-details
-
-                      class="editor-properties__spacing-input"
-
-                      @update:model-value="patchElement({ lineHeight: toNumber($event, textElement.lineHeight) })"
-
-                    />
-
-                  </div>
+                  />
 
                 </div>
 
@@ -980,7 +833,11 @@
 
           </div>
 
+        </div>
 
+        <div v-if="isTextElement" class="editor-properties__section">
+
+          <p class="editor-properties__section-title">Цвет</p>
 
           <EditorColorPicker
             :model-value="textElement.color"
@@ -989,37 +846,66 @@
             @update:model-value="patchElement({ color: $event })"
           />
 
+        </div>
 
+        <div v-if="isTextElement" class="editor-properties__section">
 
-          <v-switch
+          <p class="editor-properties__section-title">Поведение</p>
+
+          <EditorSwitch
 
             :model-value="textElement.required"
 
             label="Обязательное поле"
 
-            color="primary"
-
-            hide-details
-
-            @update:model-value="patchElement({ required: Boolean($event) })"
+            @update:model-value="patchElement({ required: $event })"
 
           />
 
+        </div>
 
+        <div v-if="isTextElement" class="editor-properties__section">
+
+          <p class="editor-properties__section-title">Эффекты</p>
+
+          <div class="editor-properties__fx-scroll">
+
+            <button
+              type="button"
+              class="editor-properties__fx-item"
+              :class="{ 'editor-properties__fx-item--active': !textElement.effect }"
+              @click="removeTextEffect"
+            >
+              <span class="editor-properties__fx-thumb">Аа</span>
+              <span class="editor-properties__fx-label">Без эффекта</span>
+            </button>
+
+            <button
+              v-for="card in TEXT_EFFECT_CARDS"
+              :key="card.type"
+              type="button"
+              class="editor-properties__fx-item"
+              :class="{ 'editor-properties__fx-item--active': textElement.effect?.type === card.type }"
+              @click="selectTextEffect(card)"
+            >
+              <span class="editor-properties__fx-thumb" :style="getTextEffectDemoStyle(card.type)">Аа</span>
+              <span class="editor-properties__fx-label">{{ card.label }}</span>
+            </button>
+
+          </div>
 
           <button
             type="button"
-            class="editor-properties__row-link"
+            class="editor-properties__fx-more"
             @click="panelStack.push({ id: 'text-effects', title: 'Эффекты' })"
           >
-            <span class="editor-properties__row-link-label">Эффекты</span>
-            <span class="editor-properties__row-link-preview">{{ effectPreviewLabel }}</span>
-            <v-icon size="16">mdi-chevron-right</v-icon>
+            Все эффекты
+            <v-icon size="12">mdi-chevron-right</v-icon>
           </button>
 
         </div>
 
-
+        <EditorPositionFields v-if="isTextElement" />
 
         <div v-if="isPhotoElement" class="editor-properties__section">
 
@@ -1158,40 +1044,110 @@
 
 
 
-          <v-switch
+          <EditorSwitch
 
             :model-value="photoElement.required"
 
             label="Обязательное поле"
 
-            color="primary"
-
-            hide-details
-
-            @update:model-value="patchElement({ required: Boolean($event) })"
+            @update:model-value="patchElement({ required: $event })"
 
           />
 
 
 
-          <button
-            type="button"
-            class="editor-properties__row-link"
-            @click="panelStack.push({ id: 'photo-filters', title: 'Фильтры' })"
-          >
-            <span class="editor-properties__row-link-label">Фильтры</span>
-            <span class="editor-properties__row-link-preview">{{ photoFilterPreviewLabel }}</span>
-            <v-icon size="16">mdi-chevron-right</v-icon>
-          </button>
+        </div>
+
+        <div v-if="isPhotoElement" class="editor-properties__section">
+
+          <p class="editor-properties__section-title">Фильтры</p>
+
+          <div class="editor-properties__fx-scroll">
+
+            <button
+              type="button"
+              class="editor-properties__fx-item"
+              :class="{ 'editor-properties__fx-item--active': !photoElement.filter }"
+              @click="removePhotoFilter"
+            >
+              <span class="editor-properties__fx-thumb">
+                <img v-if="displayImageUrl" :src="displayImageUrl" alt="" />
+                <v-icon v-else size="20" color="textMuted">mdi-image-outline</v-icon>
+              </span>
+              <span class="editor-properties__fx-label">Без фильтра</span>
+            </button>
+
+            <button
+              v-for="preset in PHOTO_FILTER_PRESETS"
+              :key="preset.key"
+              type="button"
+              class="editor-properties__fx-item"
+              :class="{ 'editor-properties__fx-item--active': isPhotoFilterPresetActive(preset.key) }"
+              @click="selectPhotoFilter(preset.key)"
+            >
+              <span class="editor-properties__fx-thumb">
+                <img v-if="displayImageUrl" :src="displayImageUrl" alt="" :style="{ filter: getCssFilterPreview(preset.correction) }" />
+                <v-icon v-else size="20" color="textMuted">mdi-image-outline</v-icon>
+              </span>
+              <span class="editor-properties__fx-label">{{ preset.label }}</span>
+            </button>
+
+          </div>
 
           <button
             type="button"
-            class="editor-properties__row-link"
+            class="editor-properties__fx-more"
+            @click="panelStack.push({ id: 'photo-filters', title: 'Фильтры' })"
+          >
+            Все фильтры
+            <v-icon size="12">mdi-chevron-right</v-icon>
+          </button>
+
+        </div>
+
+        <div v-if="isPhotoElement" class="editor-properties__section">
+
+          <p class="editor-properties__section-title">Маска</p>
+
+          <div class="editor-properties__fx-scroll">
+
+            <button
+              type="button"
+              class="editor-properties__fx-item"
+              :class="{ 'editor-properties__fx-item--active': !photoElement.mask }"
+              @click="removePhotoMask"
+            >
+              <span class="editor-properties__fx-thumb">
+                <img v-if="displayImageUrl" :src="displayImageUrl" alt="" />
+                <v-icon v-else size="20" color="textMuted">mdi-image-outline</v-icon>
+              </span>
+              <span class="editor-properties__fx-label">Без маски</span>
+            </button>
+
+            <button
+              v-for="def in PHOTO_MASK_DESCRIPTORS"
+              :key="def.type"
+              type="button"
+              class="editor-properties__fx-item"
+              :class="{ 'editor-properties__fx-item--active': photoElement.mask?.type === def.type }"
+              @click="selectPhotoMask(def.type)"
+            >
+              <span class="editor-properties__fx-thumb">
+                <img v-if="displayImageUrl" :src="displayImageUrl" alt="" :style="{ clipPath: def.cssClipPath }" />
+                <v-icon v-else size="20" color="textMuted">mdi-image-outline</v-icon>
+              </span>
+              <span class="editor-properties__fx-label">{{ def.label }}</span>
+            </button>
+
+          </div>
+
+          <button
+            type="button"
+            class="editor-properties__fx-more"
             @click="panelStack.push({ id: 'photo-mask', title: 'Маска' })"
           >
-            <span class="editor-properties__row-link-label">Маска</span>
-            <span class="editor-properties__row-link-preview">{{ photoMaskPreviewLabel }}</span>
-            <v-icon size="16">mdi-chevron-right</v-icon>
+            Все маски
+            <v-icon size="12">mdi-chevron-right</v-icon>
           </button>
 
         </div>
@@ -1211,24 +1167,97 @@
             @patch="(patch) => patchElement(patch as ElementPatch)"
           />
 
-          <button
-            type="button"
-            class="editor-properties__row-link"
-            @click="panelStack.push({ id: 'shape-shadow', title: 'Тени' })"
-          >
-            <span class="editor-properties__row-link-label">Тени</span>
-            <span class="editor-properties__row-link-preview">{{ shapeShadowPreviewLabel }}</span>
-            <v-icon size="16">mdi-chevron-right</v-icon>
-          </button>
+        </div>
+
+        <div v-if="isShapeElement" class="editor-properties__section">
+
+          <p class="editor-properties__section-title">Тени</p>
+
+          <div class="editor-properties__fx-scroll">
+
+            <button
+              type="button"
+              class="editor-properties__fx-item"
+              :class="{ 'editor-properties__fx-item--active': !shapeElement.shadow }"
+              @click="removeShapeShadow"
+            >
+              <span class="editor-properties__fx-thumb">
+                <v-icon size="22" color="textMuted">mdi-square-off-outline</v-icon>
+              </span>
+              <span class="editor-properties__fx-label">Без тени</span>
+            </button>
+
+            <button
+              v-for="def in SHAPE_SHADOW_DESCRIPTORS"
+              :key="def.type"
+              type="button"
+              class="editor-properties__fx-item"
+              :class="{ 'editor-properties__fx-item--active': shapeElement.shadow?.type === def.type }"
+              @click="selectShapeShadow(def.type)"
+            >
+              <span class="editor-properties__fx-thumb">
+                <v-icon size="22">{{ SHAPE_SHADOW_ICONS[def.type] }}</v-icon>
+              </span>
+              <span class="editor-properties__fx-label">{{ def.label }}</span>
+            </button>
+
+          </div>
 
           <button
             type="button"
-            class="editor-properties__row-link"
+            class="editor-properties__fx-more"
+            @click="panelStack.push({ id: 'shape-shadow', title: 'Тени' })"
+          >
+            Все тени
+            <v-icon size="12">mdi-chevron-right</v-icon>
+          </button>
+
+        </div>
+
+        <div v-if="isShapeElement" class="editor-properties__section">
+
+          <p class="editor-properties__section-title">Эффекты</p>
+
+          <div class="editor-properties__fx-scroll">
+
+            <button
+              type="button"
+              class="editor-properties__fx-item"
+              :class="{ 'editor-properties__fx-item--active': !shapeElement.visualEffect }"
+              @click="removeShapeVisualEffect"
+            >
+              <span class="editor-properties__fx-thumb">
+                <span class="editor-properties__fx-swatch" :style="{ background: shapeElement.fill || '#E3DDD5' }" />
+              </span>
+              <span class="editor-properties__fx-label">Без эффекта</span>
+            </button>
+
+            <button
+              v-for="def in SHAPE_VISUAL_EFFECT_DESCRIPTORS"
+              :key="def.type"
+              type="button"
+              class="editor-properties__fx-item"
+              :class="{ 'editor-properties__fx-item--active': shapeElement.visualEffect?.type === def.type }"
+              @click="selectShapeVisualEffect(def)"
+            >
+              <span class="editor-properties__fx-thumb">
+                <span
+                  class="editor-properties__fx-swatch"
+                  :style="getShapeVisualEffectPreviewStyle(def.type, shapeElement.fill || '#E3DDD5')"
+                />
+              </span>
+              <span class="editor-properties__fx-label">{{ def.label }}</span>
+            </button>
+
+          </div>
+
+          <button
+            type="button"
+            class="editor-properties__fx-more"
             @click="panelStack.push({ id: 'shape-visual-effect', title: 'Эффекты' })"
           >
-            <span class="editor-properties__row-link-label">Эффекты</span>
-            <span class="editor-properties__row-link-preview">{{ shapeVisualEffectPreviewLabel }}</span>
-            <v-icon size="16">mdi-chevron-right</v-icon>
+            Все эффекты
+            <v-icon size="12">mdi-chevron-right</v-icon>
           </button>
 
         </div>
@@ -1240,37 +1269,6 @@
           <p class="editor-properties__section-title">Элемент</p>
 
           <p class="editor-properties__meta">Тип: {{ selected.type }}</p>
-
-
-
-          <div class="editor-properties__element-actions">
-
-            <v-btn
-              variant="outlined"
-              size="x-small"
-              prepend-icon="mdi-content-copy"
-              class="editor-properties__duplicate"
-              :disabled="store.previewMode"
-              @click="handleDuplicate"
-            >
-              Дублировать
-            </v-btn>
-
-            <v-btn
-              variant="outlined"
-              color="error"
-              size="x-small"
-              prepend-icon="mdi-delete-outline"
-              class="editor-properties__delete"
-              :disabled="store.previewMode"
-              @click="handleRemove"
-            >
-
-              Удалить
-
-            </v-btn>
-
-          </div>
 
         </div>
 
@@ -1294,6 +1292,40 @@
 
     </div>
 
+    <footer
+      v-if="panelStack.isRoot.value && selected && !store.isMultiSelection"
+      class="editor-properties__footer"
+    >
+      <v-btn
+        variant="outlined"
+        size="small"
+        prepend-icon="mdi-content-copy"
+        class="editor-properties__duplicate"
+        :disabled="store.previewMode"
+        @click="handleDuplicate"
+      >
+        Дублировать
+      </v-btn>
+
+      <v-tooltip location="top" content-class="editor-properties__delete-tooltip">
+        <template #activator="{ props: tooltipProps }">
+          <v-btn
+            v-bind="tooltipProps"
+            icon
+            variant="outlined"
+            size="small"
+            class="editor-properties__delete"
+            aria-label="Удалить"
+            :disabled="store.previewMode"
+            @click="handleRemove"
+          >
+            <v-icon size="18">mdi-delete-outline</v-icon>
+          </v-btn>
+        </template>
+        Удалить
+      </v-tooltip>
+    </footer>
+
   </aside>
 
 </template>
@@ -1310,11 +1342,22 @@ import { usePropertiesPanelStack } from '../composables/use-properties-panel-sta
 import { PROPERTIES_PANEL_STACK_KEY } from '../composables/properties-panel-stack.context'
 import PropertiesPanelScreenHeader from './properties-panel/PropertiesPanelScreenHeader.vue'
 import { PANEL_SCREENS, type PanelScreenId } from './properties-panel/panel-screen-registry'
-import { TEXT_EFFECT_CARDS } from '../models/text-effect.model'
-import { getPhotoFilterLabel } from '../models/photo-filter.model'
-import { SHAPE_SHADOW_DESCRIPTORS } from '../models/shape-shadow.model'
-import { SHAPE_VISUAL_EFFECT_DESCRIPTORS } from '../models/shape-visual-effect.model'
+import { TEXT_EFFECT_CARDS, getTextEffectDemoStyle } from '../models/text-effect.model'
+import type { TextEffect, TextEffectCardDef } from '../models/text-effect.model'
+import {
+  PHOTO_FILTER_PRESETS,
+  getPhotoFilterPresetDef,
+  getCssFilterPreview,
+  isCustomPhotoFilter,
+} from '../models/photo-filter.model'
+import type { PhotoFilterPresetKey } from '../models/photo-filter.model'
+import { SHAPE_SHADOW_DESCRIPTORS, SHAPE_SHADOW_ICONS } from '../models/shape-shadow.model'
+import type { ShapeShadow, ShapeShadowType } from '../models/shape-shadow.model'
+import { SHAPE_VISUAL_EFFECT_DESCRIPTORS, getShapeVisualEffectPreviewStyle } from '../models/shape-visual-effect.model'
+import type { ShapeVisualEffect, ShapeVisualEffectType } from '../models/shape-visual-effect.model'
+import type { EffectDescriptor } from '../models/effect-descriptor.model'
 import { PHOTO_MASK_DESCRIPTORS } from '../models/photo-mask.model'
+import type { PhotoMaskType } from '../models/photo-mask.model'
 
 
 
@@ -1325,9 +1368,6 @@ import { useErrorMessageModal } from '@/shared/composables/useErrorMessageModal'
 import { getUploadErrorMessage } from '@/shared/utils/api-error.util'
 
 import {
-
-  A4_SPREAD_PAGE_HEIGHT,
-  A4_SPREAD_PAGE_WIDTH,
 
   PAGE_SIZE_PRESETS,
 
@@ -1348,6 +1388,9 @@ import EditorShapeStrokeFields from './EditorShapeStrokeFields.vue'
 import EditorColorPicker from './EditorColorPicker.vue'
 import EditorBorderFields from './EditorBorderFields.vue'
 import EditorPhotoFrameField from './EditorPhotoFrameField.vue'
+import EditorStepperField from './EditorStepperField.vue'
+import EditorSwitch from './EditorSwitch.vue'
+import EditorPositionFields from './EditorPositionFields.vue'
 
 import type { MultiAlignMode } from '../utils/align-elements.util'
 import {
@@ -1361,13 +1404,6 @@ import {
   isTextPlaceholderElement,
 
 } from '../utils/placeholder-display.util'
-import {
-  getSpreadPageSide,
-  getSpreadPageSideLabel,
-  spreadGlobalXToPageLocal,
-  spreadPageLocalXToGlobal,
-} from '../utils/spread.util'
-import { normalizeElementRotation } from '../utils/transformer.util'
 
 
 
@@ -1392,79 +1428,6 @@ watch(
 const panelScreenComponent = computed(() =>
   panelStack.isRoot.value ? null : PANEL_SCREENS[panelStack.current.value.id as PanelScreenId],
 )
-
-const effectPreviewLabel = computed(() => {
-  const effect = textElement.value?.effect
-  if (!effect) {
-    return 'Без эффекта'
-  }
-  return TEXT_EFFECT_CARDS.find((card) => card.type === effect.type)?.label ?? 'Без эффекта'
-})
-
-const photoFilterPreviewLabel = computed(() => getPhotoFilterLabel(photoElement.value?.filter ?? null))
-
-const shapeShadowPreviewLabel = computed(() => {
-  const shadow = shapeElement.value?.shadow
-  if (!shadow) {
-    return 'Без тени'
-  }
-  return SHAPE_SHADOW_DESCRIPTORS.find((def) => def.type === shadow.type)?.label ?? 'Без тени'
-})
-
-const shapeVisualEffectPreviewLabel = computed(() => {
-  const effect = shapeElement.value?.visualEffect
-  if (!effect) {
-    return 'Без эффекта'
-  }
-  return SHAPE_VISUAL_EFFECT_DESCRIPTORS.find((def) => def.type === effect.type)?.label ?? 'Без эффекта'
-})
-
-const photoMaskPreviewLabel = computed(() => {
-  const mask = photoElement.value?.mask
-  if (!mask) {
-    return 'Без маски'
-  }
-  if (mask.type === 'custom') {
-    return mask.name
-  }
-  return PHOTO_MASK_DESCRIPTORS.find((def) => def.type === mask.type)?.label ?? 'Без маски'
-})
-
-const selectedSpreadSide = computed(() => {
-  if (!store.isSpreadPage || !selected.value) {
-    return null
-  }
-
-  return getSpreadPageSide(
-    selected.value.position.x,
-    A4_SPREAD_PAGE_WIDTH,
-    A4_SPREAD_PAGE_HEIGHT,
-    selected.value.size.width,
-  )
-})
-
-const displayPositionX = computed(() => {
-  if (!selected.value) {
-    return 0
-  }
-
-  if (!selectedSpreadSide.value) {
-    return selected.value.position.x
-  }
-
-  return spreadGlobalXToPageLocal(selected.value.position.x, selectedSpreadSide.value)
-})
-
-const positionXLabel = computed(() =>
-  selectedSpreadSide.value
-    ? `X (${getSpreadPageSideLabel(selectedSpreadSide.value)})`
-    : 'X',
-)
-
-const displayRotation = computed(() =>
-  selected.value ? normalizeElementRotation(selected.value.rotation, 0) : 0,
-)
-
 
 
 const imageInputRef = ref<HTMLInputElement | null>(null)
@@ -1666,6 +1629,62 @@ function patchElement(patch: ElementPatch): void {
 
 
 
+function selectTextEffect(card: TextEffectCardDef): void {
+  patchElement({ effect: { type: card.type, params: card.defaultParams } as TextEffect })
+}
+
+function removeTextEffect(): void {
+  patchElement({ effect: null })
+}
+
+function selectShapeShadow(type: ShapeShadowType): void {
+  const def = SHAPE_SHADOW_DESCRIPTORS.find((entry) => entry.type === type)
+  if (!def) {
+    return
+  }
+  patchElement({ shadow: { type, params: { ...def.defaultParams } } as ShapeShadow })
+}
+
+function removeShapeShadow(): void {
+  patchElement({ shadow: null })
+}
+
+function selectShapeVisualEffect(def: EffectDescriptor<ShapeVisualEffectType, Record<string, number | string>>): void {
+  patchElement({ visualEffect: { type: def.type, params: { ...def.defaultParams } } as ShapeVisualEffect })
+}
+
+function removeShapeVisualEffect(): void {
+  patchElement({ visualEffect: null })
+}
+
+function isPhotoFilterPresetActive(key: PhotoFilterPresetKey): boolean {
+  const filter = photoElement.value?.filter
+  return Boolean(filter && filter.preset === key && !isCustomPhotoFilter(filter))
+}
+
+function selectPhotoFilter(key: PhotoFilterPresetKey): void {
+  const def = getPhotoFilterPresetDef(key)
+  patchElement({ filter: { preset: key, intensity: 100, correction: { ...def.correction } } })
+}
+
+function removePhotoFilter(): void {
+  patchElement({ filter: null })
+}
+
+function selectPhotoMask(type: Exclude<PhotoMaskType, 'custom'>): void {
+  patchElement({
+    mask: { type },
+    cropX: 0,
+    cropY: 0,
+    imageScale: 1,
+    imageRotation: 0,
+  })
+}
+
+function removePhotoMask(): void {
+  patchElement({ mask: null })
+}
+
 function toggleBold(): void {
   patchElement({ fontWeight: isTextBold.value ? 400 : 700 })
 }
@@ -1689,43 +1708,6 @@ function setVerticalAlign(
 }
 
 
-
-function updatePosition(axis: 'x' | 'y', value: string | number | null | undefined): void {
-  if (!selected.value) {
-    return
-  }
-
-  if (axis === 'x' && selectedSpreadSide.value) {
-    const raw = toNumber(value, displayPositionX.value)
-    const next = store.snapToGridEnabled ? store.snapCoordinate(raw) : raw
-
-    patchElement({
-      position: {
-        x: spreadPageLocalXToGlobal(next, selectedSpreadSide.value),
-      },
-    })
-    return
-  }
-
-  const raw = toNumber(value, selected.value.position[axis])
-  const next = store.snapToGridEnabled
-    ? store.snapCoordinate(raw)
-    : raw
-
-  patchElement({
-    position: {
-      [axis]: next,
-    },
-  })
-}
-
-function alignToPageCenter(axis: 'horizontal' | 'vertical' | 'both'): void {
-  if (!selected.value || store.previewMode || selected.value.locked) {
-    return
-  }
-
-  store.alignSelectedToPageCenter(axis)
-}
 
 function alignMulti(mode: MultiAlignMode): void {
   if (store.previewMode) {
@@ -1811,42 +1793,6 @@ watch(
   },
   { immediate: true },
 )
-
-
-
-function updateSize(axis: 'width' | 'height', value: string | number | null | undefined): void {
-
-  if (!selected.value) {
-
-    return
-
-  }
-
-
-
-  patchElement({
-
-    size: {
-
-      [axis]: toNumber(value, selected.value.size[axis]),
-
-    },
-
-  })
-
-}
-
-
-
-function updateRotation(value: string | number | null | undefined): void {
-  if (!selected.value) {
-    return
-  }
-
-  patchElement({
-    rotation: normalizeElementRotation(value, selected.value.rotation ?? 0),
-  })
-}
 
 
 
@@ -2058,6 +2004,7 @@ function handleRemove(): void {
 
 
 <style scoped lang="scss">
+@use '@/modules/editor/styles/properties-panel-theme' as pp;
 
 .editor-properties {
 
@@ -2070,15 +2017,49 @@ function handleRemove(): void {
   // than a flush panel.
   margin: $spacing-3;
 
-  border: 1px solid $border-light;
+  border: 1px solid pp.$border-strong;
 
   border-radius: $radius-md;
 
-  background: $bg-primary;
+  background: $white;
 
   box-shadow: $shadow-sm;
 
   overflow: hidden;
+
+  // Retheme accent for every Vuetify component rendered inside the panel (buttons, switches,
+  // sliders, badges that use bg-primary/text-primary utility classes) — these read the
+  // --v-theme-primary CSS variable at render time, so redeclaring it here repaints them pink
+  // without touching the global theme (src/styles/theme.ts) used by the rest of the app. This
+  // also cascades into the pushed sub-screens (EditorEffectsScreen, EditorPhotoFiltersScreen,
+  // etc.) since they mount as DOM descendants of this element.
+  --v-theme-primary: #{pp.$accent-rgb};
+
+  :deep(.v-field) {
+    border-radius: pp.$radius;
+  }
+
+  :deep(.v-field__outline) {
+    color: pp.$border;
+  }
+
+  :deep(.v-field:hover .v-field__outline) {
+    color: pp.$border-strong;
+  }
+
+  :deep(.v-field--focused .v-field__outline) {
+    color: pp.$accent;
+  }
+
+  :deep(.v-field--focused .v-label.v-field-label) {
+    color: pp.$accent-deep;
+  }
+
+  // Note: unlike .v-field (below), VBtn's shape comes from Vuetify's rounded-* utility classes
+  // (rounded-lg, rounded-circle, rounded-0…), which are declared with !important — a plain CSS
+  // border-radius override here cannot win against them. Buttons that need a specific shape use
+  // the `rounded` prop directly in the template instead (see the alignment buttons and the
+  // formatting/text-align button groups).
 
 }
 
@@ -2120,11 +2101,11 @@ function handleRemove(): void {
 
   font-size: $font-size-caption;
 
-  letter-spacing: $letter-spacing-caption;
+  letter-spacing: 0.14em;
 
   text-transform: uppercase;
 
-  color: $text-muted;
+  color: pp.$ink-soft;
 
 }
 
@@ -2134,13 +2115,15 @@ function handleRemove(): void {
 
   margin: 0;
 
-  font-family: $font-family-display;
+  font-family: pp.$font-display;
 
   font-size: $font-size-h4;
 
-  font-weight: $font-weight-regular;
+  font-weight: $font-weight-bold;
 
-  color: $text-primary;
+  letter-spacing: -0.01em;
+
+  color: pp.$ink;
 
 }
 
@@ -2210,15 +2193,21 @@ function handleRemove(): void {
   width: 100%;
   padding: $spacing-3 0;
   border: none;
-  border-top: 1px solid $border-light;
+  border-top: 1px solid pp.$border;
   background: transparent;
   cursor: pointer;
   font: inherit;
-  color: $text-primary;
+  color: pp.$ink;
   text-align: left;
+  transition: color 0.12s ease;
 
   &:hover {
-    background: $state-hover-bg;
+    background: pp.$field-hover;
+    color: pp.$accent-deep;
+  }
+
+  &:hover .editor-properties__row-link-chevron {
+    color: pp.$accent-deep;
   }
 }
 
@@ -2230,11 +2219,145 @@ function handleRemove(): void {
   flex: 1;
   min-width: 0;
   text-align: right;
-  color: $text-muted;
+  color: pp.$ink-faint;
   font-size: $font-size-body-sm;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.editor-properties__row-link-chevron {
+  color: pp.$ink-soft;
+  transition: color 0.12s ease;
+}
+
+// Horizontal-scroll strip of live-preview effect thumbnails, bleeding past the panel's own
+// padding so cards can peek off the edge — matches the mockup's .fx-scroll treatment. "Все
+// эффекты" below opens the full grid screen (also where per-effect params are tuned).
+.editor-properties__fx-scroll {
+  $bleed: $spacing-4 * -1;
+
+  display: flex;
+  gap: $spacing-2;
+  overflow-x: auto;
+  margin: 0 $bleed $spacing-2 $bleed;
+  padding: 2px $spacing-4 $spacing-1;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.editor-properties__fx-item {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  // Fixed to the thumb's own width — without this, a long label (e.g. "Скругленный
+  // прямоугольник") stretches the whole card to fit on one line, opening a big gap around its
+  // (still 52px) thumb relative to its neighbors.
+  width: 52px;
+  // Flex items default to min-width: auto, which keeps them from shrinking below their longest
+  // unbreakable word — without this, a single long word (e.g. "Скругленный") still overflows the
+  // 52px card and overlaps its neighbor even though the label wraps everywhere else it can.
+  min-width: 0;
+  gap: $spacing-1;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+.editor-properties__fx-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 52px;
+  height: 52px;
+  border: 1.5px solid pp.$border;
+  border-radius: $radius-sm;
+  background: $white;
+  overflow: hidden;
+  font-family: pp.$font-display;
+  font-weight: $font-weight-bold;
+  font-size: 17px;
+  color: pp.$ink;
+  transition: border-color 0.12s ease;
+
+  // Photo filter/mask fx-items put a real <img> here (text/shape effects use a text glyph or
+  // color swatch instead) — without this it renders at its natural aspect ratio and overflows
+  // the 52px square, pushing the label out of the compact card layout.
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .editor-properties__fx-item:hover & {
+    border-color: pp.$border-strong;
+  }
+
+  .editor-properties__fx-item:focus-visible & {
+    box-shadow: 0 0 0 3px pp.$accent-glow;
+  }
+}
+
+.editor-properties__fx-item--active .editor-properties__fx-thumb {
+  border-color: pp.$accent;
+  border-width: 2px;
+}
+
+.editor-properties__fx-label {
+  width: 100%;
+  font-size: 9px;
+  font-weight: 500;
+  color: pp.$ink-soft;
+  line-height: 1.25;
+  text-align: center;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.editor-properties__fx-item--active .editor-properties__fx-label {
+  color: pp.$accent-deep;
+  font-weight: $font-weight-semibold;
+}
+
+.editor-properties__fx-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  align-self: flex-start;
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: pp.$ink-soft;
+  cursor: pointer;
+  transition: color 0.12s ease;
+
+  :deep(.v-icon) {
+    transition: transform 0.12s ease;
+  }
+
+  &:hover {
+    color: pp.$accent-deep;
+
+    :deep(.v-icon) {
+      transform: translateX(2px);
+    }
+  }
+}
+
+// Colored swatch preview for shape-effect fx-items (text-effect items preview via the "Аа"
+// glyph directly inside .editor-properties__fx-thumb instead, so need no separate element).
+.editor-properties__fx-swatch {
+  width: 60%;
+  height: 60%;
+  border-radius: $radius-sm;
 }
 
 
@@ -2247,6 +2370,15 @@ function handleRemove(): void {
 
   gap: $spacing-3;
 
+  padding-bottom: $spacing-4;
+
+  border-bottom: 1px solid pp.$border;
+
+  &:last-child {
+    padding-bottom: 0;
+    border-bottom: none;
+  }
+
 }
 
 
@@ -2255,13 +2387,15 @@ function handleRemove(): void {
 
   margin: 0;
 
-  font-size: $font-size-caption;
+  font-size: 10px;
 
-  letter-spacing: $letter-spacing-caption;
+  font-weight: $font-weight-semibold;
+
+  letter-spacing: 0.12em;
 
   text-transform: uppercase;
 
-  color: $text-muted;
+  color: pp.$ink-faint;
 
 }
 
@@ -2402,9 +2536,26 @@ function handleRemove(): void {
 
   display: flex;
 
-  gap: $spacing-2;
+  gap: $spacing-3;
 
   flex-wrap: wrap;
+
+  // Vuetify's outlined variant borrows its border/icon color from `currentColor` (inherited
+  // text color) rather than a fixed value, and its default icon-button size is much smaller
+  // than the mockup's 52px circle — both set explicitly here so the buttons stop drifting with
+  // whatever color/size Vuetify's own defaults happen to resolve to.
+  :deep(.v-btn) {
+    width: 52px;
+    height: 52px;
+    color: pp.$ink;
+    border-color: pp.$border;
+    background: $white;
+  }
+
+  :deep(.v-btn:hover) {
+    border-color: pp.$border-strong;
+    background: pp.$field-hover;
+  }
 
 }
 
@@ -2438,7 +2589,11 @@ function handleRemove(): void {
 
   font-size: $font-size-caption;
 
-  color: $text-muted;
+  color: pp.$ink-soft;
+
+  &--spaced {
+    margin-top: $spacing-4;
+  }
 
 }
 
@@ -2458,23 +2613,69 @@ function handleRemove(): void {
 
 
 
-// Each logical cluster (style/case, alignment, spacing) sits in its own rounded "well" — reads as
-// one grouped control at a glance, the way Figma/Canva group related toolbar buttons, instead of
-// a flat row of individually-bordered buttons.
+// Each logical cluster (style/case, alignment, spacing) is a single bordered strip with square,
+// flush-edge segments separated by hairline dividers — matches the mockup's .fmt-row/.align-row
+// treatment rather than a row of individually-rounded pill buttons. Default sizing is a fixed
+// 38px per segment (like .fmt-row); the --stretch modifier makes segments share the full width
+// evenly (like .align-row), for controls where the group should span the row.
 .editor-properties__typo-group {
 
   display: inline-flex;
 
-  align-items: center;
+  border: 1px solid pp.$border;
 
-  gap: 2px;
+  border-radius: pp.$radius;
 
-  padding: 2px;
+  overflow: hidden;
 
-  border-radius: $radius-sm;
+  background: $white;
 
-  background: $bg-muted;
+  // Corner-squaring is done via the rounded="0" prop on each v-btn (template) — Vuetify's
+  // rounded utility classes carry !important, so a plain border-radius override here cannot
+  // win against the global VBtn default (rounded: 'lg', src/plugins/vuetify.ts).
+  :deep(.v-btn) {
+    flex: 0 0 auto;
+    width: 38px;
+    height: 34px;
+    box-shadow: none;
+  }
 
+  :deep(.v-btn:not(:last-child)) {
+    border-right: 1px solid pp.$border;
+  }
+
+  // Mirrors the mockup's .fmt-btn:hover:not(.active) — inactive segments only tint on hover,
+  // active ones keep the solid pink fill from the --v-theme-primary override (see root rule).
+  :deep(.v-btn--variant-text:hover) {
+    background: pp.$accent-tint;
+    color: pp.$accent-deep;
+  }
+
+  // Distributes the group's own segments evenly (equal-width buttons) — safe in any parent
+  // context since it only affects sizing *inside* the group.
+  &--stretch {
+    display: flex;
+
+    :deep(.v-btn) {
+      flex: 1;
+      width: auto;
+    }
+  }
+
+  // Makes the group itself grow to fill the remaining width of its row — only meaningful when
+  // the group sits alongside a sibling in a horizontal container (e.g. .editor-properties__typo-toolbar).
+  // Do NOT combine with a group placed directly in a column layout (like .editor-properties__screen):
+  // flex:1 there grows along the column's main axis (vertical), not width, and blows up the row's height.
+  &--fill {
+    flex: 1;
+  }
+}
+
+
+
+.editor-properties__align-text-icon {
+  width: 15px;
+  height: 15px;
 }
 
 
@@ -2577,6 +2778,12 @@ function handleRemove(): void {
 
   height: 36px;
 
+  // See the matching note on .editor-properties__style-btn above.
+  &.v-btn--variant-flat {
+    background: pp.$accent !important;
+    color: #fff !important;
+  }
+
 }
 
 
@@ -2616,6 +2823,17 @@ function handleRemove(): void {
   padding: 0;
 
   border-radius: $radius-xs;
+
+  // Vuetify re-declares the whole --v-theme-* variable set directly on every themed component
+  // via its .v-theme--light class, which wins over an inherited override from an ancestor (like
+  // .editor-properties's --v-theme-primary) because a value set on the element itself always
+  // beats one inherited from a parent. `color="primary"` (bound in the template) therefore still
+  // renders the app's original black, not our pink. Overriding the resolved colors directly on
+  // the active (flat-variant) state, matching Vuetify's own !important, sidesteps that entirely.
+  &.v-btn--variant-flat {
+    background: pp.$accent !important;
+    color: #fff !important;
+  }
 
 }
 
@@ -2714,36 +2932,72 @@ function handleRemove(): void {
 
 
 
-.editor-properties__element-actions {
+.editor-properties__footer {
 
   display: flex;
 
+  align-items: center;
+
   gap: $spacing-2;
+
+  flex-shrink: 0;
+
+  padding: $spacing-3 $spacing-4;
+
+  border-top: 1px solid pp.$border-strong;
+
+  background: $white;
 
 }
 
 
 
-.editor-properties__duplicate,
+.editor-properties__duplicate {
 
-.editor-properties__delete {
-
-  // Vuetify's v-btn lays out prepend/content/append as CSS grid columns that don't shrink below
-  // their own content size — at the default "small" size, icon + "Дублировать" didn't fit the
-  // ~140px each button gets at flex: 1 in a 320px panel, and (grid content doesn't clip by
-  // default) visibly overflowed the button's own border. size="x-small" (smaller font/icon) plus
-  // this tighter padding is what makes it fit; min-width: 0 lets the button honor flex: 1 instead
-  // of Vuetify's own min-width, and overflow: hidden is a safety net.
   flex: 1;
 
   min-width: 0;
 
-  padding: 0 $spacing-2;
+  height: 44px;
+
+  border-color: pp.$border-strong;
+
+  color: pp.$ink;
 
   overflow: hidden;
 
+  &:hover {
+    background: pp.$field-hover;
+  }
+
 }
 
+
+
+.editor-properties__delete {
+
+  flex-shrink: 0;
+
+  width: 44px;
+
+  height: 44px;
+
+  border-color: pp.$border;
+
+  color: pp.$ink-soft;
+
+  &:hover {
+    color: #8a4b45;
+    border-color: #8a4b45;
+    background: rgba(138, 75, 69, 0.07);
+  }
+
+}
+
+
+
+// content-class target for the "Удалить" tooltip (see template) — adds the mockup's downward-
+// pointing arrow, safe to assume here since this tooltip is always anchored above the button.
 
 
 .editor-properties__hint {

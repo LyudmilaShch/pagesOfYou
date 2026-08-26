@@ -45,6 +45,30 @@ export type ShapeVisualEffect =
   | { type: 'glass'; params: GlassShapeEffectParams }
   | { type: 'gradient'; params: GradientShapeEffectParams }
 
+/** Live-preview swatch style for a shape effect card, shared by the effect strip and its full grid screen. */
+export function getShapeVisualEffectPreviewStyle(
+  type: ShapeVisualEffectType,
+  baseFill: string,
+): Record<string, string> {
+  switch (type) {
+    case 'glow':
+      return { background: baseFill, boxShadow: '0 0 10px 2px #F775BB' }
+    case 'neon':
+      return { background: baseFill, border: '2px solid #4AD9FF', boxShadow: '0 0 12px 3px #4AD9FF' }
+    case 'blur':
+      return { background: baseFill, filter: 'blur(2px)' }
+    case 'glass':
+      return {
+        background: `linear-gradient(${baseFill}, ${baseFill})`,
+        boxShadow: 'inset 0 0 0 100px rgba(255,255,255,0.45)',
+      }
+    case 'gradient':
+      return { background: 'linear-gradient(45deg, #F775BB, #4AD9FF)' }
+    default:
+      return { background: baseFill }
+  }
+}
+
 const COLOR_FIELD = { key: 'color', label: 'Цвет', kind: 'color' as const }
 
 function gradientPoints(geometry: ShapeGeometry, angleDeg: number) {

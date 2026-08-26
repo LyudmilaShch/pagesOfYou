@@ -150,6 +150,8 @@ function selectCustomMask(custom: AdminCustomPhotoMask): void {
 </script>
 
 <style scoped lang="scss">
+@use '@/modules/editor/styles/properties-panel-theme' as pp;
+
 .editor-photo-mask-screen {
   display: flex;
   flex-direction: column;
@@ -181,11 +183,11 @@ function selectCustomMask(custom: AdminCustomPhotoMask): void {
   justify-content: center;
   width: 100%;
   aspect-ratio: 1;
-  border: 1px solid $border-light;
-  border-radius: $radius-lg;
-  background: $bg-elevated;
-  box-shadow: $shadow-xs;
+  border: 1.5px solid pp.$border;
+  border-radius: $radius-sm;
+  background: $white;
   overflow: hidden;
+  transition: border-color 0.12s ease;
 
   img {
     width: 100%;
@@ -194,14 +196,14 @@ function selectCustomMask(custom: AdminCustomPhotoMask): void {
   }
 
   .editor-photo-mask-screen__card:hover & {
-    border-color: $border-strong;
+    border-color: pp.$border-strong;
   }
 }
 
 .editor-photo-mask-screen__card--active .editor-photo-mask-screen__thumb {
-  border-color: $text-primary;
-  background: $bg-primary;
-  box-shadow: $shadow-sm;
+  border-color: pp.$accent;
+  border-width: 2px;
+  background: pp.$accent-tint;
 }
 
 .editor-photo-mask-screen__check {
@@ -209,25 +211,25 @@ function selectCustomMask(custom: AdminCustomPhotoMask): void {
   top: 2px;
   right: 2px;
   color: #ffffff;
-  background: $text-primary;
+  background: pp.$accent;
   border-radius: 50%;
   padding: 1px;
 }
 
 .editor-photo-mask-screen__label {
   font-size: $font-size-caption;
-  color: $text-secondary;
+  color: pp.$ink-soft;
 }
 
 .editor-photo-mask-screen__card--active .editor-photo-mask-screen__label {
-  color: $text-primary;
+  color: pp.$accent-deep;
   font-weight: $font-weight-semibold;
 }
 
 .editor-photo-mask-screen__hint {
   margin: 0;
   font-size: $font-size-body-sm;
-  color: $text-muted;
+  color: pp.$ink-soft;
   line-height: 1.5;
 }
 </style>

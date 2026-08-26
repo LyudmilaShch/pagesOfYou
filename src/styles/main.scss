@@ -198,3 +198,75 @@ hr {
 .v-application .text-h6 {
   font-family: $font-family-display !important;
 }
+
+// Site-wide label/placeholder color, matching the properties-panel redesign's reference mockup.
+// Vuetify's field label dims its *inherited* text color via opacity (medium-emphasis) rather
+// than using its own fixed color, so opacity is reset to 1 here to render the exact mockup hex
+// instead of a further-dimmed version of it. Matched to Vuetify's own .v-label.v-field-label
+// specificity (not !important) so its higher-specificity state rules keep working normally —
+// .v-field--error's red label, and this panel's own pink focused-label override, both still win.
+.v-label.v-field-label {
+  color: #6e6e6e;
+  opacity: 1;
+}
+
+// Site-wide button radius, matching the reference mockup's crisper 6px corners. Scoped to
+// .v-btn combined with the *generic* rounded-lg utility class (Vuetify's rounded="lg" prop
+// doesn't generate a component-specific class, so plain .rounded-lg would also catch
+// VCard/VSheet, which keep their own 12px via the same default) — !important is required
+// because Vuetify's own rounded-* utility classes are declared with !important; matching that
+// plus this compound selector's higher specificity (two classes vs. one) is what lets it win
+// regardless of stylesheet load order, instead of depending on it.
+.v-btn.rounded-lg {
+  border-radius: 6px !important;
+}
+
+// Site-wide secondary-button color, matching the mockup's softer outlined treatment. Only
+// buttons with no explicit semantic `color` prop are affected — Vuetify emits no bg-*/text-*
+// class at all for those, so excluding the app's fixed set of theme color names (defined in
+// src/styles/theme.ts) reliably targets "plain" outlined/text buttons without touching
+// color="primary"/"error"/etc. buttons, which must keep their own currentColor-driven look.
+$themed-button-exclusions: ':not(.text-primary):not(.text-secondary):not(.text-error):not(.text-info):not(.text-success):not(.text-warning)';
+
+.v-btn--variant-outlined#{$themed-button-exclusions} {
+  border-color: $border-strong;
+}
+
+.v-btn--variant-outlined#{$themed-button-exclusions}:hover {
+  border-color: $text-muted;
+}
+
+::placeholder {
+  color: #6e6e6e;
+  opacity: 1;
+}
+
+// Site-wide tooltip design, matching the reference mockup: a small dark pill instead of
+// Vuetify's default light surface-variant box. Applies to every v-tooltip on the site going
+// forward; the pointer/arrow is opt-in per instance via a content-class (see
+// EditorPropertiesPanel.vue's delete-button tooltip) since its direction depends on which side
+// the tooltip is anchored to, which isn't safe to assume globally.
+.v-tooltip > .v-overlay__content {
+  background: $black !important;
+  color: $white !important;
+  border-radius: 4px !important;
+  padding: 6px 10px !important;
+  font-size: 10.5px !important;
+  font-weight: 500 !important;
+  line-height: 1.4 !important;
+}
+
+// Downward-pointing arrow for tooltips anchored above their target (e.g. the properties
+// panel's "Удалить" button). Global, not component-scoped: v-tooltip's content is rendered by
+// Vuetify's own VOverlay internals several component boundaries below wherever <v-tooltip> is
+// written, so it never carries that call site's scoped-style attribute — a `scoped` rule here
+// would silently match nothing.
+.v-tooltip > .v-overlay__content.editor-properties__delete-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 4px solid transparent;
+  border-top-color: $black;
+}

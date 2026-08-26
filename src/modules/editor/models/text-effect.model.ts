@@ -123,3 +123,52 @@ export function getTextEffectCardDef(type: TextEffectType): TextEffectCardDef {
   }
   return def
 }
+
+/** Accent used only for the effect demo letters — not a global design token. */
+const EFFECT_DEMO_ACCENT = '#F775BB'
+const EFFECT_DEMO_ACCENT_RGB = '247, 117, 187'
+
+/** Inline style for a live-preview "Аа" glyph, shared by the effect picker strip and its full grid screen. */
+export function getTextEffectDemoStyle(type: TextEffectType): Record<string, string> {
+  switch (type) {
+    case 'drop-shadow':
+      return {
+        color: '#111111',
+        textShadow: `3px 3px 0 ${EFFECT_DEMO_ACCENT}`,
+      }
+    case 'glow':
+      return {
+        color: '#111111',
+        textShadow: `0 0 8px ${EFFECT_DEMO_ACCENT}`,
+      }
+    case 'echo':
+      return {
+        color: EFFECT_DEMO_ACCENT,
+        textShadow: `2px 2px 0 rgba(${EFFECT_DEMO_ACCENT_RGB}, 0.55), 4px 4px 0 rgba(${EFFECT_DEMO_ACCENT_RGB}, 0.3)`,
+      }
+    case 'outlined':
+      return {
+        color: '#111111',
+        webkitTextStroke: `1px ${EFFECT_DEMO_ACCENT}`,
+      }
+    case 'background':
+      return {
+        color: '#ffffff',
+        background: EFFECT_DEMO_ACCENT,
+        padding: '0 6px',
+        borderRadius: '4px',
+      }
+    case 'stroke':
+      return {
+        color: 'transparent',
+        webkitTextStroke: `1.5px ${EFFECT_DEMO_ACCENT}`,
+      }
+    case 'neon':
+      return {
+        color: EFFECT_DEMO_ACCENT,
+        textShadow: `0 0 4px ${EFFECT_DEMO_ACCENT}, 0 0 10px rgba(${EFFECT_DEMO_ACCENT_RGB}, 0.7)`,
+      }
+    default:
+      return {}
+  }
+}

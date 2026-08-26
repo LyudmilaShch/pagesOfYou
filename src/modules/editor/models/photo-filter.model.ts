@@ -142,3 +142,15 @@ export function getPhotoFilterLabel(filter: PhotoFilter | null): string {
 
   return 'Пользовательский'
 }
+
+/** CSS-only approximation of the Konva pixel filter, used purely for preset thumbnails/previews. */
+export function getCssFilterPreview(correction: PhotoCorrectionParams): string {
+  const brightness = 1 + correction.brightness / 200
+  const contrast = 1 + correction.contrast / 100
+  const saturate = Math.max(0, 1 + correction.saturation / 100)
+  const warmSepia = correction.temperature > 0 ? (correction.temperature / 100) * 30 : 0
+  const coolHue = correction.temperature < 0 ? (correction.temperature / 100) * 20 : 0
+  const hueRotate = correction.hue + coolHue
+
+  return `brightness(${brightness}) contrast(${contrast}) saturate(${saturate}) hue-rotate(${hueRotate}deg) sepia(${warmSepia}%) blur(${correction.blur}px)`
+}

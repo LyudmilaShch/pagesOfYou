@@ -8,7 +8,7 @@ export const designTokens = {
   colors: {
     white: '#FFFFFF',
     black: '#111111',
-    bgPrimary: '#F8F7F4',
+    bgPrimary: '#F9F9F9',
     bgSecondary: '#E3DDD5',
     bgTertiary: '#EEEAE4',
     bgMuted: '#F3F1ED',

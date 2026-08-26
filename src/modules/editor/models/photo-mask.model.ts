@@ -16,8 +16,6 @@
 export type PhotoMaskType =
   | 'circle'
   | 'oval'
-  | 'rectangle'
-  | 'rounded-rectangle'
   | 'heart'
   | 'star'
   | 'diamond'
@@ -101,32 +99,6 @@ export const PHOTO_MASK_DESCRIPTORS: PhotoMaskDescriptor[] = [
       }
       // Fallback for contexts without native ellipse() — a circle approximation is preferable to nothing.
       ctx.arc(cx, cy, Math.min(box.width, box.height) / 2, 0, Math.PI * 2)
-    },
-  },
-  {
-    type: 'rectangle',
-    label: 'Прямоугольник',
-    cssClipPath: 'inset(0)',
-    buildClipPath: (ctx, box) => {
-      ctx.rect(box.x, box.y, box.width, box.height)
-    },
-  },
-  {
-    type: 'rounded-rectangle',
-    label: 'Скругленный прямоугольник',
-    cssClipPath: 'inset(0 round 18%)',
-    buildClipPath: (ctx, box) => {
-      const radius = Math.min(box.width, box.height) * 0.18
-      const { x, y, width: w, height: h } = box
-      ctx.moveTo(x + radius, y)
-      ctx.lineTo(x + w - radius, y)
-      ctx.quadraticCurveTo(x + w, y, x + w, y + radius)
-      ctx.lineTo(x + w, y + h - radius)
-      ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h)
-      ctx.lineTo(x + radius, y + h)
-      ctx.quadraticCurveTo(x, y + h, x, y + h - radius)
-      ctx.lineTo(x, y + radius)
-      ctx.quadraticCurveTo(x, y, x + radius, y)
     },
   },
   {

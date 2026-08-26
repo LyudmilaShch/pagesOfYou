@@ -155,6 +155,7 @@ import {
   PHOTO_FILTER_PRESETS,
   PHOTO_CORRECTION_NEUTRAL,
   getPhotoFilterPresetDef,
+  getCssFilterPreview,
   isCustomPhotoFilter,
   lerpCorrection,
 } from '../../../models/photo-filter.model'
@@ -178,18 +179,6 @@ const CORRECTION_FIELDS: CorrectionField[] = [
   { key: 'hue', label: 'Оттенок', min: -180, max: 180, step: 1 },
   { key: 'blur', label: 'Размытие', min: 0, max: 20, step: 1 },
 ]
-
-/** CSS-only approximation of the Konva pixel filter, used purely for the preset thumbnails. */
-function getCssFilterPreview(correction: PhotoCorrectionParams): string {
-  const brightness = 1 + correction.brightness / 200
-  const contrast = 1 + correction.contrast / 100
-  const saturate = Math.max(0, 1 + correction.saturation / 100)
-  const warmSepia = correction.temperature > 0 ? (correction.temperature / 100) * 30 : 0
-  const coolHue = correction.temperature < 0 ? (correction.temperature / 100) * 20 : 0
-  const hueRotate = correction.hue + coolHue
-
-  return `brightness(${brightness}) contrast(${contrast}) saturate(${saturate}) hue-rotate(${hueRotate}deg) sepia(${warmSepia}%) blur(${correction.blur}px)`
-}
 
 const store = useEditorStore()
 const { selectedElement: selected } = storeToRefs(store)
@@ -260,6 +249,8 @@ function toNumber(value: string | number | null | undefined, fallback: number): 
 </script>
 
 <style scoped lang="scss">
+@use '@/modules/editor/styles/properties-panel-theme' as pp;
+
 .editor-photo-filters-screen {
   display: flex;
   flex-direction: column;
@@ -291,11 +282,11 @@ function toNumber(value: string | number | null | undefined, fallback: number): 
   justify-content: center;
   width: 100%;
   aspect-ratio: 1;
-  border: 1px solid $border-light;
-  border-radius: $radius-lg;
-  background: $bg-elevated;
-  box-shadow: $shadow-xs;
+  border: 1.5px solid pp.$border;
+  border-radius: $radius-sm;
+  background: $white;
   overflow: hidden;
+  transition: border-color 0.12s ease;
 
   img {
     width: 100%;
@@ -304,14 +295,14 @@ function toNumber(value: string | number | null | undefined, fallback: number): 
   }
 
   .editor-photo-filters-screen__card:hover & {
-    border-color: $border-strong;
+    border-color: pp.$border-strong;
   }
 }
 
 .editor-photo-filters-screen__card--active .editor-photo-filters-screen__thumb {
-  border-color: $text-primary;
-  background: $bg-primary;
-  box-shadow: $shadow-sm;
+  border-color: pp.$accent;
+  border-width: 2px;
+  background: pp.$accent-tint;
 }
 
 .editor-photo-filters-screen__check {
@@ -319,18 +310,18 @@ function toNumber(value: string | number | null | undefined, fallback: number): 
   top: 2px;
   right: 2px;
   color: #ffffff;
-  background: $text-primary;
+  background: pp.$accent;
   border-radius: 50%;
   padding: 1px;
 }
 
 .editor-photo-filters-screen__label {
   font-size: $font-size-caption;
-  color: $text-secondary;
+  color: pp.$ink-soft;
 }
 
 .editor-photo-filters-screen__card--active .editor-photo-filters-screen__label {
-  color: $text-primary;
+  color: pp.$accent-deep;
   font-weight: $font-weight-semibold;
 }
 
@@ -342,9 +333,11 @@ function toNumber(value: string | number | null | undefined, fallback: number): 
 
 .editor-photo-filters-screen__section-title {
   margin: 0;
-  font-size: $font-size-body-sm;
+  font-size: 10px;
   font-weight: $font-weight-semibold;
-  color: $text-primary;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: pp.$ink-faint;
 }
 
 .editor-photo-filters-screen__row {
@@ -355,7 +348,7 @@ function toNumber(value: string | number | null | undefined, fallback: number): 
 
 .editor-photo-filters-screen__row-label {
   font-size: $font-size-body-sm;
-  color: $text-secondary;
+  color: pp.$ink-soft;
 }
 
 .editor-photo-filters-screen__row-control {
@@ -363,6 +356,16 @@ function toNumber(value: string | number | null | undefined, fallback: number): 
   grid-template-columns: minmax(0, 1fr) 56px;
   gap: $spacing-2;
   align-items: center;
+
+  // color="primary" alone renders black — Vuetify's .v-theme--light class re-declares the theme
+  // variables on the component itself, beating an inherited override from .editor-properties.
+  :deep(.v-slider-track__fill) {
+    background-color: pp.$accent !important;
+  }
+
+  :deep(.v-slider-thumb__surface) {
+    color: pp.$accent !important;
+  }
 }
 
 .editor-photo-filters-screen__row-input {

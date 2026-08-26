@@ -68,6 +68,8 @@ function emitPatch(key: string, value: number | string): void {
 </script>
 
 <style scoped lang="scss">
+@use '@/modules/editor/styles/properties-panel-theme' as pp;
+
 .editor-effect-descriptor-form {
   display: flex;
   flex-direction: column;
@@ -82,7 +84,7 @@ function emitPatch(key: string, value: number | string): void {
 
 .editor-effect-descriptor-form__row-label {
   font-size: $font-size-body-sm;
-  color: $text-secondary;
+  color: pp.$ink-soft;
 }
 
 .editor-effect-descriptor-form__row-control {
@@ -90,6 +92,17 @@ function emitPatch(key: string, value: number | string): void {
   grid-template-columns: minmax(0, 1fr) 56px;
   gap: $spacing-2;
   align-items: center;
+
+  // See the matching note in EditorEffectSettingsForm.vue — color="primary" alone renders black
+  // because Vuetify's .v-theme--light class re-declares the theme variables on the component
+  // itself, beating an inherited override.
+  :deep(.v-slider-track__fill) {
+    background-color: pp.$accent !important;
+  }
+
+  :deep(.v-slider-thumb__surface) {
+    color: pp.$accent !important;
+  }
 }
 
 .editor-effect-descriptor-form__row-input {

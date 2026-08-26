@@ -95,6 +95,8 @@ function emitPatch(patch: Record<string, unknown>): void {
 </script>
 
 <style scoped lang="scss">
+@use '@/modules/editor/styles/properties-panel-theme' as pp;
+
 .editor-effect-settings-form {
   display: flex;
   flex-direction: column;
@@ -109,7 +111,7 @@ function emitPatch(patch: Record<string, unknown>): void {
 
 .editor-effect-settings-form__label {
   font-size: $font-size-body-sm;
-  color: $text-secondary;
+  color: pp.$ink-soft;
 }
 
 .editor-effect-settings-form__control {
@@ -117,6 +119,18 @@ function emitPatch(patch: Record<string, unknown>): void {
   grid-template-columns: minmax(0, 1fr) 56px;
   gap: $spacing-2;
   align-items: center;
+
+  // color="primary" alone renders as the app's original black: Vuetify re-declares its theme
+  // variables directly on every themed component (via .v-theme--light), which wins over an
+  // inherited override from an ancestor like .editor-properties. Overriding the resolved slider
+  // colors directly sidesteps that.
+  :deep(.v-slider-track__fill) {
+    background-color: pp.$accent !important;
+  }
+
+  :deep(.v-slider-thumb__surface) {
+    color: pp.$accent !important;
+  }
 }
 
 .editor-effect-settings-form__input {

@@ -1,10 +1,8 @@
 <template>
   <div class="editor-border-fields">
-    <v-switch
+    <EditorSwitch
       :model-value="strokeEnabled"
       label="Обводка"
-      color="primary"
-      hide-details
       @update:model-value="toggleStroke"
     />
 
@@ -64,6 +62,7 @@ import { computed } from 'vue'
 import { PHOTO_BORDER_STROKE_WIDTH_MAX } from '../constants/page.constants'
 import type { PhotoStrokePosition, PhotoStrokeStyle } from '../models/photo-placeholder.model'
 import EditorColorPicker from './EditorColorPicker.vue'
+import EditorSwitch from './EditorSwitch.vue'
 
 const props = withDefaults(
   defineProps<{
