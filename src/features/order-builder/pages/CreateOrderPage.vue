@@ -4,7 +4,7 @@
     <!-- ── Top navigation bar ─────────────────────────────────────────────── -->
     <header class="create-order__topbar">
       <div class="create-order__topbar-inner">
-        <router-link to="/" class="create-order__brand">Pages of You</router-link>
+        <router-link to="/" class="create-order__brand">Фолио</router-link>
 
         <div class="create-order__steps-label" aria-label="Шаг 1 из 3">
           <span class="create-order__steps-current">1</span>

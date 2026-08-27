@@ -9,68 +9,108 @@
     @drop.prevent="handlePhotoDrop"
   >
     <div class="editor-canvas__toolbar">
-      <v-btn
-        icon
-        size="x-small"
-        :variant="canvasStore.snapToGridEnabled ? 'flat' : 'text'"
-        :color="canvasStore.snapToGridEnabled ? 'primary' : undefined"
-        title="Привязка к сетке"
-        @click="canvasStore.toggleSnapToGrid()"
-      >
-        <v-icon size="18">mdi-grid</v-icon>
-      </v-btn>
+      <v-tooltip location="bottom" content-class="editor-tooltip--arrow-bottom">
+        <template #activator="{ props: tooltipProps }">
+          <v-btn
+            v-bind="tooltipProps"
+            icon
+            size="x-small"
+            :variant="canvasStore.snapToGridEnabled ? 'flat' : 'text'"
+            :color="canvasStore.snapToGridEnabled ? 'primary' : undefined"
+            aria-label="Привязка к сетке"
+            @click="canvasStore.toggleSnapToGrid()"
+          >
+            <v-icon size="18">mdi-grid</v-icon>
+          </v-btn>
+        </template>
+        Привязка к сетке
+      </v-tooltip>
 
-      <v-select
-        v-model="gridSizeModel"
-        :items="gridSizeOptions"
-        density="compact"
-        variant="outlined"
-        hide-details
-        class="editor-canvas__grid-size"
-        :disabled="!canvasStore.snapToGridEnabled"
-        title="Шаг сетки"
-      />
+      <v-tooltip location="bottom" content-class="editor-tooltip--arrow-bottom">
+        <template #activator="{ props: tooltipProps }">
+          <v-select
+            v-bind="tooltipProps"
+            v-model="gridSizeModel"
+            :items="gridSizeOptions"
+            density="compact"
+            variant="outlined"
+            hide-details
+            class="editor-canvas__grid-size"
+            :disabled="!canvasStore.snapToGridEnabled"
+            aria-label="Шаг сетки"
+          />
+        </template>
+        Шаг сетки
+      </v-tooltip>
 
-      <v-btn
-        icon
-        size="x-small"
-        :variant="canvasStore.smartGuidesEnabled ? 'flat' : 'text'"
-        :color="canvasStore.smartGuidesEnabled ? 'primary' : undefined"
-        title="Smart guides"
-        @click="canvasStore.toggleSmartGuides()"
-      >
-        <v-icon size="18">mdi-set-square</v-icon>
-      </v-btn>
+      <v-tooltip location="bottom" content-class="editor-tooltip--arrow-bottom">
+        <template #activator="{ props: tooltipProps }">
+          <v-btn
+            v-bind="tooltipProps"
+            icon
+            size="x-small"
+            :variant="canvasStore.smartGuidesEnabled ? 'flat' : 'text'"
+            :color="canvasStore.smartGuidesEnabled ? 'primary' : undefined"
+            aria-label="Smart guides"
+            @click="canvasStore.toggleSmartGuides()"
+          >
+            <v-icon size="18">mdi-set-square</v-icon>
+          </v-btn>
+        </template>
+        Smart guides
+      </v-tooltip>
 
-      <v-btn
-        icon
-        size="x-small"
-        :variant="canvasStore.printSafeZoneEnabled ? 'flat' : 'text'"
-        :color="canvasStore.printSafeZoneEnabled ? 'primary' : undefined"
-        title="Зона безопасности печати"
-        @click="canvasStore.togglePrintSafeZone()"
-      >
-        <v-icon size="18">mdi-printer-outline</v-icon>
-      </v-btn>
+      <v-tooltip location="bottom" content-class="editor-tooltip--arrow-bottom">
+        <template #activator="{ props: tooltipProps }">
+          <v-btn
+            v-bind="tooltipProps"
+            icon
+            size="x-small"
+            :variant="canvasStore.printSafeZoneEnabled ? 'flat' : 'text'"
+            :color="canvasStore.printSafeZoneEnabled ? 'primary' : undefined"
+            aria-label="Зона безопасности печати"
+            @click="canvasStore.togglePrintSafeZone()"
+          >
+            <v-icon size="18">mdi-printer-outline</v-icon>
+          </v-btn>
+        </template>
+        Зона безопасности печати
+      </v-tooltip>
 
       <span class="editor-canvas__toolbar-divider" aria-hidden="true" />
 
-      <v-btn icon size="x-small" variant="text" title="Уменьшить" @click="canvasStore.zoomOut()">
-        <v-icon size="18">mdi-minus</v-icon>
-      </v-btn>
+      <v-tooltip location="bottom" content-class="editor-tooltip--arrow-bottom">
+        <template #activator="{ props: tooltipProps }">
+          <v-btn v-bind="tooltipProps" icon size="x-small" variant="text" aria-label="Уменьшить" @click="canvasStore.zoomOut()">
+            <v-icon size="18">mdi-minus</v-icon>
+          </v-btn>
+        </template>
+        Уменьшить
+      </v-tooltip>
 
-      <button
-        type="button"
-        class="editor-canvas__zoom-label"
-        title="Сбросить масштаб"
-        @click="canvasStore.resetCanvasZoom()"
-      >
-        {{ zoomLabel }}
-      </button>
+      <v-tooltip location="bottom" content-class="editor-tooltip--arrow-bottom">
+        <template #activator="{ props: tooltipProps }">
+          <button
+            v-bind="tooltipProps"
+            type="button"
+            class="editor-canvas__zoom-label"
+            aria-label="Сбросить масштаб"
+            @click="canvasStore.resetCanvasZoom()"
+          >
+            {{ zoomLabel }}
+          </button>
+        </template>
+        Сбросить масштаб
+      </v-tooltip>
 
-      <v-btn icon size="x-small" variant="text" title="Увеличить" @click="canvasStore.zoomIn()">
-        <v-icon size="18">mdi-plus</v-icon>
-      </v-btn>
+      <v-tooltip location="bottom" content-class="editor-tooltip--arrow-bottom">
+        <template #activator="{ props: tooltipProps }">
+          <v-btn v-bind="tooltipProps" icon size="x-small" variant="text" aria-label="Увеличить" @click="canvasStore.zoomIn()">
+            <v-icon size="18">mdi-plus</v-icon>
+          </v-btn>
+        </template>
+        Увеличить
+      </v-tooltip>
     </div>
 
     <v-stage

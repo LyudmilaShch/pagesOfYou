@@ -6,6 +6,7 @@ export const PANEL_SCREENS = {
   'shape-shadow': defineAsyncComponent(() => import('./screens/EditorShapeShadowScreen.vue')),
   'shape-visual-effect': defineAsyncComponent(() => import('./screens/EditorShapeEffectScreen.vue')),
   'photo-mask': defineAsyncComponent(() => import('./screens/EditorPhotoMaskScreen.vue')),
+  'photo-frame': defineAsyncComponent(() => import('./screens/EditorPhotoFrameScreen.vue')),
 } as const
 
 export type PanelScreenId = keyof typeof PANEL_SCREENS

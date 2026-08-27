@@ -3,7 +3,7 @@
     <div class="auth-page__inner">
       <!-- Logo / Brand -->
       <div class="auth-page__brand">
-        <span class="auth-page__brand-name">Pages of You</span>
+        <span class="auth-page__brand-name">Фолио</span>
       </div>
 
       <v-card class="auth-card" variant="outlined">

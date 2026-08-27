@@ -3,56 +3,60 @@
     <p v-if="label" class="editor-color-picker__label">{{ label }}</p>
 
     <div class="editor-color-picker__control">
-      <button
-        type="button"
-        class="editor-color-picker__swatch"
-        :aria-label="label ?? 'Выбрать цвет'"
-        @click="openNativePicker"
-      >
-        <span class="editor-color-picker__swatch-checker" aria-hidden="true" />
-        <span
-          class="editor-color-picker__swatch-color"
-          :style="{ backgroundColor: previewColor }"
-          aria-hidden="true"
-        />
-        <input
-          ref="nativeInputRef"
-          type="color"
-          class="editor-color-picker__native"
-          tabindex="-1"
-          :value="nativeColorValue"
-          @input="handleNativeInput"
-        />
-      </button>
+      <div class="editor-color-picker__left">
+        <button
+          type="button"
+          class="editor-color-picker__swatch"
+          :aria-label="label ?? 'Выбрать цвет'"
+          @click="openNativePicker"
+        >
+          <span class="editor-color-picker__swatch-checker" aria-hidden="true" />
+          <span
+            class="editor-color-picker__swatch-color"
+            :style="{ backgroundColor: previewColor }"
+            aria-hidden="true"
+          />
+          <input
+            ref="nativeInputRef"
+            type="color"
+            class="editor-color-picker__native"
+            tabindex="-1"
+            :value="nativeColorValue"
+            @input="handleNativeInput"
+          />
+        </button>
 
-      <input
-        v-model="hexDraft"
-        class="editor-color-picker__hex"
-        type="text"
-        maxlength="6"
-        spellcheck="false"
-        autocapitalize="characters"
-        autocomplete="off"
-        aria-label="Hex-код цвета"
-        @blur="commitHexDraft"
-        @keydown.enter.prevent="commitHexDraft"
-      />
+        <input
+          v-model="hexDraft"
+          class="editor-color-picker__hex"
+          type="text"
+          maxlength="6"
+          spellcheck="false"
+          autocapitalize="characters"
+          autocomplete="off"
+          aria-label="Hex-код цвета"
+          @blur="commitHexDraft"
+          @keydown.enter.prevent="commitHexDraft"
+        />
+      </div>
 
       <span class="editor-color-picker__divider" aria-hidden="true" />
 
-      <input
-        v-model.number="alphaDraft"
-        class="editor-color-picker__alpha"
-        type="number"
-        min="0"
-        max="100"
-        step="1"
-        aria-label="Прозрачность"
-        @blur="commitAlphaDraft"
-        @keydown.enter.prevent="commitAlphaDraft"
-      />
+      <div class="editor-color-picker__right">
+        <input
+          v-model.number="alphaDraft"
+          class="editor-color-picker__alpha"
+          type="number"
+          min="0"
+          max="100"
+          step="1"
+          aria-label="Прозрачность"
+          @blur="commitAlphaDraft"
+          @keydown.enter.prevent="commitAlphaDraft"
+        />
 
-      <span class="editor-color-picker__alpha-suffix" aria-hidden="true">%</span>
+        <span class="editor-color-picker__alpha-suffix" aria-hidden="true">%</span>
+      </div>
     </div>
   </div>
 </template>
@@ -169,25 +173,39 @@ watch(
 .editor-color-picker__control {
   position: relative;
   display: flex;
-  align-items: center;
-  gap: $spacing-2;
-  min-height: 40px;
-  padding: 0 $spacing-3;
+  align-items: stretch;
   border: 1px solid pp.$border;
   border-radius: pp.$radius;
   background: transparent;
-  cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  overflow: hidden;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 
   &:hover {
     border-color: pp.$border-strong;
-    background: pp.$field-hover;
   }
 
   &:focus-within {
     border-color: pp.$accent;
     box-shadow: 0 0 0 3px pp.$accent-glow;
   }
+}
+
+.editor-color-picker__left {
+  display: flex;
+  align-items: center;
+  gap: $spacing-2;
+  flex: 1;
+  min-width: 0;
+  padding: $spacing-2 11px;
+  cursor: text;
+}
+
+.editor-color-picker__right {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex: 0 0 auto;
+  padding: $spacing-2 12px;
 }
 
 .editor-color-picker__swatch {
@@ -254,7 +272,7 @@ watch(
 .editor-color-picker__divider {
   flex: 0 0 auto;
   width: 1px;
-  height: 22px;
+  align-self: stretch;
   background: pp.$border;
 }
 

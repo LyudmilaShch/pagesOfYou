@@ -17,67 +17,97 @@
         <div class="editor-layout__divider" aria-hidden="true" />
 
         <div class="editor-layout__brand">
-          <span class="editor-layout__brand-name">Pages of You</span>
+          <span class="editor-layout__brand-name">Фолио</span>
           <span class="editor-layout__brand-badge">Editor</span>
         </div>
       </div>
 
       <div class="editor-layout__header-center">
-        <v-btn
-          icon
-          size="small"
-          variant="text"
-          :disabled="!store.canUndo || store.previewMode"
-          title="Отменить (Ctrl+Z)"
-          @click="store.undo()"
-        >
-          <v-icon size="20">mdi-undo</v-icon>
-        </v-btn>
-        <v-btn
-          icon
-          size="small"
-          variant="text"
-          :disabled="!store.canRedo || store.previewMode"
-          title="Повторить (Ctrl+Shift+Z)"
-          @click="store.redo()"
-        >
-          <v-icon size="20">mdi-redo</v-icon>
-        </v-btn>
+        <v-tooltip location="bottom" content-class="editor-tooltip--arrow-bottom">
+          <template #activator="{ props: tooltipProps }">
+            <v-btn
+              v-bind="tooltipProps"
+              icon
+              size="small"
+              variant="text"
+              :disabled="!store.canUndo || store.previewMode"
+              aria-label="Отменить (Ctrl+Z)"
+              @click="store.undo()"
+            >
+              <v-icon size="20">mdi-undo</v-icon>
+            </v-btn>
+          </template>
+          Отменить (Ctrl+Z)
+        </v-tooltip>
+        <v-tooltip location="bottom" content-class="editor-tooltip--arrow-bottom">
+          <template #activator="{ props: tooltipProps }">
+            <v-btn
+              v-bind="tooltipProps"
+              icon
+              size="small"
+              variant="text"
+              :disabled="!store.canRedo || store.previewMode"
+              aria-label="Повторить (Ctrl+Shift+Z)"
+              @click="store.redo()"
+            >
+              <v-icon size="20">mdi-redo</v-icon>
+            </v-btn>
+          </template>
+          Повторить (Ctrl+Shift+Z)
+        </v-tooltip>
 
         <div class="editor-layout__divider" aria-hidden="true" />
 
-        <v-btn
-          icon
-          size="small"
-          variant="text"
-          :disabled="!store.hasSelection || store.previewMode"
-          title="Дублировать (Ctrl+D)"
-          @click="store.duplicateElement()"
-        >
-          <v-icon size="20">mdi-content-copy</v-icon>
-        </v-btn>
+        <v-tooltip location="bottom" content-class="editor-tooltip--arrow-bottom">
+          <template #activator="{ props: tooltipProps }">
+            <v-btn
+              v-bind="tooltipProps"
+              icon
+              size="small"
+              variant="text"
+              :disabled="!store.hasSelection || store.previewMode"
+              aria-label="Дублировать (Ctrl+D)"
+              @click="store.duplicateElement()"
+            >
+              <v-icon size="20">mdi-content-copy</v-icon>
+            </v-btn>
+          </template>
+          Дублировать (Ctrl+D)
+        </v-tooltip>
 
-        <v-btn
-          icon
-          size="small"
-          variant="text"
-          :disabled="store.selectionCount < 2 || store.previewMode"
-          title="Сгруппировать (Ctrl+G)"
-          @click="store.groupSelection()"
-        >
-          <v-icon size="20">mdi-group</v-icon>
-        </v-btn>
+        <v-tooltip location="bottom" content-class="editor-tooltip--arrow-bottom">
+          <template #activator="{ props: tooltipProps }">
+            <v-btn
+              v-bind="tooltipProps"
+              icon
+              size="small"
+              variant="text"
+              :disabled="store.selectionCount < 2 || store.previewMode"
+              aria-label="Сгруппировать (Ctrl+G)"
+              @click="store.groupSelection()"
+            >
+              <v-icon size="20">mdi-group</v-icon>
+            </v-btn>
+          </template>
+          Сгруппировать (Ctrl+G)
+        </v-tooltip>
 
-        <v-btn
-          icon
-          size="small"
-          variant="text"
-          :disabled="!canUngroupSelection || store.previewMode"
-          title="Разгруппировать (Ctrl+Shift+G)"
-          @click="ungroupSelection()"
-        >
-          <v-icon size="20">mdi-ungroup</v-icon>
-        </v-btn>
+        <v-tooltip location="bottom" content-class="editor-tooltip--arrow-bottom">
+          <template #activator="{ props: tooltipProps }">
+            <v-btn
+              v-bind="tooltipProps"
+              icon
+              size="small"
+              variant="text"
+              :disabled="!canUngroupSelection || store.previewMode"
+              aria-label="Разгруппировать (Ctrl+Shift+G)"
+              @click="ungroupSelection()"
+            >
+              <v-icon size="20">mdi-ungroup</v-icon>
+            </v-btn>
+          </template>
+          Разгруппировать (Ctrl+Shift+G)
+        </v-tooltip>
 
         <v-btn
           size="small"

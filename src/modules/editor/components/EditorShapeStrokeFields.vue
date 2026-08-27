@@ -8,49 +8,25 @@
       @update:model-value="emitPatch({ fill: $event })"
     />
 
-    <v-text-field
-      v-if="showCornerRadius"
-      :model-value="element.cornerRadius"
-      label="Скругление углов"
-      type="number"
-      min="0"
-      variant="outlined"
-      density="compact"
-      hide-details
-      @update:model-value="emitPatch({ cornerRadius: toNumber($event, element.cornerRadius) })"
+    <div v-if="showCornerRadius" class="editor-shape-stroke-fields__field">
+      <span class="editor-shape-stroke-fields__field-label">Скругление углов</span>
+      <input
+        type="number"
+        class="editor-shape-stroke-fields__px-input"
+        min="0"
+        :value="element.cornerRadius"
+        @change="emitPatch({ cornerRadius: toNumber(($event.target as HTMLInputElement).value, element.cornerRadius) })"
+      />
+    </div>
+
+    <EditorSwitch
+      v-if="optionalStroke"
+      :model-value="strokeEnabled"
+      label="Обводка"
+      @update:model-value="toggleStroke"
     />
 
-    <template v-if="optionalStroke">
-      <EditorSwitch
-        :model-value="strokeEnabled"
-        label="Обводка"
-        @update:model-value="toggleStroke"
-      />
-
-      <template v-if="strokeEnabled">
-        <EditorColorPicker
-          :label="strokeLabel"
-          :model-value="element.stroke"
-          fallback="#111111"
-          @update:model-value="emitPatch({ stroke: $event })"
-        />
-
-        <v-text-field
-          :model-value="element.strokeWidth"
-          :label="strokeWidthLabel"
-          type="number"
-          :min="1"
-          :max="SHAPE_STROKE_WIDTH_MAX"
-          step="1"
-          variant="outlined"
-          density="compact"
-          hide-details
-          @update:model-value="emitPatch({ strokeWidth: clampStrokeWidth($event) })"
-        />
-      </template>
-    </template>
-
-    <template v-else>
+    <template v-if="!optionalStroke || strokeEnabled">
       <EditorColorPicker
         :label="strokeLabel"
         :model-value="element.stroke"
@@ -58,18 +34,18 @@
         @update:model-value="emitPatch({ stroke: $event })"
       />
 
-      <v-text-field
-        :model-value="element.strokeWidth"
-        :label="strokeWidthLabel"
-        type="number"
-        :min="1"
-        :max="SHAPE_STROKE_WIDTH_MAX"
-        step="1"
-        variant="outlined"
-        density="compact"
-        hide-details
-        @update:model-value="emitPatch({ strokeWidth: clampStrokeWidth($event) })"
-      />
+      <div class="editor-shape-stroke-fields__field">
+        <span class="editor-shape-stroke-fields__field-label">{{ strokeWidthLabel }}</span>
+        <input
+          type="number"
+          class="editor-shape-stroke-fields__px-input"
+          min="1"
+          :max="SHAPE_STROKE_WIDTH_MAX"
+          step="1"
+          :value="element.strokeWidth"
+          @change="emitPatch({ strokeWidth: clampStrokeWidth(($event.target as HTMLInputElement).value) })"
+        />
+      </div>
     </template>
   </div>
 </template>
@@ -145,9 +121,59 @@ function toggleStroke(enabled: boolean | null): void {
 </script>
 
 <style scoped lang="scss">
+@use '@/modules/editor/styles/properties-panel-theme' as pp;
+
 .editor-shape-stroke-fields {
   display: flex;
   flex-direction: column;
   gap: $spacing-3;
+}
+
+.editor-shape-stroke-fields__field {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-1;
+}
+
+.editor-shape-stroke-fields__field-label {
+  font-size: 10px;
+  font-weight: $font-weight-medium;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: pp.$ink-soft;
+}
+
+.editor-shape-stroke-fields__px-input {
+  width: 100%;
+  height: 34px;
+  padding: 0 $spacing-2;
+  border: 1px solid pp.$border;
+  border-radius: pp.$radius;
+  background: transparent;
+  font-size: 12px;
+  font-family: inherit;
+  color: pp.$ink;
+  outline: none;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+
+  &:hover {
+    border-color: pp.$border-strong;
+  }
+
+  &:focus {
+    border-color: pp.$accent;
+    box-shadow: 0 0 0 3px pp.$accent-glow;
+  }
+
+  &::-webkit-outer-spin-button,
+  &::-webkit-inner-spin-button {
+    margin: 0;
+    appearance: none;
+  }
+
+  appearance: textfield;
+  -moz-appearance: textfield;
 }
 </style>

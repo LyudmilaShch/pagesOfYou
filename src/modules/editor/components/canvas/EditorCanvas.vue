@@ -37,86 +37,128 @@
     </div>
 
     <div class="editor-canvas__toolbar">
-      <v-btn
-        icon
-        size="x-small"
-        :variant="store.snapToGridEnabled ? 'flat' : 'text'"
-        :color="store.snapToGridEnabled ? 'primary' : undefined"
-        :disabled="store.previewMode"
-        title="Привязка к сетке"
-        @click="store.toggleSnapToGrid()"
-      >
-        <v-icon size="18">mdi-grid</v-icon>
-      </v-btn>
+      <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+        <template #activator="{ props: tooltipProps }">
+          <v-btn
+            v-bind="tooltipProps"
+            icon
+            size="x-small"
+            :variant="store.snapToGridEnabled ? 'flat' : 'text'"
+            :color="store.snapToGridEnabled ? 'primary' : undefined"
+            :disabled="store.previewMode"
+            aria-label="Привязка к сетке"
+            @click="store.toggleSnapToGrid()"
+          >
+            <v-icon size="18">mdi-grid</v-icon>
+          </v-btn>
+        </template>
+        Привязка к сетке
+      </v-tooltip>
 
-      <v-select
-        v-model="gridSizeModel"
-        :items="gridSizeOptions"
-        density="compact"
-        variant="outlined"
-        hide-details
-        class="editor-canvas__grid-size"
-        :disabled="store.previewMode || !store.snapToGridEnabled"
-        title="Шаг сетки"
-      />
+      <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+        <template #activator="{ props: tooltipProps }">
+          <v-select
+            v-bind="tooltipProps"
+            v-model="gridSizeModel"
+            :items="gridSizeOptions"
+            density="compact"
+            variant="outlined"
+            hide-details
+            class="editor-canvas__grid-size"
+            :disabled="store.previewMode || !store.snapToGridEnabled"
+            aria-label="Шаг сетки"
+          />
+        </template>
+        Шаг сетки
+      </v-tooltip>
 
-      <v-btn
-        icon
-        size="x-small"
-        :variant="store.smartGuidesEnabled ? 'flat' : 'text'"
-        :color="store.smartGuidesEnabled ? 'primary' : undefined"
-        :disabled="store.previewMode"
-        title="Smart guides — центр и края листа"
-        @click="store.toggleSmartGuides()"
-      >
-        <v-icon size="18">mdi-set-square</v-icon>
-      </v-btn>
+      <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+        <template #activator="{ props: tooltipProps }">
+          <v-btn
+            v-bind="tooltipProps"
+            icon
+            size="x-small"
+            :variant="store.smartGuidesEnabled ? 'flat' : 'text'"
+            :color="store.smartGuidesEnabled ? 'primary' : undefined"
+            :disabled="store.previewMode"
+            aria-label="Smart guides — центр и края листа"
+            @click="store.toggleSmartGuides()"
+          >
+            <v-icon size="18">mdi-set-square</v-icon>
+          </v-btn>
+        </template>
+        Smart guides — центр и края листа
+      </v-tooltip>
 
-      <v-btn
-        icon
-        size="x-small"
-        :variant="store.printSafeZoneEnabled ? 'flat' : 'text'"
-        :color="store.printSafeZoneEnabled ? 'primary' : undefined"
-        :disabled="store.previewMode"
-        title="Линии безопасности печати — красная зона обрезки и пунктирный отступ"
-        @click="store.togglePrintSafeZone()"
-      >
-        <v-icon size="18">mdi-printer-outline</v-icon>
-      </v-btn>
+      <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+        <template #activator="{ props: tooltipProps }">
+          <v-btn
+            v-bind="tooltipProps"
+            icon
+            size="x-small"
+            :variant="store.printSafeZoneEnabled ? 'flat' : 'text'"
+            :color="store.printSafeZoneEnabled ? 'primary' : undefined"
+            :disabled="store.previewMode"
+            aria-label="Линии безопасности печати — красная зона обрезки и пунктирный отступ"
+            @click="store.togglePrintSafeZone()"
+          >
+            <v-icon size="18">mdi-printer-outline</v-icon>
+          </v-btn>
+        </template>
+        Линии безопасности печати — красная зона обрезки и пунктирный отступ
+      </v-tooltip>
 
       <span class="editor-canvas__toolbar-divider" aria-hidden="true" />
 
-      <v-btn
-        icon
-        size="x-small"
-        variant="text"
-        :disabled="store.previewMode"
-        title="Уменьшить (Ctrl + колёсико)"
-        @click="store.zoomOut()"
-      >
-        <v-icon size="18">mdi-minus</v-icon>
-      </v-btn>
+      <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+        <template #activator="{ props: tooltipProps }">
+          <v-btn
+            v-bind="tooltipProps"
+            icon
+            size="x-small"
+            variant="text"
+            :disabled="store.previewMode"
+            aria-label="Уменьшить (Ctrl + колёсико)"
+            @click="store.zoomOut()"
+          >
+            <v-icon size="18">mdi-minus</v-icon>
+          </v-btn>
+        </template>
+        Уменьшить (Ctrl + колёсико)
+      </v-tooltip>
 
-      <button
-        type="button"
-        class="editor-canvas__zoom-label"
-        :disabled="store.previewMode"
-        title="Сбросить масштаб"
-        @click="store.resetCanvasZoom()"
-      >
-        {{ zoomLabel }}
-      </button>
+      <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+        <template #activator="{ props: tooltipProps }">
+          <button
+            v-bind="tooltipProps"
+            type="button"
+            class="editor-canvas__zoom-label"
+            :disabled="store.previewMode"
+            aria-label="Сбросить масштаб"
+            @click="store.resetCanvasZoom()"
+          >
+            {{ zoomLabel }}
+          </button>
+        </template>
+        Сбросить масштаб
+      </v-tooltip>
 
-      <v-btn
-        icon
-        size="x-small"
-        variant="text"
-        :disabled="store.previewMode"
-        title="Увеличить (Ctrl + колёсико)"
-        @click="store.zoomIn()"
-      >
-        <v-icon size="18">mdi-plus</v-icon>
-      </v-btn>
+      <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+        <template #activator="{ props: tooltipProps }">
+          <v-btn
+            v-bind="tooltipProps"
+            icon
+            size="x-small"
+            variant="text"
+            :disabled="store.previewMode"
+            aria-label="Увеличить (Ctrl + колёсико)"
+            @click="store.zoomIn()"
+          >
+            <v-icon size="18">mdi-plus</v-icon>
+          </v-btn>
+        </template>
+        Увеличить (Ctrl + колёсико)
+      </v-tooltip>
     </div>
 
     <v-stage

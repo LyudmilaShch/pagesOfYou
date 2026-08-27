@@ -25,7 +25,7 @@
     >
       <!-- Brand -->
       <div class="admin-sidebar__brand">
-        <span class="admin-sidebar__brand-name">Pages of You</span>
+        <span class="admin-sidebar__brand-name">Фолио</span>
         <span class="admin-sidebar__brand-badge">Admin</span>
       </div>
 

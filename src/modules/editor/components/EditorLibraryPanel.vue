@@ -29,17 +29,26 @@
       </p>
 
       <div v-else class="editor-library__frames-grid">
-        <button
+        <v-tooltip
           v-for="frame in activeFrames"
           :key="frame.id"
-          type="button"
-          class="editor-library__frame"
-          :disabled="store.previewMode"
-          :title="frame.name"
-          @click="handleAddFramedPhoto(frame)"
+          location="right"
+          content-class="editor-tooltip--arrow-right"
         >
-          <img :src="frame.imageUrl" :alt="frame.name" />
-        </button>
+          <template #activator="{ props: tooltipProps }">
+            <button
+              v-bind="tooltipProps"
+              type="button"
+              class="editor-library__frame"
+              :disabled="store.previewMode"
+              :aria-label="frame.name"
+              @click="handleAddFramedPhoto(frame)"
+            >
+              <img :src="frame.imageUrl" :alt="frame.name" />
+            </button>
+          </template>
+          {{ frame.name }}
+        </v-tooltip>
       </div>
     </div>
   </div>

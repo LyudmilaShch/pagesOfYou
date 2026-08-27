@@ -63,7 +63,7 @@ async function bootstrap() {
   // Swagger — available at /api/docs
   // ---------------------------------------------------------------------------
   const swaggerConfig = new DocumentBuilder()
-    .setTitle('Pages of You API')
+    .setTitle('Фолио API')
     .setDescription('SaaS API for personalized magazines')
     .setVersion('1.0')
     .addBearerAuth()

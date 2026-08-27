@@ -9,12 +9,12 @@
     sans-serif,
   ),
   $heading-font-family: (
+    'Unbounded',
     'Playfair Display',
     'Georgia',
-    'Times New Roman',
     serif,
   ),
-  $border-radius-root: 8px,
+  $border-radius-root: 6px,
   $spacer: 4px,
   $typography: (
     'h1': (
@@ -22,7 +22,7 @@
       'weight': 400,
       'line-height': 1.15,
       'letter-spacing': -0.02em,
-      'font-family': ('Playfair Display', 'Georgia', 'Times New Roman', serif),
+      'font-family': ('Unbounded', 'Playfair Display', 'Georgia', serif),
       'text-transform': none,
     ),
     'h2': (
@@ -30,7 +30,7 @@
       'weight': 400,
       'line-height': 1.15,
       'letter-spacing': -0.02em,
-      'font-family': ('Playfair Display', 'Georgia', 'Times New Roman', serif),
+      'font-family': ('Unbounded', 'Playfair Display', 'Georgia', serif),
       'text-transform': none,
     ),
     'h3': (
@@ -38,7 +38,7 @@
       'weight': 400,
       'line-height': 1.25,
       'letter-spacing': -0.01em,
-      'font-family': ('Playfair Display', 'Georgia', 'Times New Roman', serif),
+      'font-family': ('Unbounded', 'Playfair Display', 'Georgia', serif),
       'text-transform': none,
     ),
     'h4': (
@@ -46,7 +46,7 @@
       'weight': 500,
       'line-height': 1.25,
       'letter-spacing': -0.01em,
-      'font-family': ('Playfair Display', 'Georgia', 'Times New Roman', serif),
+      'font-family': ('Unbounded', 'Playfair Display', 'Georgia', serif),
       'text-transform': none,
     ),
   ),
@@ -58,37 +58,46 @@
 // =============================================================================
 
 // --- Core palette ---
+// Mirrors src/modules/editor/styles/_properties-panel-theme.scss (the properties panel's
+// reference palette) — the accent + neutrals below are the SAME hex values, just promoted from
+// that editor-scoped partial to the site-wide token set. Values that partial doesn't define
+// (bg-secondary, text-disabled, state-* borders) are this design's discretionary cool-neutral
+// equivalents of the old warm-cream tokens they replace.
 $white: #ffffff;
-$black: #111111;
+$black: #0d0d0d;
+
+$accent: #e85a93;
+$accent-deep: #c13f73;
+$accent-tint: #fbdfe9;
 
 $bg-primary: #f9f9f9;
-$bg-secondary: #e3ddd5;
+$bg-secondary: #ececec;
 
-$text-primary: #111111;
-$text-secondary: #666666;
+$text-primary: #0d0d0d;
+$text-secondary: #6e6e6e;
 
-$border-default: #d7d0c7;
+$border-default: #dedede;
 
 // --- Extended neutrals (derived from palette) ---
-$bg-tertiary: #eeeae4;
-$bg-muted: #f3f1ed;
+$bg-tertiary: #f1f1f1;
+$bg-muted: #f3f3f3;
 $bg-elevated: $white;
 $bg-inverse: $black;
 
-$text-muted: #8a8580;
-$text-disabled: #b0aaa2;
+$text-muted: #8a8a8a;
+$text-disabled: #b0b0b0;
 $text-inverse: $white;
 
-$border-light: #e8e3dc;
-$border-strong: #c4bdb3;
+$border-light: #e8e8e8;
+$border-strong: #c9c9c9;
 
-$divider: #e5e0d9;
+$divider: #e5e5e5;
 
 // --- Interactive states ---
 $state-hover-bg: rgba($black, 0.04);
-$state-hover-border: #c4bdb3;
+$state-hover-border: #c9c9c9;
 $state-active-bg: rgba($black, 0.08);
-$state-active-border: #b8b0a5;
+$state-active-border: #bdbdbd;
 $state-focus-ring: rgba($black, 0.12);
 
 // --- White opacity tokens (on dark surfaces) ---
@@ -110,7 +119,7 @@ $color-text-secondary: $text-secondary;
 $color-text-disabled: $text-disabled;
 
 // --- Typography families ---
-$font-family-display: 'Playfair Display', 'Georgia', 'Times New Roman', serif;
+$font-family-display: 'Unbounded', 'Playfair Display', 'Georgia', serif;
 $font-family-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 $font-family-base: $font-family-body;
 

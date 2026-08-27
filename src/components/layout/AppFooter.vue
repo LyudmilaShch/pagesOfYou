@@ -3,7 +3,7 @@
     <div class="footer__inner page-container section-sm">
       <div class="content-container footer__grid">
         <div class="footer__brand">
-          <RouterLink to="/" class="footer__logo text-h4">Pages of you</RouterLink>
+          <RouterLink to="/" class="footer__logo text-h4">Фолио</RouterLink>
           <p class="footer__tagline text-body-sm text-secondary">
             Индивидуальные журналы
           </p>
@@ -20,7 +20,7 @@
 
       <div class="content-container footer__bottom">
         <p class="text-caption text-muted">
-          © {{ currentYear }} Pages of you. Все права защищены.
+          © {{ currentYear }} Фолио. Все права защищены.
         </p>
       </div>
     </div>

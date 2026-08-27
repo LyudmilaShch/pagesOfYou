@@ -58,27 +58,39 @@
       </span>
 
       <div class="editor-layer-node__actions">
-        <button
-          type="button"
-          class="editor-layer-node__action"
-          :title="element.visible ? 'Скрыть' : 'Показать'"
-          @click.stop="store.setElementVisible(element.id, !element.visible)"
-        >
-          <v-icon size="16">
-            {{ element.visible ? 'mdi-eye-outline' : 'mdi-eye-off-outline' }}
-          </v-icon>
-        </button>
+        <v-tooltip location="right" content-class="editor-tooltip--arrow-right">
+          <template #activator="{ props: tooltipProps }">
+            <button
+              v-bind="tooltipProps"
+              type="button"
+              class="editor-layer-node__action"
+              :aria-label="element.visible ? 'Скрыть' : 'Показать'"
+              @click.stop="store.setElementVisible(element.id, !element.visible)"
+            >
+              <v-icon size="16">
+                {{ element.visible ? 'mdi-eye-outline' : 'mdi-eye-off-outline' }}
+              </v-icon>
+            </button>
+          </template>
+          {{ element.visible ? 'Скрыть' : 'Показать' }}
+        </v-tooltip>
 
-        <button
-          type="button"
-          class="editor-layer-node__action"
-          :title="element.locked ? 'Разблокировать' : 'Заблокировать'"
-          @click.stop="store.setElementLocked(element.id, !element.locked)"
-        >
-          <v-icon size="16">
-            {{ element.locked ? 'mdi-lock-outline' : 'mdi-lock-open-outline' }}
-          </v-icon>
-        </button>
+        <v-tooltip location="right" content-class="editor-tooltip--arrow-right">
+          <template #activator="{ props: tooltipProps }">
+            <button
+              v-bind="tooltipProps"
+              type="button"
+              class="editor-layer-node__action"
+              :aria-label="element.locked ? 'Разблокировать' : 'Заблокировать'"
+              @click.stop="store.setElementLocked(element.id, !element.locked)"
+            >
+              <v-icon size="16">
+                {{ element.locked ? 'mdi-lock-outline' : 'mdi-lock-open-outline' }}
+              </v-icon>
+            </button>
+          </template>
+          {{ element.locked ? 'Разблокировать' : 'Заблокировать' }}
+        </v-tooltip>
       </div>
 
       <span

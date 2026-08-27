@@ -2,7 +2,7 @@
   <div class="fill-order">
     <header class="fill-order__topbar">
       <div class="fill-order__topbar-inner">
-        <router-link to="/order/create" class="fill-order__brand">Pages of You</router-link>
+        <router-link to="/order/create" class="fill-order__brand">Фолио</router-link>
         <div class="fill-order__steps-label" aria-label="Шаг 2 из 3">
           <span class="fill-order__steps-current">2</span>
           <span>/</span>

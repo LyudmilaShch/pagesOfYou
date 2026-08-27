@@ -15,43 +15,49 @@
       />
 
       <div class="editor-border-fields__row">
-        <v-select
-          :model-value="strokePosition"
-          :items="positionOptions"
-          item-title="label"
-          item-value="value"
-          label="Позиция"
-          variant="outlined"
-          density="compact"
-          hide-details
-          @update:model-value="emitPatch({ strokePosition: $event as PhotoStrokePosition })"
-        />
+        <div class="editor-border-fields__field">
+          <span class="editor-border-fields__field-label">Позиция</span>
+          <v-select
+            class="editor-border-fields__select"
+            :model-value="strokePosition"
+            :items="positionOptions"
+            item-title="label"
+            item-value="value"
+            variant="outlined"
+            density="compact"
+            hide-details
+            @update:model-value="emitPatch({ strokePosition: $event as PhotoStrokePosition })"
+          />
+        </div>
 
-        <v-text-field
-          :model-value="strokeWidth"
-          :label="strokeWidthLabel"
-          type="number"
-          :min="1"
-          :max="maxStrokeWidth"
-          step="1"
-          variant="outlined"
-          density="compact"
-          hide-details
-          @update:model-value="emitPatch({ strokeWidth: clampStrokeWidth($event) })"
-        />
+        <div class="editor-border-fields__field">
+          <span class="editor-border-fields__field-label">{{ strokeWidthLabel }}</span>
+          <input
+            type="number"
+            class="editor-border-fields__px-input"
+            min="1"
+            :max="maxStrokeWidth"
+            step="1"
+            :value="strokeWidth"
+            @change="emitPatch({ strokeWidth: clampStrokeWidth(($event.target as HTMLInputElement).value) })"
+          />
+        </div>
       </div>
 
-      <v-select
-        :model-value="strokeStyle"
-        :items="styleOptions"
-        item-title="label"
-        item-value="value"
-        label="Тип линии"
-        variant="outlined"
-        density="compact"
-        hide-details
-        @update:model-value="emitPatch({ strokeStyle: $event as PhotoStrokeStyle })"
-      />
+      <div class="editor-border-fields__field">
+        <span class="editor-border-fields__field-label">Тип линии</span>
+        <v-select
+          class="editor-border-fields__select"
+          :model-value="strokeStyle"
+          :items="styleOptions"
+          item-title="label"
+          item-value="value"
+          variant="outlined"
+          density="compact"
+          hide-details
+          @update:model-value="emitPatch({ strokeStyle: $event as PhotoStrokeStyle })"
+        />
+      </div>
     </template>
   </div>
 </template>
@@ -139,6 +145,8 @@ function toggleStroke(enabled: boolean | null): void {
 </script>
 
 <style scoped lang="scss">
+@use '@/modules/editor/styles/properties-panel-theme' as pp;
+
 .editor-border-fields {
   display: flex;
   flex-direction: column;
@@ -149,5 +157,81 @@ function toggleStroke(enabled: boolean | null): void {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 96px;
   gap: $spacing-2;
+}
+
+.editor-border-fields__field {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-1;
+  min-width: 0;
+}
+
+.editor-border-fields__field-label {
+  font-size: 10px;
+  font-weight: $font-weight-medium;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: pp.$ink-soft;
+}
+
+.editor-border-fields__select {
+  :deep(.v-field) {
+    border-radius: pp.$radius;
+    min-height: 34px;
+  }
+
+  :deep(.v-field__input) {
+    min-height: 34px;
+    padding-top: 0;
+    padding-bottom: 0;
+    font-size: 12px;
+  }
+
+  :deep(.v-field__outline) {
+    color: pp.$border;
+  }
+
+  :deep(.v-field:hover .v-field__outline) {
+    color: pp.$border-strong;
+  }
+
+  :deep(.v-field--focused .v-field__outline) {
+    color: pp.$accent;
+  }
+}
+
+.editor-border-fields__px-input {
+  width: 100%;
+  height: 34px;
+  padding: 0 $spacing-2;
+  border: 1px solid pp.$border;
+  border-radius: pp.$radius;
+  background: transparent;
+  font-size: 12px;
+  font-family: inherit;
+  color: pp.$ink;
+  text-align: center;
+  outline: none;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+
+  &:hover {
+    border-color: pp.$border-strong;
+  }
+
+  &:focus {
+    border-color: pp.$accent;
+    box-shadow: 0 0 0 3px pp.$accent-glow;
+  }
+
+  &::-webkit-outer-spin-button,
+  &::-webkit-inner-spin-button {
+    margin: 0;
+    appearance: none;
+  }
+
+  appearance: textfield;
+  -moz-appearance: textfield;
 }
 </style>

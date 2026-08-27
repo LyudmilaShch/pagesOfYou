@@ -80,33 +80,51 @@
           <div class="editor-properties__section">
             <p class="editor-properties__section-title">Выравнивание</p>
             <div class="editor-properties__align-row">
-              <v-btn
-                icon
-                size="small"
-                variant="outlined"
-                title="По центру по горизонтали"
-                @click="emit('align-to-page-center', 'horizontal')"
-              >
-                <v-icon size="18">mdi-format-horizontal-align-center</v-icon>
-              </v-btn>
-              <v-btn
-                icon
-                size="small"
-                variant="outlined"
-                title="По центру по вертикали"
-                @click="emit('align-to-page-center', 'vertical')"
-              >
-                <v-icon size="18">mdi-format-vertical-align-center</v-icon>
-              </v-btn>
-              <v-btn
-                icon
-                size="small"
-                variant="outlined"
-                title="По центру страницы"
-                @click="emit('align-to-page-center', 'both')"
-              >
-                <v-icon size="18">mdi-target</v-icon>
-              </v-btn>
+              <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+                <template #activator="{ props: tooltipProps }">
+                  <v-btn
+                    v-bind="tooltipProps"
+                    icon
+                    size="small"
+                    variant="outlined"
+                    aria-label="По центру по горизонтали"
+                    @click="emit('align-to-page-center', 'horizontal')"
+                  >
+                    <v-icon size="18">mdi-format-horizontal-align-center</v-icon>
+                  </v-btn>
+                </template>
+                По центру по горизонтали
+              </v-tooltip>
+              <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+                <template #activator="{ props: tooltipProps }">
+                  <v-btn
+                    v-bind="tooltipProps"
+                    icon
+                    size="small"
+                    variant="outlined"
+                    aria-label="По центру по вертикали"
+                    @click="emit('align-to-page-center', 'vertical')"
+                  >
+                    <v-icon size="18">mdi-format-vertical-align-center</v-icon>
+                  </v-btn>
+                </template>
+                По центру по вертикали
+              </v-tooltip>
+              <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+                <template #activator="{ props: tooltipProps }">
+                  <v-btn
+                    v-bind="tooltipProps"
+                    icon
+                    size="small"
+                    variant="outlined"
+                    aria-label="По центру страницы"
+                    @click="emit('align-to-page-center', 'both')"
+                  >
+                    <v-icon size="18">mdi-target</v-icon>
+                  </v-btn>
+                </template>
+                По центру страницы
+              </v-tooltip>
             </div>
           </div>
         </div>
@@ -175,74 +193,116 @@
           />
 
           <div class="editor-properties__typo-toolbar">
-            <v-btn
-              :variant="isTextBold ? 'flat' : 'outlined'"
-              :color="isTextBold ? 'primary' : undefined"
-              size="small"
-              class="editor-properties__style-btn"
-              title="Жирный"
-              @click="toggleBold"
-            >
-              <span class="editor-properties__style-icon editor-properties__style-icon--bold">B</span>
-            </v-btn>
-            <v-btn
-              :variant="isTextItalic ? 'flat' : 'outlined'"
-              :color="isTextItalic ? 'primary' : undefined"
-              size="small"
-              class="editor-properties__style-btn"
-              title="Курсив"
-              @click="toggleItalic"
-            >
-              <span class="editor-properties__style-icon editor-properties__style-icon--italic">I</span>
-            </v-btn>
-            <v-btn
-              :variant="isTextUppercase ? 'flat' : 'outlined'"
-              :color="isTextUppercase ? 'primary' : undefined"
-              size="small"
-              class="editor-properties__style-btn"
-              icon="mdi-format-letter-case-upper"
-              title="Все заглавные"
-              @click="toggleUppercase"
-            />
+            <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+              <template #activator="{ props: tooltipProps }">
+                <v-btn
+                  v-bind="tooltipProps"
+                  :variant="isTextBold ? 'flat' : 'outlined'"
+                  :color="isTextBold ? 'primary' : undefined"
+                  size="small"
+                  class="editor-properties__style-btn"
+                  aria-label="Жирный"
+                  @click="toggleBold"
+                >
+                  <span class="editor-properties__style-icon editor-properties__style-icon--bold">B</span>
+                </v-btn>
+              </template>
+              Жирный
+            </v-tooltip>
+            <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+              <template #activator="{ props: tooltipProps }">
+                <v-btn
+                  v-bind="tooltipProps"
+                  :variant="isTextItalic ? 'flat' : 'outlined'"
+                  :color="isTextItalic ? 'primary' : undefined"
+                  size="small"
+                  class="editor-properties__style-btn"
+                  aria-label="Курсив"
+                  @click="toggleItalic"
+                >
+                  <span class="editor-properties__style-icon editor-properties__style-icon--italic">I</span>
+                </v-btn>
+              </template>
+              Курсив
+            </v-tooltip>
+            <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+              <template #activator="{ props: tooltipProps }">
+                <v-btn
+                  v-bind="tooltipProps"
+                  :variant="isTextUppercase ? 'flat' : 'outlined'"
+                  :color="isTextUppercase ? 'primary' : undefined"
+                  size="small"
+                  class="editor-properties__style-btn"
+                  icon="mdi-format-letter-case-upper"
+                  aria-label="Все заглавные"
+                  @click="toggleUppercase"
+                />
+              </template>
+              Все заглавные
+            </v-tooltip>
 
             <span class="editor-properties__typo-divider" aria-hidden="true" />
 
-            <v-btn
-              :variant="textElement.textAlign === 'left' ? 'flat' : 'outlined'"
-              :color="textElement.textAlign === 'left' ? 'primary' : undefined"
-              size="small"
-              class="editor-properties__style-btn"
-              icon="mdi-format-align-left"
-              title="Слева"
-              @click="setTextAlign('left')"
-            />
-            <v-btn
-              :variant="textElement.textAlign === 'center' ? 'flat' : 'outlined'"
-              :color="textElement.textAlign === 'center' ? 'primary' : undefined"
-              size="small"
-              class="editor-properties__style-btn"
-              icon="mdi-format-align-center"
-              title="По центру"
-              @click="setTextAlign('center')"
-            />
-            <v-btn
-              :variant="textElement.textAlign === 'right' ? 'flat' : 'outlined'"
-              :color="textElement.textAlign === 'right' ? 'primary' : undefined"
-              size="small"
-              class="editor-properties__style-btn"
-              icon="mdi-format-align-right"
-              title="Справа"
-              @click="setTextAlign('right')"
-            />
-            <v-btn
-              :variant="textElement.textAlign === 'justify' ? 'flat' : 'outlined'"
-              :color="textElement.textAlign === 'justify' ? 'primary' : undefined"
-              size="small"
-              class="editor-properties__style-btn"
-              icon="mdi-format-align-justify"
-              title="По ширине"
-              @click="setTextAlign('justify')"
-            />
+            <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+              <template #activator="{ props: tooltipProps }">
+                <v-btn
+                  v-bind="tooltipProps"
+                  :variant="textElement.textAlign === 'left' ? 'flat' : 'outlined'"
+                  :color="textElement.textAlign === 'left' ? 'primary' : undefined"
+                  size="small"
+                  class="editor-properties__style-btn"
+                  icon="mdi-format-align-left"
+                  aria-label="Слева"
+                  @click="setTextAlign('left')"
+                />
+              </template>
+              Слева
+            </v-tooltip>
+            <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+              <template #activator="{ props: tooltipProps }">
+                <v-btn
+                  v-bind="tooltipProps"
+                  :variant="textElement.textAlign === 'center' ? 'flat' : 'outlined'"
+                  :color="textElement.textAlign === 'center' ? 'primary' : undefined"
+                  size="small"
+                  class="editor-properties__style-btn"
+                  icon="mdi-format-align-center"
+                  aria-label="По центру"
+                  @click="setTextAlign('center')"
+                />
+              </template>
+              По центру
+            </v-tooltip>
+            <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+              <template #activator="{ props: tooltipProps }">
+                <v-btn
+                  v-bind="tooltipProps"
+                  :variant="textElement.textAlign === 'right' ? 'flat' : 'outlined'"
+                  :color="textElement.textAlign === 'right' ? 'primary' : undefined"
+                  size="small"
+                  class="editor-properties__style-btn"
+                  icon="mdi-format-align-right"
+                  aria-label="Справа"
+                  @click="setTextAlign('right')"
+                />
+              </template>
+              Справа
+            </v-tooltip>
+            <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+              <template #activator="{ props: tooltipProps }">
+                <v-btn
+                  v-bind="tooltipProps"
+                  :variant="textElement.textAlign === 'justify' ? 'flat' : 'outlined'"
+                  :color="textElement.textAlign === 'justify' ? 'primary' : undefined"
+                  size="small"
+                  class="editor-properties__style-btn"
+                  icon="mdi-format-align-justify"
+                  aria-label="По ширине"
+                  @click="setTextAlign('justify')"
+                />
+              </template>
+              По ширине
+            </v-tooltip>
 
             <span class="editor-properties__typo-divider" aria-hidden="true" />
 
@@ -253,15 +313,20 @@
               offset="8"
             >
               <template #activator="{ props: menuProps }">
-                <v-btn
-                  v-bind="menuProps"
-                  :variant="textSpacingMenuOpen || hasAdvancedTextSpacing ? 'flat' : 'outlined'"
-                  :color="textSpacingMenuOpen || hasAdvancedTextSpacing ? 'primary' : undefined"
-                  size="small"
-                  class="editor-properties__style-btn"
-                  icon="mdi-format-line-spacing"
-                  title="Интервалы и выравнивание"
-                />
+                <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+                  <template #activator="{ props: tooltipProps }">
+                    <v-btn
+                      v-bind="{ ...menuProps, ...tooltipProps }"
+                      :variant="textSpacingMenuOpen || hasAdvancedTextSpacing ? 'flat' : 'outlined'"
+                      :color="textSpacingMenuOpen || hasAdvancedTextSpacing ? 'primary' : undefined"
+                      size="small"
+                      class="editor-properties__style-btn"
+                      icon="mdi-format-line-spacing"
+                      aria-label="Интервалы и выравнивание"
+                    />
+                  </template>
+                  Интервалы и выравнивание
+                </v-tooltip>
               </template>
 
               <v-card class="editor-properties__spacing-menu" min-width="280">
@@ -326,33 +391,51 @@
                 <div class="editor-properties__spacing-row editor-properties__spacing-row--align">
                   <span class="editor-properties__spacing-label">Закрепить поле</span>
                   <div class="editor-properties__spacing-align">
-                    <v-btn
-                      :variant="textElement.verticalAlign === 'bottom' ? 'flat' : 'text'"
-                      :color="textElement.verticalAlign === 'bottom' ? 'primary' : undefined"
-                      size="small"
-                      class="editor-properties__spacing-align-btn"
-                      icon="mdi-format-vertical-align-bottom"
-                      title="Снизу"
-                      @click="setVerticalAlign('bottom')"
-                    />
-                    <v-btn
-                      :variant="textElement.verticalAlign === 'middle' ? 'flat' : 'text'"
-                      :color="textElement.verticalAlign === 'middle' ? 'primary' : undefined"
-                      size="small"
-                      class="editor-properties__spacing-align-btn"
-                      icon="mdi-format-vertical-align-center"
-                      title="По центру"
-                      @click="setVerticalAlign('middle')"
-                    />
-                    <v-btn
-                      :variant="textElement.verticalAlign === 'top' ? 'flat' : 'text'"
-                      :color="textElement.verticalAlign === 'top' ? 'primary' : undefined"
-                      size="small"
-                      class="editor-properties__spacing-align-btn"
-                      icon="mdi-format-vertical-align-top"
-                      title="Сверху"
-                      @click="setVerticalAlign('top')"
-                    />
+                    <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+                      <template #activator="{ props: tooltipProps }">
+                        <v-btn
+                          v-bind="tooltipProps"
+                          :variant="textElement.verticalAlign === 'bottom' ? 'flat' : 'text'"
+                          :color="textElement.verticalAlign === 'bottom' ? 'primary' : undefined"
+                          size="small"
+                          class="editor-properties__spacing-align-btn"
+                          icon="mdi-format-vertical-align-bottom"
+                          aria-label="Снизу"
+                          @click="setVerticalAlign('bottom')"
+                        />
+                      </template>
+                      Снизу
+                    </v-tooltip>
+                    <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+                      <template #activator="{ props: tooltipProps }">
+                        <v-btn
+                          v-bind="tooltipProps"
+                          :variant="textElement.verticalAlign === 'middle' ? 'flat' : 'text'"
+                          :color="textElement.verticalAlign === 'middle' ? 'primary' : undefined"
+                          size="small"
+                          class="editor-properties__spacing-align-btn"
+                          icon="mdi-format-vertical-align-center"
+                          aria-label="По центру"
+                          @click="setVerticalAlign('middle')"
+                        />
+                      </template>
+                      По центру
+                    </v-tooltip>
+                    <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+                      <template #activator="{ props: tooltipProps }">
+                        <v-btn
+                          v-bind="tooltipProps"
+                          :variant="textElement.verticalAlign === 'top' ? 'flat' : 'text'"
+                          :color="textElement.verticalAlign === 'top' ? 'primary' : undefined"
+                          size="small"
+                          class="editor-properties__spacing-align-btn"
+                          icon="mdi-format-vertical-align-top"
+                          aria-label="Сверху"
+                          @click="setVerticalAlign('top')"
+                        />
+                      </template>
+                      Сверху
+                    </v-tooltip>
                   </div>
                 </div>
               </v-card>

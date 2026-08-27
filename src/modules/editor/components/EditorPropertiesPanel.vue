@@ -142,22 +142,30 @@
 
         <div v-if="store.isSpreadPage" class="editor-properties__spread-bg">
           <div class="editor-properties__spread-bg-mode" role="group" aria-label="Режим фона разворота">
-            <button
+            <v-tooltip
               v-for="option in spreadBackgroundModeOptions"
               :key="option.value"
-              type="button"
-              class="editor-properties__spread-bg-mode-btn"
-              :class="{
-                'editor-properties__spread-bg-mode-btn--active':
-                  store.spreadBackgroundMode === option.value,
-              }"
-              :title="option.title"
-              :aria-pressed="store.spreadBackgroundMode === option.value"
-              @click="updateSpreadBackgroundMode(option.value)"
+              location="top"
+              content-class="editor-tooltip--arrow-top"
             >
-              <v-icon size="16">{{ option.icon }}</v-icon>
-              <span>{{ option.shortTitle }}</span>
-            </button>
+              <template #activator="{ props: tooltipProps }">
+                <button
+                  v-bind="tooltipProps"
+                  type="button"
+                  class="editor-properties__spread-bg-mode-btn"
+                  :class="{
+                    'editor-properties__spread-bg-mode-btn--active':
+                      store.spreadBackgroundMode === option.value,
+                  }"
+                  :aria-pressed="store.spreadBackgroundMode === option.value"
+                  @click="updateSpreadBackgroundMode(option.value)"
+                >
+                  <v-icon size="16">{{ option.icon }}</v-icon>
+                  <span>{{ option.shortTitle }}</span>
+                </button>
+              </template>
+              {{ option.title }}
+            </v-tooltip>
           </div>
 
           <div
@@ -166,26 +174,34 @@
             role="tablist"
             aria-label="Страница для редактирования фона"
           >
-            <button
+            <v-tooltip
               v-for="option in spreadBackgroundSideOptions"
               :key="option.value"
-              type="button"
-              role="tab"
-              class="editor-properties__spread-bg-page"
-              :class="{
-                'editor-properties__spread-bg-page--active':
-                  store.activeSpreadBackgroundSide === option.value,
-              }"
-              :title="option.title"
-              :aria-selected="store.activeSpreadBackgroundSide === option.value"
-              @click="updateActiveSpreadBackgroundSide(option.value)"
+              location="top"
+              content-class="editor-tooltip--arrow-top"
             >
-              <span
-                class="editor-properties__spread-bg-page-preview"
-                :style="getSpreadPagePreviewStyle(option.value)"
-              />
-              <span class="editor-properties__spread-bg-page-label">{{ option.shortTitle }}</span>
-            </button>
+              <template #activator="{ props: tooltipProps }">
+                <button
+                  v-bind="tooltipProps"
+                  type="button"
+                  role="tab"
+                  class="editor-properties__spread-bg-page"
+                  :class="{
+                    'editor-properties__spread-bg-page--active':
+                      store.activeSpreadBackgroundSide === option.value,
+                  }"
+                  :aria-selected="store.activeSpreadBackgroundSide === option.value"
+                  @click="updateActiveSpreadBackgroundSide(option.value)"
+                >
+                  <span
+                    class="editor-properties__spread-bg-page-preview"
+                    :style="getSpreadPagePreviewStyle(option.value)"
+                  />
+                  <span class="editor-properties__spread-bg-page-label">{{ option.shortTitle }}</span>
+                </button>
+              </template>
+              {{ option.title }}
+            </v-tooltip>
           </div>
 
           <p v-else class="editor-properties__spread-bg-hint">
@@ -278,75 +294,111 @@
             Выравнивание
           </p>
           <div class="editor-properties__align-row">
-            <v-btn
-              icon
-              rounded="circle"
-              size="small"
-              variant="outlined"
-              title="По левому краю"
-              :disabled="store.previewMode || store.alignableSelectedElements.length < 2"
-              @click="alignMulti('left')"
-            >
-              <v-icon size="20">mdi-format-horizontal-align-left</v-icon>
-            </v-btn>
-            <v-btn
-              icon
-              rounded="circle"
-              size="small"
-              variant="outlined"
-              title="По верхнему краю"
-              :disabled="store.previewMode || store.alignableSelectedElements.length < 2"
-              @click="alignMulti('top')"
-            >
-              <v-icon size="20">mdi-format-vertical-align-top</v-icon>
-            </v-btn>
-            <v-btn
-              icon
-              rounded="circle"
-              size="small"
-              variant="outlined"
-              title="По центру по горизонтали"
-              :disabled="store.previewMode || store.alignableSelectedElements.length < 2"
-              @click="alignMulti('center-horizontal')"
-            >
-              <v-icon size="20">mdi-format-horizontal-align-center</v-icon>
-            </v-btn>
-            <v-btn
-              icon
-              rounded="circle"
-              size="small"
-              variant="outlined"
-              title="По центру по вертикали"
-              :disabled="store.previewMode || store.alignableSelectedElements.length < 2"
-              @click="alignMulti('center-vertical')"
-            >
-              <v-icon size="20">mdi-format-vertical-align-center</v-icon>
-            </v-btn>
+            <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+              <template #activator="{ props: tooltipProps }">
+                <v-btn
+                  v-bind="tooltipProps"
+                  icon
+                  rounded="circle"
+                  size="small"
+                  variant="outlined"
+                  aria-label="По левому краю"
+                  :disabled="store.previewMode || store.alignableSelectedElements.length < 2"
+                  @click="alignMulti('left')"
+                >
+                  <v-icon size="20">mdi-format-horizontal-align-left</v-icon>
+                </v-btn>
+              </template>
+              По левому краю
+            </v-tooltip>
+            <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+              <template #activator="{ props: tooltipProps }">
+                <v-btn
+                  v-bind="tooltipProps"
+                  icon
+                  rounded="circle"
+                  size="small"
+                  variant="outlined"
+                  aria-label="По верхнему краю"
+                  :disabled="store.previewMode || store.alignableSelectedElements.length < 2"
+                  @click="alignMulti('top')"
+                >
+                  <v-icon size="20">mdi-format-vertical-align-top</v-icon>
+                </v-btn>
+              </template>
+              По верхнему краю
+            </v-tooltip>
+            <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+              <template #activator="{ props: tooltipProps }">
+                <v-btn
+                  v-bind="tooltipProps"
+                  icon
+                  rounded="circle"
+                  size="small"
+                  variant="outlined"
+                  aria-label="По центру по горизонтали"
+                  :disabled="store.previewMode || store.alignableSelectedElements.length < 2"
+                  @click="alignMulti('center-horizontal')"
+                >
+                  <v-icon size="20">mdi-format-horizontal-align-center</v-icon>
+                </v-btn>
+              </template>
+              По центру по горизонтали
+            </v-tooltip>
+            <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+              <template #activator="{ props: tooltipProps }">
+                <v-btn
+                  v-bind="tooltipProps"
+                  icon
+                  rounded="circle"
+                  size="small"
+                  variant="outlined"
+                  aria-label="По центру по вертикали"
+                  :disabled="store.previewMode || store.alignableSelectedElements.length < 2"
+                  @click="alignMulti('center-vertical')"
+                >
+                  <v-icon size="20">mdi-format-vertical-align-center</v-icon>
+                </v-btn>
+              </template>
+              По центру по вертикали
+            </v-tooltip>
           </div>
 
           <div class="editor-properties__align-row">
-            <v-btn
-              icon
-              rounded="circle"
-              size="small"
-              variant="outlined"
-              title="Распределить по горизонтали (3+)"
-              :disabled="store.previewMode || store.alignableSelectedElements.length < 3"
-              @click="alignMulti('distribute-horizontal')"
-            >
-              <v-icon size="20">mdi-distribute-horizontal-center</v-icon>
-            </v-btn>
-            <v-btn
-              icon
-              rounded="circle"
-              size="small"
-              variant="outlined"
-              title="Распределить по вертикали (3+)"
-              :disabled="store.previewMode || store.alignableSelectedElements.length < 3"
-              @click="alignMulti('distribute-vertical')"
-            >
-              <v-icon size="20">mdi-distribute-vertical-center</v-icon>
-            </v-btn>
+            <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+              <template #activator="{ props: tooltipProps }">
+                <v-btn
+                  v-bind="tooltipProps"
+                  icon
+                  rounded="circle"
+                  size="small"
+                  variant="outlined"
+                  aria-label="Распределить по горизонтали (3+)"
+                  :disabled="store.previewMode || store.alignableSelectedElements.length < 3"
+                  @click="alignMulti('distribute-horizontal')"
+                >
+                  <v-icon size="20">mdi-distribute-horizontal-center</v-icon>
+                </v-btn>
+              </template>
+              Распределить по горизонтали (3+)
+            </v-tooltip>
+            <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+              <template #activator="{ props: tooltipProps }">
+                <v-btn
+                  v-bind="tooltipProps"
+                  icon
+                  rounded="circle"
+                  size="small"
+                  variant="outlined"
+                  aria-label="Распределить по вертикали (3+)"
+                  :disabled="store.previewMode || store.alignableSelectedElements.length < 3"
+                  @click="alignMulti('distribute-vertical')"
+                >
+                  <v-icon size="20">mdi-distribute-vertical-center</v-icon>
+                </v-btn>
+              </template>
+              Распределить по вертикали (3+)
+            </v-tooltip>
           </div>
 
           <p class="editor-properties__section-title editor-properties__section-title--nested">
@@ -393,52 +445,25 @@
 
       <template v-else-if="selected">
 
-        <EditorPositionFields v-if="!isTextElement" />
+        <EditorPositionFields />
 
         <div v-if="isTextElement" class="editor-properties__section">
 
           <p class="editor-properties__section-title">Контент</p>
 
-          <v-text-field
-
+          <EditorTextField
             :model-value="textElement.label"
-
             label="Название поля"
-
-            variant="outlined"
-
-            density="compact"
-
-            hide-details
-
-            @update:model-value="patchElement({ label: String($event ?? '') })"
-
+            @update:model-value="patchElement({ label: $event })"
           />
 
-
-
-          <v-textarea
-
+          <EditorTextField
             :model-value="textElement.defaultText ?? ''"
-
             label="Текст для пользователя"
-
-            variant="outlined"
-
-            density="compact"
-
-            rows="2"
-
-            auto-grow
-
-            hide-details
-
+            multiline
+            :rows="2"
             hint="Пользователь увидит этот текст и сможет заменить на свой"
-
-            persistent-hint
-
-            @update:model-value="patchElement({ defaultText: String($event ?? '') })"
-
+            @update:model-value="patchElement({ defaultText: $event })"
           />
 
         </div>
@@ -493,71 +518,59 @@
 
           <div class="editor-properties__typo-group editor-properties__typo-group--stretch">
 
-              <v-btn
+              <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+                <template #activator="{ props: tooltipProps }">
+                  <v-btn
+                    v-bind="tooltipProps"
+                    :variant="isTextBold ? 'flat' : 'text'"
+                    :color="isTextBold ? 'primary' : undefined"
+                    size="small"
+                    class="editor-properties__style-btn"
+                    rounded="0"
+                    aria-label="Жирный"
+                    @click="toggleBold"
+                  >
+                    <span class="editor-properties__style-icon editor-properties__style-icon--bold">B</span>
+                  </v-btn>
+                </template>
+                Жирный
+              </v-tooltip>
 
-                :variant="isTextBold ? 'flat' : 'text'"
+              <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+                <template #activator="{ props: tooltipProps }">
+                  <v-btn
+                    v-bind="tooltipProps"
+                    :variant="isTextItalic ? 'flat' : 'text'"
+                    :color="isTextItalic ? 'primary' : undefined"
+                    size="small"
+                    class="editor-properties__style-btn"
+                    rounded="0"
+                    aria-label="Курсив"
+                    @click="toggleItalic"
+                  >
+                    <span class="editor-properties__style-icon editor-properties__style-icon--italic">I</span>
+                  </v-btn>
+                </template>
+                Курсив
+              </v-tooltip>
 
-                :color="isTextBold ? 'primary' : undefined"
-
-                size="small"
-
-                class="editor-properties__style-btn"
-
-                rounded="0"
-
-                title="Жирный"
-
-                @click="toggleBold"
-
-              >
-
-                <span class="editor-properties__style-icon editor-properties__style-icon--bold">B</span>
-
-              </v-btn>
-
-              <v-btn
-
-                :variant="isTextItalic ? 'flat' : 'text'"
-
-                :color="isTextItalic ? 'primary' : undefined"
-
-                size="small"
-
-                class="editor-properties__style-btn"
-
-                rounded="0"
-
-                title="Курсив"
-
-                @click="toggleItalic"
-
-              >
-
-                <span class="editor-properties__style-icon editor-properties__style-icon--italic">I</span>
-
-              </v-btn>
-
-              <v-btn
-
-                :variant="isTextUppercase ? 'flat' : 'text'"
-
-                :color="isTextUppercase ? 'primary' : undefined"
-
-                size="small"
-
-                class="editor-properties__style-btn"
-
-                rounded="0"
-
-                title="Все заглавные"
-
-                @click="toggleUppercase"
-
-              >
-
-                <span class="editor-properties__style-icon">Aa</span>
-
-              </v-btn>
+              <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+                <template #activator="{ props: tooltipProps }">
+                  <v-btn
+                    v-bind="tooltipProps"
+                    :variant="isTextUppercase ? 'flat' : 'text'"
+                    :color="isTextUppercase ? 'primary' : undefined"
+                    size="small"
+                    class="editor-properties__style-btn"
+                    rounded="0"
+                    aria-label="Все заглавные"
+                    @click="toggleUppercase"
+                  >
+                    <span class="editor-properties__style-icon">Aa</span>
+                  </v-btn>
+                </template>
+                Все заглавные
+              </v-tooltip>
 
           </div>
 
@@ -567,101 +580,85 @@
 
             <div class="editor-properties__typo-group editor-properties__typo-group--stretch editor-properties__typo-group--fill">
 
-              <v-btn
+              <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+                <template #activator="{ props: tooltipProps }">
+                  <v-btn
+                    v-bind="tooltipProps"
+                    :variant="textElement.textAlign === 'left' ? 'flat' : 'text'"
+                    :color="textElement.textAlign === 'left' ? 'primary' : undefined"
+                    size="small"
+                    class="editor-properties__style-btn"
+                    rounded="0"
+                    aria-label="Слева"
+                    @click="setTextAlign('left')"
+                  >
+                    <svg class="editor-properties__align-text-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                      <path d="M4 6h16M4 12h10M4 18h13" />
+                    </svg>
+                  </v-btn>
+                </template>
+                Слева
+              </v-tooltip>
 
-                :variant="textElement.textAlign === 'left' ? 'flat' : 'text'"
+              <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+                <template #activator="{ props: tooltipProps }">
+                  <v-btn
+                    v-bind="tooltipProps"
+                    :variant="textElement.textAlign === 'center' ? 'flat' : 'text'"
+                    :color="textElement.textAlign === 'center' ? 'primary' : undefined"
+                    size="small"
+                    class="editor-properties__style-btn"
+                    rounded="0"
+                    aria-label="По центру"
+                    @click="setTextAlign('center')"
+                  >
+                    <svg class="editor-properties__align-text-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                      <path d="M4 6h16M7 12h10M5.5 18h13" />
+                    </svg>
+                  </v-btn>
+                </template>
+                По центру
+              </v-tooltip>
 
-                :color="textElement.textAlign === 'left' ? 'primary' : undefined"
+              <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+                <template #activator="{ props: tooltipProps }">
+                  <v-btn
+                    v-bind="tooltipProps"
+                    :variant="textElement.textAlign === 'right' ? 'flat' : 'text'"
+                    :color="textElement.textAlign === 'right' ? 'primary' : undefined"
+                    size="small"
+                    class="editor-properties__style-btn"
+                    rounded="0"
+                    aria-label="Справа"
+                    @click="setTextAlign('right')"
+                  >
+                    <svg class="editor-properties__align-text-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                      <path d="M4 6h16M10 12h10M7 18h13" />
+                    </svg>
+                  </v-btn>
+                </template>
+                Справа
+              </v-tooltip>
 
-                size="small"
-
-                class="editor-properties__style-btn"
-
-                rounded="0"
-
-                title="Слева"
-
-                @click="setTextAlign('left')"
-
-              >
-
-                <svg class="editor-properties__align-text-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
-                  <path d="M4 6h16M4 12h10M4 18h13" />
-                </svg>
-
-              </v-btn>
-
-              <v-btn
-
-                :variant="textElement.textAlign === 'center' ? 'flat' : 'text'"
-
-                :color="textElement.textAlign === 'center' ? 'primary' : undefined"
-
-                size="small"
-
-                class="editor-properties__style-btn"
-
-                rounded="0"
-
-                title="По центру"
-
-                @click="setTextAlign('center')"
-
-              >
-
-                <svg class="editor-properties__align-text-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
-                  <path d="M4 6h16M7 12h10M5.5 18h13" />
-                </svg>
-
-              </v-btn>
-
-              <v-btn
-
-                :variant="textElement.textAlign === 'right' ? 'flat' : 'text'"
-
-                :color="textElement.textAlign === 'right' ? 'primary' : undefined"
-
-                size="small"
-
-                class="editor-properties__style-btn"
-
-                rounded="0"
-
-                title="Справа"
-
-                @click="setTextAlign('right')"
-
-              >
-
-                <svg class="editor-properties__align-text-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
-                  <path d="M4 6h16M10 12h10M7 18h13" />
-                </svg>
-
-              </v-btn>
-
-              <v-btn
-
-                :variant="textElement.textAlign === 'justify' ? 'flat' : 'text'"
-
-                :color="textElement.textAlign === 'justify' ? 'primary' : undefined"
-
-                size="small"
-
-                class="editor-properties__style-btn"
-
-                rounded="0"
-
-                title="По ширине"
-
-                @click="setTextAlign('justify')"
-
-              >
-
-                <svg class="editor-properties__align-text-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
-                  <path d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
-
-              </v-btn>
+              <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+                <template #activator="{ props: tooltipProps }">
+                  <v-btn
+                    v-bind="tooltipProps"
+                    :variant="textElement.textAlign === 'justify' ? 'flat' : 'text'"
+                    :color="textElement.textAlign === 'justify' ? 'primary' : undefined"
+                    size="small"
+                    class="editor-properties__style-btn"
+                    rounded="0"
+                    aria-label="По ширине"
+                    @click="setTextAlign('justify')"
+                  >
+                    <svg class="editor-properties__align-text-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                      <path d="M4 6h16M4 12h16M4 18h16" />
+                    </svg>
+                  </v-btn>
+                </template>
+                По ширине
+              </v-tooltip>
 
             </div>
 
@@ -683,25 +680,21 @@
 
               <template #activator="{ props: menuProps }">
 
-                <v-btn
-
-                  v-bind="menuProps"
-
-                  :variant="textSpacingMenuOpen || hasAdvancedTextSpacing ? 'flat' : 'text'"
-
-                  :color="textSpacingMenuOpen || hasAdvancedTextSpacing ? 'primary' : undefined"
-
-                  size="small"
-
-                  class="editor-properties__style-btn"
-
-                rounded="0"
-
-                  icon="mdi-format-line-spacing"
-
-                  title="Интервалы и выравнивание"
-
-                />
+                <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+                  <template #activator="{ props: tooltipProps }">
+                    <v-btn
+                      v-bind="{ ...menuProps, ...tooltipProps }"
+                      :variant="textSpacingMenuOpen || hasAdvancedTextSpacing ? 'flat' : 'text'"
+                      :color="textSpacingMenuOpen || hasAdvancedTextSpacing ? 'primary' : undefined"
+                      size="small"
+                      class="editor-properties__style-btn"
+                      rounded="0"
+                      icon="mdi-format-line-spacing"
+                      aria-label="Интервалы и выравнивание"
+                    />
+                  </template>
+                  Интервалы и выравнивание
+                </v-tooltip>
 
               </template>
 
@@ -767,59 +760,53 @@
 
                   <div class="editor-properties__spacing-align">
 
-                    <v-btn
+                    <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+                      <template #activator="{ props: tooltipProps }">
+                        <v-btn
+                          v-bind="tooltipProps"
+                          :variant="textElement.verticalAlign === 'bottom' ? 'flat' : 'text'"
+                          :color="textElement.verticalAlign === 'bottom' ? 'primary' : undefined"
+                          size="small"
+                          class="editor-properties__spacing-align-btn"
+                          icon="mdi-format-vertical-align-bottom"
+                          aria-label="Снизу"
+                          @click="setVerticalAlign('bottom')"
+                        />
+                      </template>
+                      Снизу
+                    </v-tooltip>
 
-                      :variant="textElement.verticalAlign === 'bottom' ? 'flat' : 'text'"
+                    <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+                      <template #activator="{ props: tooltipProps }">
+                        <v-btn
+                          v-bind="tooltipProps"
+                          :variant="textElement.verticalAlign === 'middle' ? 'flat' : 'text'"
+                          :color="textElement.verticalAlign === 'middle' ? 'primary' : undefined"
+                          size="small"
+                          class="editor-properties__spacing-align-btn"
+                          icon="mdi-format-vertical-align-center"
+                          aria-label="По центру"
+                          @click="setVerticalAlign('middle')"
+                        />
+                      </template>
+                      По центру
+                    </v-tooltip>
 
-                      :color="textElement.verticalAlign === 'bottom' ? 'primary' : undefined"
-
-                      size="small"
-
-                      class="editor-properties__spacing-align-btn"
-
-                      icon="mdi-format-vertical-align-bottom"
-
-                      title="Снизу"
-
-                      @click="setVerticalAlign('bottom')"
-
-                    />
-
-                    <v-btn
-
-                      :variant="textElement.verticalAlign === 'middle' ? 'flat' : 'text'"
-
-                      :color="textElement.verticalAlign === 'middle' ? 'primary' : undefined"
-
-                      size="small"
-
-                      class="editor-properties__spacing-align-btn"
-
-                      icon="mdi-format-vertical-align-center"
-
-                      title="По центру"
-
-                      @click="setVerticalAlign('middle')"
-
-                    />
-
-                    <v-btn
-
-                      :variant="textElement.verticalAlign === 'top' ? 'flat' : 'text'"
-
-                      :color="textElement.verticalAlign === 'top' ? 'primary' : undefined"
-
-                      size="small"
-
-                      class="editor-properties__spacing-align-btn"
-
-                      icon="mdi-format-vertical-align-top"
-
-                      title="Сверху"
-
-                      @click="setVerticalAlign('top')"
-
-                    />
+                    <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+                      <template #activator="{ props: tooltipProps }">
+                        <v-btn
+                          v-bind="tooltipProps"
+                          :variant="textElement.verticalAlign === 'top' ? 'flat' : 'text'"
+                          :color="textElement.verticalAlign === 'top' ? 'primary' : undefined"
+                          size="small"
+                          class="editor-properties__spacing-align-btn"
+                          icon="mdi-format-vertical-align-top"
+                          aria-label="Сверху"
+                          @click="setVerticalAlign('top')"
+                        />
+                      </template>
+                      Сверху
+                    </v-tooltip>
 
                   </div>
 
@@ -844,22 +831,6 @@
             label="Цвет текста"
             fallback="#111111"
             @update:model-value="patchElement({ color: $event })"
-          />
-
-        </div>
-
-        <div v-if="isTextElement" class="editor-properties__section">
-
-          <p class="editor-properties__section-title">Поведение</p>
-
-          <EditorSwitch
-
-            :model-value="textElement.required"
-
-            label="Обязательное поле"
-
-            @update:model-value="patchElement({ required: $event })"
-
           />
 
         </div>
@@ -905,133 +876,124 @@
 
         </div>
 
-        <EditorPositionFields v-if="isTextElement" />
+        <div v-if="isTextElement" class="editor-properties__section">
 
-        <div v-if="isPhotoElement" class="editor-properties__section">
+          <p class="editor-properties__section-title">Поведение</p>
 
-          <p class="editor-properties__section-title">Фото по умолчанию</p>
+          <EditorSwitch
 
+            :model-value="textElement.required"
 
+            label="Обязательное поле"
 
-          <v-text-field
-
-            :model-value="photoElement.label"
-
-            label="Название поля"
-
-            variant="outlined"
-
-            density="compact"
-
-            hide-details
-
-            @update:model-value="patchElement({ label: String($event ?? '') })"
+            @update:model-value="patchElement({ required: $event })"
 
           />
 
+        </div>
+
+        <div v-if="isPhotoElement" class="editor-properties__section">
+
+          <p class="editor-properties__section-title">Контент</p>
 
 
-          <div v-if="photoElement.defaultImageUrl" class="editor-properties__image-preview">
 
-            <img :src="displayImageUrl" alt="Фото по умолчанию" />
+          <EditorTextField
+            :model-value="photoElement.label"
+            label="Название поля"
+            @update:model-value="patchElement({ label: $event })"
+          />
 
-            <v-btn size="small" variant="text" color="error" @click="patchElement({ defaultImageUrl: null, cropX: 0, cropY: 0, imageScale: 1 })">
+          <p class="editor-properties__field-label editor-properties__field-label--spaced editor-properties__field-label--caps">Изображение по умолчанию</p>
 
-              Удалить
+          <div class="editor-properties__default-image-row">
 
+            <div class="editor-properties__image-thumb">
+              <img v-if="photoElement.defaultImageUrl" :src="displayImageUrl" alt="" />
+            </div>
+
+            <v-btn
+              variant="outlined"
+              size="small"
+              :loading="uploadingImage"
+              @click="triggerImageInput"
+            >
+              <template #prepend>
+                <svg class="editor-properties__btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <path d="M12 16V4M8 8l4-4 4 4" />
+                  <path d="M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3" />
+                </svg>
+              </template>
+              {{ photoElement.defaultImageUrl ? 'Заменить' : 'Загрузить' }}
             </v-btn>
 
           </div>
 
-
-
-          <v-btn
-
-            variant="outlined"
-
-            size="small"
-
-            prepend-icon="mdi-image-plus-outline"
-
-            :loading="uploadingImage"
-
-            @click="triggerImageInput"
-
-          >
-
-            {{ photoElement.defaultImageUrl ? 'Заменить фото' : 'Загрузить фото' }}
-
-          </v-btn>
-
           <input ref="imageInputRef" type="file" accept="image/jpeg,image/png,image/webp" hidden @change="onImageSelected" />
 
-          <v-btn
-            v-if="photoElement.defaultImageUrl"
-            variant="outlined"
-            size="small"
-            prepend-icon="mdi-crop"
-            :disabled="store.previewMode"
-            @click="handleStartPhotoCrop"
-          >
-            Кадрировать
-          </v-btn>
+        </div>
 
-          <v-btn
-            v-if="photoElement.defaultImageUrl"
-            variant="outlined"
-            size="small"
-            prepend-icon="mdi-image-edit-outline"
-            :disabled="store.previewMode"
-            @click="store.startPhotoDim(selected.id)"
-          >
-            Редактировать
-          </v-btn>
+        <div v-if="isPhotoElement" class="editor-properties__section">
 
+          <p class="editor-properties__section-title">Изображение</p>
 
+          <div class="editor-properties__setting-row">
+            <span class="editor-properties__setting-row-label">Масштабирование</span>
+            <v-select
+              class="editor-properties__setting-select"
+              :model-value="photoElement.fitMode"
+              :items="fitModeOptions"
+              item-title="label"
+              item-value="value"
+              variant="outlined"
+              density="compact"
+              hide-details
+              @update:model-value="patchElement({ fitMode: $event as typeof photoElement.fitMode })"
+            />
+          </div>
 
-          <v-select
+          <div v-if="photoElement.defaultImageUrl" class="editor-properties__setting-row">
+            <span class="editor-properties__setting-row-label">Кадрирование</span>
+            <v-btn
+              variant="outlined"
+              size="small"
+              :disabled="store.previewMode"
+              @click="store.startPhotoDim(selected.id)"
+            >
+              <template #prepend>
+                <svg class="editor-properties__btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <path d="M6 2v14a2 2 0 002 2h14" />
+                  <path d="M18 22V8a2 2 0 00-2-2H2" />
+                </svg>
+              </template>
+              Кадрировать
+            </v-btn>
+          </div>
 
-            :model-value="photoElement.fitMode"
+        </div>
 
-            :items="fitModeOptions"
+        <div v-if="isPhotoElement" class="editor-properties__section">
 
-            item-title="label"
+          <p class="editor-properties__section-title">Оформление</p>
 
-            item-value="value"
+          <p class="editor-properties__field-label">Скругление</p>
 
-            label="Масштабирование"
-
-            variant="outlined"
-
-            density="compact"
-
-            hide-details
-
-            @update:model-value="patchElement({ fitMode: $event as typeof photoElement.fitMode })"
-
-          />
-
-
-
-          <v-text-field
-
-            :model-value="photoElement.borderRadius"
-
-            label="Скругление углов"
-
-            type="number"
-
-            variant="outlined"
-
-            density="compact"
-
-            hide-details
-
-            @update:model-value="patchElement({ borderRadius: toNumber($event, photoElement.borderRadius) })"
-
-          />
-
-          <EditorPhotoFrameField :frame="photoElement.frame" @patch="patchElement" />
+          <div class="editor-properties__slider-row">
+            <v-slider
+              :model-value="photoElement.borderRadius"
+              :min="0"
+              :max="60"
+              :step="1"
+              hide-details
+              @update:model-value="patchElement({ borderRadius: Number($event) })"
+            />
+            <input
+              type="number"
+              class="editor-properties__slider-value"
+              :value="photoElement.borderRadius"
+              @change="patchElement({ borderRadius: toNumber(($event.target as HTMLInputElement).value, photoElement.borderRadius) })"
+            />
+          </div>
 
           <EditorBorderFields
             v-if="!photoElement.frame"
@@ -1042,23 +1004,54 @@
             @patch="patchElement"
           />
 
+        </div>
 
+        <div v-if="isPhotoElement && photoElement.defaultImageUrl" class="editor-properties__section">
 
-          <EditorSwitch
+          <p class="editor-properties__section-title">Рамка</p>
 
-            :model-value="photoElement.required"
+          <div class="editor-properties__fx-scroll">
 
-            label="Обязательное поле"
+            <button
+              type="button"
+              class="editor-properties__fx-item editor-properties__fx-item--frame"
+              :class="{ 'editor-properties__fx-item--active': !photoElement.frame }"
+              @click="removePhotoFrame"
+            >
+              <span class="editor-properties__fx-thumb editor-properties__fx-thumb--frame">
+                <v-icon size="24" color="textMuted">mdi-image-frame</v-icon>
+              </span>
+              <span class="editor-properties__fx-label">Без рамки</span>
+            </button>
 
-            @update:model-value="patchElement({ required: $event })"
+            <button
+              v-for="item in activePhotoFrames"
+              :key="item.id"
+              type="button"
+              class="editor-properties__fx-item editor-properties__fx-item--frame"
+              :class="{ 'editor-properties__fx-item--active': photoElement.frame?.imageUrl === item.imageUrl }"
+              @click="selectPhotoFrame(item)"
+            >
+              <span class="editor-properties__fx-thumb editor-properties__fx-thumb--frame">
+                <img :src="item.imageUrl" :alt="item.name" />
+              </span>
+              <span class="editor-properties__fx-label">{{ item.name }}</span>
+            </button>
 
-          />
+          </div>
 
-
+          <button
+            type="button"
+            class="editor-properties__fx-more"
+            @click="panelStack.push({ id: 'photo-frame', title: 'Рамка' })"
+          >
+            Все рамки
+            <v-icon size="12">mdi-chevron-right</v-icon>
+          </button>
 
         </div>
 
-        <div v-if="isPhotoElement" class="editor-properties__section">
+        <div v-if="isPhotoElement && photoElement.defaultImageUrl" class="editor-properties__section">
 
           <p class="editor-properties__section-title">Фильтры</p>
 
@@ -1105,7 +1098,7 @@
 
         </div>
 
-        <div v-if="isPhotoElement" class="editor-properties__section">
+        <div v-if="isPhotoElement && photoElement.defaultImageUrl" class="editor-properties__section">
 
           <p class="editor-properties__section-title">Маска</p>
 
@@ -1152,7 +1145,21 @@
 
         </div>
 
+        <div v-if="isPhotoElement" class="editor-properties__section">
 
+          <p class="editor-properties__section-title">Поведение</p>
+
+          <EditorSwitch
+
+            :model-value="photoElement.required"
+
+            label="Обязательное поле"
+
+            @update:model-value="patchElement({ required: $event })"
+
+          />
+
+        </div>
 
         <div v-if="isShapeElement" class="editor-properties__section">
 
@@ -1307,7 +1314,7 @@
         Дублировать
       </v-btn>
 
-      <v-tooltip location="top" content-class="editor-properties__delete-tooltip">
+      <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
         <template #activator="{ props: tooltipProps }">
           <v-btn
             v-bind="tooltipProps"
@@ -1387,10 +1394,11 @@ import type { PageBackgroundImageFit, SpreadBackgroundMode, SpreadBackgroundSide
 import EditorShapeStrokeFields from './EditorShapeStrokeFields.vue'
 import EditorColorPicker from './EditorColorPicker.vue'
 import EditorBorderFields from './EditorBorderFields.vue'
-import EditorPhotoFrameField from './EditorPhotoFrameField.vue'
+import { adminPhotoFramesApi, type AdminPhotoFrame } from '@/shared/api/admin/photo-frames.api'
 import EditorStepperField from './EditorStepperField.vue'
 import EditorSwitch from './EditorSwitch.vue'
 import EditorPositionFields from './EditorPositionFields.vue'
+import EditorTextField from './EditorTextField.vue'
 
 import type { MultiAlignMode } from '../utils/align-elements.util'
 import {
@@ -1433,6 +1441,40 @@ const panelScreenComponent = computed(() =>
 const imageInputRef = ref<HTMLInputElement | null>(null)
 
 const uploadingImage = ref(false)
+
+const photoFrames = ref<AdminPhotoFrame[]>([])
+const activePhotoFrames = computed(() => photoFrames.value.filter((item) => item.isActive))
+
+adminPhotoFramesApi
+  .list()
+  .then((items) => {
+    photoFrames.value = items
+  })
+  .catch(() => {
+    photoFrames.value = []
+  })
+
+function selectPhotoFrame(item: AdminPhotoFrame): void {
+  patchElement({
+    frame: {
+      imageUrl: item.imageUrl,
+      naturalWidth: item.naturalWidth,
+      naturalHeight: item.naturalHeight,
+      sliceTop: item.sliceTop,
+      sliceRight: item.sliceRight,
+      sliceBottom: item.sliceBottom,
+      sliceLeft: item.sliceLeft,
+      photoAreaTop: item.photoAreaTop,
+      photoAreaRight: item.photoAreaRight,
+      photoAreaBottom: item.photoAreaBottom,
+      photoAreaLeft: item.photoAreaLeft,
+    },
+  })
+}
+
+function removePhotoFrame(): void {
+  patchElement({ frame: null })
+}
 
 const pageBackgroundInputRef = ref<HTMLInputElement | null>(null)
 
@@ -1969,15 +2011,6 @@ async function onImageSelected(event: Event): Promise<void> {
 
 
 
-function handleStartPhotoCrop(): void {
-  if (!selected.value || store.previewMode || !isPhotoPlaceholderElement(selected.value)) {
-    return
-  }
-
-  store.stopPhotoDim()
-  store.startPhotoCropEditing(selected.value.id)
-}
-
 function handleDuplicate(): void {
   if (!selected.value || store.previewMode) {
     return
@@ -2309,6 +2342,23 @@ function handleRemove(): void {
   border-width: 2px;
 }
 
+// Frame previews need to be bigger than the standard 52px fx-thumb to actually read as a
+// frame design, and use object-fit: contain (not cover) so the frame's own transparent PNG
+// artwork isn't cropped the way a cover-fit photo/filter thumbnail would be.
+.editor-properties__fx-item--frame {
+  width: 104px;
+}
+
+.editor-properties__fx-thumb--frame {
+  width: 104px;
+  height: 104px;
+  border-radius: $radius-md;
+
+  img {
+    object-fit: contain;
+  }
+}
+
 .editor-properties__fx-label {
   width: 100%;
   font-size: 9px;
@@ -2329,7 +2379,7 @@ function handleRemove(): void {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  align-self: flex-start;
+  align-self: flex-end;
   border: none;
   background: none;
   padding: 0;
@@ -2595,6 +2645,77 @@ function handleRemove(): void {
     margin-top: $spacing-4;
   }
 
+  // Matches the mockup's Content-section .field-label (uppercase, letter-spaced caption) as
+  // opposed to the default sentence-case caption used above button groups/sliders elsewhere.
+  &--caps {
+    margin-bottom: 6px;
+    font-size: 10px;
+    font-weight: $font-weight-medium;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+}
+
+
+
+.editor-properties__slider-row {
+  display: flex;
+  align-items: center;
+  gap: $spacing-3;
+
+  :deep(.v-slider) {
+    flex: 1;
+  }
+
+  // color="primary" alone would render black — Vuetify's .v-theme--light class re-declares the
+  // theme variables on the component itself, beating an inherited override from .editor-properties.
+  :deep(.v-slider-track__fill) {
+    background-color: pp.$accent !important;
+  }
+
+  :deep(.v-slider-thumb__surface) {
+    color: pp.$accent !important;
+  }
+}
+
+.editor-properties__slider-value {
+  width: 50px;
+  flex-shrink: 0;
+  height: 34px;
+  padding: 0 $spacing-1;
+  border: 1px solid pp.$border;
+  border-radius: pp.$radius;
+  background: $white;
+  color: pp.$ink;
+  font-size: 12px;
+  font-family: inherit;
+  text-align: center;
+  outline: none;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    box-shadow 0.15s ease;
+
+  &:hover {
+    border-color: pp.$border-strong;
+    background: pp.$field-hover;
+  }
+
+  &:focus {
+    border-color: pp.$accent;
+    background: pp.$field-hover;
+    box-shadow: 0 0 0 3px pp.$accent-glow;
+  }
+
+  &::-webkit-outer-spin-button,
+  &::-webkit-inner-spin-button {
+    margin: 0;
+    appearance: none;
+  }
+
+  appearance: textfield;
+  -moz-appearance: textfield;
 }
 
 
@@ -2676,6 +2797,51 @@ function handleRemove(): void {
 .editor-properties__align-text-icon {
   width: 15px;
   height: 15px;
+}
+
+.editor-properties__btn-icon {
+  width: 13px;
+  height: 13px;
+}
+
+.editor-properties__setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-3;
+}
+
+.editor-properties__setting-row-label {
+  font-size: $font-size-body-sm;
+  color: pp.$ink;
+}
+
+// Flattens a Vuetify v-select into the mockup's compact "select-field" chip: no floating
+// label (none is passed in), auto width sized to its content instead of filling the row.
+.editor-properties__setting-select {
+  flex: 0 0 auto;
+  width: auto;
+
+  :deep(.v-input__control) {
+    width: auto;
+  }
+
+  :deep(.v-field) {
+    min-height: 34px;
+    border-radius: pp.$radius;
+  }
+
+  :deep(.v-field__input) {
+    min-height: 34px;
+    width: auto;
+    padding: 0 0 0 $spacing-2;
+    font-size: 12px;
+  }
+
+  :deep(.v-field__append-inner) {
+    padding-top: 0;
+    align-items: center;
+  }
 }
 
 
@@ -2916,6 +3082,28 @@ function handleRemove(): void {
 
   }
 
+}
+
+.editor-properties__default-image-row {
+  display: flex;
+  align-items: center;
+  gap: $spacing-2;
+}
+
+.editor-properties__image-thumb {
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: $radius-sm;
+  border: 1px solid pp.$border;
+  overflow: hidden;
+  background: repeating-linear-gradient(45deg, pp.$border 0 6px, $white 6px 12px);
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
 }
 
 

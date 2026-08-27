@@ -3,7 +3,7 @@
     <div class="admin-login__inner">
 
       <div class="admin-login__brand">
-        <span class="admin-login__brand-name">Pages of You</span>
+        <span class="admin-login__brand-name">Фолио</span>
         <span class="admin-login__brand-badge">Admin</span>
       </div>
 

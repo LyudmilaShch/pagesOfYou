@@ -3,136 +3,165 @@
 
     <p class="editor-properties__section-title">Позиция и размер</p>
 
-    <div class="editor-properties__mini-row">
-      <span class="editor-properties__mini-row-label">{{ positionLabel }}</span>
-      <div class="editor-properties__mini-num-row">
+    <div class="editor-properties__dim-row">
+      <label class="editor-properties__dim-field">
+        <span class="editor-properties__dim-label" aria-hidden="true">X</span>
         <input
           type="number"
-          class="editor-properties__mini-num-field"
           aria-label="X"
           :value="displayPositionX"
           @change="updatePosition('x', ($event.target as HTMLInputElement).value)"
         />
+      </label>
+      <label class="editor-properties__dim-field">
+        <span class="editor-properties__dim-label" aria-hidden="true">Y</span>
         <input
           type="number"
-          class="editor-properties__mini-num-field"
           aria-label="Y"
           :value="selected!.position.y"
           @change="updatePosition('y', ($event.target as HTMLInputElement).value)"
         />
-      </div>
+      </label>
     </div>
 
-    <div class="editor-properties__mini-row">
-      <span class="editor-properties__mini-row-label">Ширина / Высота</span>
-      <div class="editor-properties__mini-num-row">
+    <p v-if="selectedSpreadSide" class="editor-properties__dim-hint">{{ spreadSideHint }}</p>
+
+    <div class="editor-properties__dim-row">
+      <label class="editor-properties__dim-field">
+        <span class="editor-properties__dim-label" aria-hidden="true">W</span>
         <input
           type="number"
-          class="editor-properties__mini-num-field"
           aria-label="Ширина"
           :value="selected!.size.width"
           @change="updateSize('width', ($event.target as HTMLInputElement).value)"
         />
+      </label>
+      <label class="editor-properties__dim-field">
+        <span class="editor-properties__dim-label" aria-hidden="true">H</span>
         <input
           type="number"
-          class="editor-properties__mini-num-field"
           aria-label="Высота"
           :value="selected!.size.height"
           @change="updateSize('height', ($event.target as HTMLInputElement).value)"
         />
-      </div>
+      </label>
     </div>
 
     <div class="editor-properties__rotation-row">
 
-      <EditorStepperField
+      <EditorAngleField
         :model-value="displayRotation"
-        label="Поворот"
-        suffix="°"
-        :step="1"
         :disabled="store.previewMode || selected!.locked"
         @update:model-value="updateRotation($event)"
       />
 
-      <v-btn
-        icon
-        rounded="circle"
-        size="small"
-        variant="outlined"
-        title="Повернуть на -45°"
-        :disabled="store.previewMode || selected!.locked"
-        @click="rotateBy(-45)"
-      >
-        <svg class="editor-properties__align-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M4 9a8 8 0 1 1 1.3 7.7" />
-          <path d="M4 4v5h5" />
-        </svg>
-      </v-btn>
+      <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+        <template #activator="{ props: tooltipProps }">
+          <v-btn
+            v-bind="tooltipProps"
+            icon
+            rounded="circle"
+            variant="outlined"
+            aria-label="Повернуть на -45°"
+            :disabled="store.previewMode || selected!.locked"
+            @click="rotateBy(-45)"
+          >
+            <svg class="editor-properties__align-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 9a8 8 0 1 1 1.3 7.7" />
+              <path d="M4 4v5h5" />
+            </svg>
+          </v-btn>
+        </template>
+        Повернуть на -45°
+      </v-tooltip>
 
-      <v-btn
-        icon
-        rounded="circle"
-        size="small"
-        variant="outlined"
-        title="Повернуть на +45°"
-        :disabled="store.previewMode || selected!.locked"
-        @click="rotateBy(45)"
-      >
-        <svg class="editor-properties__align-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M20 9a8 8 0 1 0-1.3 7.7" />
-          <path d="M20 4v5h-5" />
-        </svg>
-      </v-btn>
+      <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+        <template #activator="{ props: tooltipProps }">
+          <v-btn
+            v-bind="tooltipProps"
+            icon
+            rounded="circle"
+            variant="outlined"
+            aria-label="Повернуть на +45°"
+            :disabled="store.previewMode || selected!.locked"
+            @click="rotateBy(45)"
+          >
+            <svg class="editor-properties__align-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20 9a8 8 0 1 0-1.3 7.7" />
+              <path d="M20 4v5h-5" />
+            </svg>
+          </v-btn>
+        </template>
+        Повернуть на +45°
+      </v-tooltip>
 
     </div>
 
     <div class="editor-properties__section">
       <p class="editor-properties__section-title">Выравнивание</p>
       <div class="editor-properties__align-row">
-        <v-btn
-          icon
-          rounded="circle"
-          size="small"
-          variant="outlined"
-          title="По центру по горизонтали"
-          :disabled="store.previewMode || selected!.locked"
-          @click="alignToPageCenter('horizontal')"
-        >
-          <svg class="editor-properties__align-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 4v16" />
-            <path d="M3 12h6M9 12l-2.5-2.5M9 12l-2.5 2.5" />
-            <path d="M21 12h-6M15 12l2.5-2.5M15 12l2.5 2.5" />
-          </svg>
-        </v-btn>
-        <v-btn
-          icon
-          rounded="circle"
-          size="small"
-          variant="outlined"
-          title="По центру по вертикали"
-          :disabled="store.previewMode || selected!.locked"
-          @click="alignToPageCenter('vertical')"
-        >
-          <svg class="editor-properties__align-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M4 12h16" />
-            <path d="M12 3v6M12 9l-2.5-2.5M12 9l2.5-2.5" />
-            <path d="M12 21v-6M12 15l-2.5 2.5M12 15l2.5 2.5" />
-          </svg>
-        </v-btn>
-        <v-btn
-          icon
-          rounded="circle"
-          size="small"
-          variant="outlined"
-          title="По центру страницы"
-          :disabled="store.previewMode || selected!.locked"
-          @click="alignToPageCenter('both')"
-        >
-          <svg class="editor-properties__align-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="8" />
-            <path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
-          </svg>
-        </v-btn>
+        <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+          <template #activator="{ props: tooltipProps }">
+            <v-btn
+              v-bind="tooltipProps"
+              icon
+              rounded="circle"
+              size="small"
+              variant="outlined"
+              aria-label="По центру по горизонтали"
+              :disabled="store.previewMode || selected!.locked"
+              @click="alignToPageCenter('horizontal')"
+            >
+              <svg class="editor-properties__align-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 4v16" />
+                <path d="M3 12h6M9 12l-2.5-2.5M9 12l-2.5 2.5" />
+                <path d="M21 12h-6M15 12l2.5-2.5M15 12l2.5 2.5" />
+              </svg>
+            </v-btn>
+          </template>
+          По центру по горизонтали
+        </v-tooltip>
+        <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+          <template #activator="{ props: tooltipProps }">
+            <v-btn
+              v-bind="tooltipProps"
+              icon
+              rounded="circle"
+              size="small"
+              variant="outlined"
+              aria-label="По центру по вертикали"
+              :disabled="store.previewMode || selected!.locked"
+              @click="alignToPageCenter('vertical')"
+            >
+              <svg class="editor-properties__align-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 12h16" />
+                <path d="M12 3v6M12 9l-2.5-2.5M12 9l2.5-2.5" />
+                <path d="M12 21v-6M12 15l-2.5 2.5M12 15l2.5 2.5" />
+              </svg>
+            </v-btn>
+          </template>
+          По центру по вертикали
+        </v-tooltip>
+        <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+          <template #activator="{ props: tooltipProps }">
+            <v-btn
+              v-bind="tooltipProps"
+              icon
+              rounded="circle"
+              size="small"
+              variant="outlined"
+              aria-label="По центру страницы"
+              :disabled="store.previewMode || selected!.locked"
+              @click="alignToPageCenter('both')"
+            >
+              <svg class="editor-properties__align-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="8" />
+                <path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
+              </svg>
+            </v-btn>
+          </template>
+          По центру страницы
+        </v-tooltip>
       </div>
     </div>
 
@@ -145,7 +174,7 @@ import { storeToRefs } from 'pinia'
 
 import { useEditorStore } from '../store/editor.store'
 import type { ElementPatch } from '../store/editor.store'
-import EditorStepperField from './EditorStepperField.vue'
+import EditorAngleField from './EditorAngleField.vue'
 import { A4_SPREAD_PAGE_HEIGHT, A4_SPREAD_PAGE_WIDTH } from '../constants/page.constants'
 import {
   getSpreadPageSide,
@@ -183,10 +212,8 @@ const displayPositionX = computed(() => {
   return spreadGlobalXToPageLocal(selected.value.position.x, selectedSpreadSide.value)
 })
 
-const positionLabel = computed(() =>
-  selectedSpreadSide.value
-    ? `X / Y (${getSpreadPageSideLabel(selectedSpreadSide.value)})`
-    : 'X / Y',
+const spreadSideHint = computed(() =>
+  selectedSpreadSide.value ? getSpreadPageSideLabel(selectedSpreadSide.value) : '',
 )
 
 const displayRotation = computed(() =>
@@ -304,61 +331,73 @@ function alignToPageCenter(axis: 'horizontal' | 'vertical' | 'both'): void {
   color: pp.$ink-faint;
 }
 
-.editor-properties__mini-row {
+.editor-properties__dim-row {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
   gap: $spacing-2;
 }
 
-.editor-properties__mini-row-label {
-  flex-shrink: 0;
-  font-size: $font-size-caption;
-  color: pp.$ink-soft;
+.editor-properties__dim-hint {
+  margin: -#{$spacing-2} 0 0;
+  font-size: 10.5px;
+  color: pp.$ink-faint;
 }
 
-.editor-properties__mini-num-row {
+.editor-properties__dim-field {
+  flex: 1;
   display: flex;
   align-items: center;
-  gap: $spacing-1;
-  flex-shrink: 0;
-}
-
-.editor-properties__mini-num-field {
-  width: 52px;
+  min-width: 0;
   height: 34px;
-  padding: 0 $spacing-1;
   border: 1px solid pp.$border;
   border-radius: pp.$radius;
-  background: $white;
-  font-size: $font-size-caption;
-  font-family: inherit;
-  color: pp.$ink;
-  outline: none;
-  transition:
-    border-color 0.15s ease,
-    background 0.15s ease,
-    box-shadow 0.15s ease;
+  background: transparent;
+  overflow: hidden;
+  cursor: text;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 
   &:hover {
     border-color: pp.$border-strong;
-    background: pp.$field-hover;
   }
 
-  &:focus {
+  &:focus-within {
     border-color: pp.$accent;
-    background: pp.$field-hover;
     box-shadow: 0 0 0 3px pp.$accent-glow;
   }
 
-  &::-webkit-outer-spin-button,
-  &::-webkit-inner-spin-button {
-    margin: 0;
-    appearance: none;
-  }
+  input {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    border: none;
+    background: none;
+    outline: none;
+    padding: 0 $spacing-2;
+    font-size: 12.5px;
+    font-family: inherit;
+    color: pp.$ink;
 
-  appearance: textfield;
-  -moz-appearance: textfield;
+    &::-webkit-outer-spin-button,
+    &::-webkit-inner-spin-button {
+      margin: 0;
+      appearance: none;
+    }
+
+    appearance: textfield;
+    -moz-appearance: textfield;
+  }
+}
+
+.editor-properties__dim-label {
+  flex-shrink: 0;
+  width: 24px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10.5px;
+  color: pp.$ink-faint;
+  background: rgba(13, 13, 13, 0.025);
+  border-right: 1px solid pp.$border;
 }
 
 .editor-properties__align-row {
@@ -387,7 +426,7 @@ function alignToPageCenter(axis: 'horizontal' | 'vertical' | 'both'): void {
 
 .editor-properties__rotation-row {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: $spacing-2;
 
   > *:first-child {
@@ -397,8 +436,8 @@ function alignToPageCenter(axis: 'horizontal' | 'vertical' | 'both'): void {
 
   :deep(.v-btn) {
     flex-shrink: 0;
-    width: 44px;
-    height: 44px;
+    width: 34px;
+    height: 34px;
     color: pp.$ink;
     border-color: pp.$border;
     background: $white;
