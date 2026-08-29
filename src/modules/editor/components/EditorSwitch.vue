@@ -5,7 +5,7 @@
     <button
       type="button"
       class="editor-switch"
-      :class="{ 'editor-switch--on': modelValue }"
+      :class="[`editor-switch--${size}`, { 'editor-switch--on': modelValue }]"
       role="switch"
       :aria-checked="modelValue"
       :aria-label="label"
@@ -23,9 +23,11 @@ const props = withDefaults(
     modelValue: boolean
     label?: string
     disabled?: boolean
+    size?: 'default' | 'large'
   }>(),
   {
     disabled: false,
+    size: 'default',
   },
 )
 
@@ -104,6 +106,24 @@ function toggle(): void {
 
   .editor-switch--on & {
     left: 17px;
+  }
+}
+
+// Touch-sized variant for the mobile properties dock (44×26, matches the mockup's .switch).
+.editor-switch--large {
+  width: 44px;
+  height: 26px;
+  border-radius: 14px;
+
+  .editor-switch__dot {
+    top: 2px;
+    left: 2px;
+    width: 22px;
+    height: 22px;
+  }
+
+  &.editor-switch--on .editor-switch__dot {
+    left: 20px;
   }
 }
 </style>

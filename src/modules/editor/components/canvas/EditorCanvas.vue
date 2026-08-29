@@ -333,6 +333,7 @@ import type Konva from 'konva'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { useEditorStore } from '../../store/editor.store'
+import { useMobileViewport } from '../../composables/use-mobile-viewport'
 import {
   PHOTO_REPOSITION_WHEEL_ZOOM_STEP,
   SNAP_GRID_SIZE_OPTIONS,
@@ -390,6 +391,7 @@ import { isTextPlaceholderType } from '../../utils/normalize-text-placeholder.ut
 import type { PageElement } from '../../models'
 
 const store = useEditorStore()
+const isMobileViewport = useMobileViewport()
 const { showErrorMessageModal } = useErrorMessageModal()
 
 const containerRef = ref<HTMLElement | null>(null)
@@ -455,7 +457,9 @@ const spreadGridLines = computed(() => {
 const spreadFoldLineConfig = computed(() => buildSpreadFoldLineConfig(store.pageHeight))
 
 const fitScale = computed(() => {
-  const verticalPadding = 48
+  // Smaller on mobile — the bottom dock and header already eat most of the viewport height, so
+  // the generous desktop breathing room (48px above/below) would leave the page looking tiny.
+  const verticalPadding = isMobileViewport.value ? 12 : 48
   const availableWidth = stageSize.value.width
   const availableHeight = stageSize.value.height - verticalPadding * 2
 
@@ -863,7 +867,12 @@ function handleStagePointerDown(event: Konva.KonvaEventObject<MouseEvent | Touch
   if (!event.evt.shiftKey) {
     store.clearSelection()
     store.exitGroupEditingToRoot()
-    store.requestPageProperties()
+
+    // On mobile, an empty-canvas tap should land on the base rail dock (Фото/Текст/.../Страница),
+    // not jump straight into page properties — that's reached explicitly via its own menu item now.
+    if (!isMobileViewport.value) {
+      store.requestPageProperties()
+    }
   }
 
   const pageGroup = getPageGroup(stage)

@@ -11,12 +11,12 @@
           class="editor-layout__back"
         >
           <v-icon size="18">mdi-arrow-left</v-icon>
-          <span>Страницы</span>
+          <span class="editor-layout__back-label">Страницы</span>
         </router-link>
 
-        <div class="editor-layout__divider" aria-hidden="true" />
+        <div class="editor-layout__divider editor-layout__desktop-only" aria-hidden="true" />
 
-        <div class="editor-layout__brand">
+        <div class="editor-layout__brand editor-layout__desktop-only">
           <span class="editor-layout__brand-name">Фолио</span>
           <span class="editor-layout__brand-badge">Editor</span>
         </div>
@@ -56,7 +56,7 @@
           Повторить (Ctrl+Shift+Z)
         </v-tooltip>
 
-        <div class="editor-layout__divider" aria-hidden="true" />
+        <div class="editor-layout__divider editor-layout__group-tools" aria-hidden="true" />
 
         <v-tooltip location="bottom" content-class="editor-tooltip--arrow-bottom">
           <template #activator="{ props: tooltipProps }">
@@ -65,6 +65,7 @@
               icon
               size="small"
               variant="text"
+              class="editor-layout__group-tools"
               :disabled="!store.hasSelection || store.previewMode"
               aria-label="Дублировать (Ctrl+D)"
               @click="store.duplicateElement()"
@@ -82,6 +83,7 @@
               icon
               size="small"
               variant="text"
+              class="editor-layout__group-tools"
               :disabled="store.selectionCount < 2 || store.previewMode"
               aria-label="Сгруппировать (Ctrl+G)"
               @click="store.groupSelection()"
@@ -99,6 +101,7 @@
               icon
               size="small"
               variant="text"
+              class="editor-layout__group-tools"
               :disabled="!canUngroupSelection || store.previewMode"
               aria-label="Разгруппировать (Ctrl+Shift+G)"
               @click="ungroupSelection()"
@@ -121,9 +124,10 @@
       </div>
 
       <div class="editor-layout__header-right">
-        <span class="editor-layout__template-name">{{ store.templateName }}</span>
+        <span class="editor-layout__template-name editor-layout__desktop-only">{{ store.templateName }}</span>
         <v-chip
           v-if="store.isSpreadPage"
+          class="editor-layout__desktop-only"
           size="x-small"
           variant="tonal"
           color="primary"
@@ -131,22 +135,42 @@
         >
           Разворот 2×A4
         </v-chip>
-        <span v-if="store.document" class="editor-layout__page-size">
+        <span v-if="store.document" class="editor-layout__page-size editor-layout__desktop-only">
           {{ store.document.width }}×{{ store.document.height }}
         </span>
-        <v-chip v-if="store.isDirty" size="x-small" variant="tonal" color="warning" label>
+        <v-chip v-if="store.isDirty" class="editor-layout__desktop-only" size="x-small" variant="tonal" color="warning" label>
           Не сохранено
         </v-chip>
         <v-btn
           color="primary"
           size="small"
           prepend-icon="mdi-content-save-outline"
+          class="editor-layout__desktop-only"
           :loading="store.saving"
           :disabled="!store.document || !store.isDirty || store.previewMode"
           @click="handleSave"
         >
           Сохранить
         </v-btn>
+
+        <v-tooltip location="bottom" content-class="editor-tooltip--arrow-bottom">
+          <template #activator="{ props: tooltipProps }">
+            <v-btn
+              v-bind="tooltipProps"
+              icon
+              size="small"
+              variant="text"
+              class="editor-layout__mobile-save"
+              :loading="store.saving"
+              :disabled="!store.document || !store.isDirty || store.previewMode"
+              aria-label="Сохранить"
+              @click="handleSave"
+            >
+              <v-icon size="20">mdi-content-save-outline</v-icon>
+            </v-btn>
+          </template>
+          Сохранить
+        </v-tooltip>
       </div>
     </header>
 
@@ -405,21 +429,49 @@ onUnmounted(() => {
   min-height: 0;
 }
 
+// Mobile-only icon save button, positioned in the top brand row — hidden on desktop, where the
+// original labelled button in .editor-layout__header-right is used instead.
+.editor-layout__mobile-save {
+  display: none;
+}
+
 @include mobile-only {
-  .editor-layout__header {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto auto auto;
-    padding: $spacing-3;
+  // The editor is a fixed-viewport app screen on mobile, not a scrollable document — the header
+  // is a fixed height and .editor-page__canvas/.mobile-dock fill exactly what's left (see
+  // EditorPage.vue), so nothing here should ever need to grow past 100vh. Locking both the exact
+  // height and overflow is a safety net in case something inside briefly overflows anyway.
+  .editor-layout {
+    height: 100vh;
+    min-height: 0;
+    overflow: hidden;
   }
 
-  .editor-layout__header-center {
-    order: 3;
-    flex-wrap: wrap;
+  .editor-layout__main {
+    overflow: hidden;
+  }
+
+  // Single compact row: back arrow — undo/redo — preview — save, everything else that doesn't
+  // fit that sequence (brand, spread/size info, dirty chip, labelled save) is dropped.
+  .editor-layout__header {
+    display: flex;
+    align-items: center;
+    gap: $spacing-2;
+    min-height: auto;
+    padding: $spacing-2 $spacing-3;
   }
 
   .editor-layout__header-right {
-    order: 2;
-    flex-wrap: wrap;
+    margin-left: auto;
+  }
+
+  .editor-layout__mobile-save {
+    display: inline-flex;
+  }
+
+  .editor-layout__back-label,
+  .editor-layout__group-tools,
+  .editor-layout__desktop-only {
+    display: none;
   }
 }
 </style>

@@ -4,32 +4,45 @@
     :class="{
       'editor-page--left-expanded': leftPanelExpanded,
       'editor-page--properties-open': store.showPropertiesPanel,
+      'editor-page--mobile-dock': showMobilePropertiesDock || showMobileLeftDock,
     }"
   >
     <EditorLeftPanel
+      v-if="!showMobileLeftDock"
       class="editor-page__panel editor-page__panel--left"
       @expanded="leftPanelExpanded = $event"
     />
     <EditorPropertiesPanel
-      v-if="store.showPropertiesPanel"
+      v-if="store.showPropertiesPanel && !showMobilePropertiesDock"
       class="editor-page__panel editor-page__panel--properties"
     />
     <section class="editor-page__canvas" aria-label="Холст редактора">
       <EditorCanvas />
     </section>
+    <EditorMobilePropertiesDock v-if="showMobilePropertiesDock" />
+    <EditorMobileLeftDock v-if="showMobileLeftDock" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 
 import EditorCanvas from '../components/canvas/EditorCanvas.vue'
 import EditorLeftPanel from '../components/EditorLeftPanel.vue'
 import EditorPropertiesPanel from '../components/EditorPropertiesPanel.vue'
+import EditorMobilePropertiesDock from '../components/EditorMobilePropertiesDock.vue'
+import EditorMobileLeftDock from '../components/EditorMobileLeftDock.vue'
+import { useMobileViewport } from '../composables/use-mobile-viewport'
 import { useEditorStore } from '../store/editor.store'
 
 const store = useEditorStore()
 const leftPanelExpanded = ref(true)
+const isMobileViewport = useMobileViewport()
+
+const showMobilePropertiesDock = computed(
+  () => isMobileViewport.value && store.showPropertiesPanel && !store.isMultiSelection,
+)
+const showMobileLeftDock = computed(() => isMobileViewport.value && !store.showPropertiesPanel)
 </script>
 
 <style scoped lang="scss">
@@ -105,6 +118,30 @@ const leftPanelExpanded = ref(true)
   .editor-page__canvas {
     order: 3;
     min-height: 420px;
+  }
+}
+
+// Active whenever either bottom dock (element/page properties, or the add-element/layers rail)
+// is showing on a mobile-width viewport — replaces the (untested, roughly-stacked) mobile-only
+// layout above with a full-height canvas and a dock pinned to the bottom.
+.editor-page--mobile-dock {
+  display: flex;
+  flex-direction: column;
+  // 100% of .editor-layout__main (flex:1 in a flex column) rather than calc(100vh - 64px) — the
+  // 64px assumption only holds for the single-row desktop header; on mobile the header reflows
+  // into 2-3 stacked rows (see EditorLayout.vue's mobile-only rule) and is taller, so the fixed
+  // calc left this much shorter than the header actually is, pushing the canvas/dock down and
+  // off-screen.
+  height: 100%;
+  min-height: 0;
+
+  .editor-page__panel--left {
+    display: none;
+  }
+
+  .editor-page__canvas {
+    flex: 1;
+    min-height: 0;
   }
 }
 </style>
