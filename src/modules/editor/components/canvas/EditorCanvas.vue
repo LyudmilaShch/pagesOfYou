@@ -1655,6 +1655,14 @@ onBeforeUnmount(() => {
   &--photo-drop {
     cursor: copy;
   }
+
+  @include mobile-only {
+    // The canvas owns one-finger pan / two-finger pinch-zoom on mobile (see the pointer handlers
+    // in <script>) — without this, the browser's own native scroll/pinch-zoom gesture recognition
+    // competes with our JS for the same touch, fighting our pan and occasionally bouncing the
+    // whole page.
+    touch-action: none;
+  }
 }
 
 .editor-canvas__preview-banner {

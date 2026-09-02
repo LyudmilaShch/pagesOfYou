@@ -444,10 +444,16 @@ onUnmounted(() => {
     height: 100vh;
     min-height: 0;
     overflow: hidden;
+    // Without this, a touch that overscrolls past an inner overflow:hidden boundary (e.g. the
+    // canvas pan hitting its limit) chains the leftover scroll delta up to <body>/<html> — which
+    // still has normal page scrolling for the rest of the app — showing up as the whole page
+    // bouncing/scrolling underneath the editor. Containing it here stops that chain.
+    overscroll-behavior: none;
   }
 
   .editor-layout__main {
     overflow: hidden;
+    overscroll-behavior: none;
   }
 
   // Single compact row: back arrow — undo/redo — preview — save, everything else that doesn't
