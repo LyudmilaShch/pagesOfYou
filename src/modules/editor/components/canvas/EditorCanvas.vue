@@ -167,8 +167,10 @@
       @mousedown="handleStagePointerDown"
       @touchstart="handleStagePointerDown"
       @mousemove="handleStagePointerMove"
+      @touchmove="handleStagePointerMove"
       @mouseup="handleStagePointerUp"
       @touchend="handleStagePointerUp"
+      @touchcancel="handleStagePointerCancel"
       @wheel="handleWheel"
     >
       <v-layer ref="layerRef">
@@ -325,6 +327,22 @@
       allowable
       @allow="store.allowPrintCropViolation()"
     />
+
+    <div
+      v-if="isMobileViewport && store.isSpreadPage"
+      class="editor-canvas__spread-dots"
+      :style="spreadDotsStyle"
+    >
+      <button
+        v-for="side in (['left', 'right'] as const)"
+        :key="side"
+        type="button"
+        class="editor-canvas__spread-dot"
+        :class="{ 'editor-canvas__spread-dot--active': activeSpreadSide === side }"
+        :aria-label="side === 'left' ? 'Левая страница' : 'Правая страница'"
+        @click="goToSpreadSide(side)"
+      />
+    </div>
   </div>
 </template>
 
@@ -335,6 +353,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useEditorStore } from '../../store/editor.store'
 import { useMobileViewport } from '../../composables/use-mobile-viewport'
 import {
+  A4_PAGE_WIDTH,
   PHOTO_REPOSITION_WHEEL_ZOOM_STEP,
   SNAP_GRID_SIZE_OPTIONS,
 } from '../../constants/page.constants'
@@ -351,7 +370,9 @@ import {
   getSpreadPageSheets,
   getSpreadVisualWidth,
   spreadVisualXToLogical,
+  spreadLogicalXToVisual,
 } from '../../utils/spread.util'
+import type { SpreadPageSide } from '../../utils/spread.util'
 import {
   getElementPivotSize,
   prepareInnerNodeForTransformer,
@@ -370,7 +391,7 @@ import {
 } from '../../utils/marquee-selection.util'
 import { isPageBackgroundCropTransformerTarget, isPageBackgroundTarget } from '../../utils/canvas-background.util'
 import type { PageBackgroundCropTarget } from '../../utils/canvas-background.util'
-import { findNodeById } from '../../utils/element-tree.util'
+import { findNodeById, getElementAbsoluteBounds } from '../../utils/element-tree.util'
 import EditorElementNode from './EditorElementNode.vue'
 import SpreadPageBackgroundLayers from './SpreadPageBackgroundLayers.vue'
 import PageBackgroundCropLayer from './PageBackgroundCropLayer.vue'
@@ -456,18 +477,152 @@ const spreadGridLines = computed(() => {
 
 const spreadFoldLineConfig = computed(() => buildSpreadFoldLineConfig(store.pageHeight))
 
+// Smaller on mobile — the bottom dock and header already eat most of the viewport height, so
+// the generous desktop breathing room (48px above/below) would leave the page looking tiny.
+const MOBILE_VERTICAL_PADDING = 12
+
+// The "whole spread, fit to screen" scale/offset — this is where the intro zoom animation
+// starts from, so the user briefly sees the full two-page layout before zooming into a side.
+const mobileSpreadOverviewScale = computed(() => {
+  const availableHeight = stageSize.value.height - MOBILE_VERTICAL_PADDING * 2
+  return Math.min(
+    stageSize.value.width / layoutPageWidth.value,
+    availableHeight / store.pageHeight,
+  )
+})
+
+const mobileSpreadOverviewX = computed(
+  () => (stageSize.value.width - layoutPageWidth.value * mobileSpreadOverviewScale.value) / 2,
+)
+
+// Fits the active page PLUS a visible slice of the next one into the screen width — same for
+// either side, since both page sheets are the same size (see A4_PAGE_WIDTH). Fitting the page's
+// width exactly (1x) read as too tightly zoomed in; showing a real chunk of the neighboring page
+// (not just a thin sliver) makes it obviously a spread and gives more breathing room.
+//
+// The stage has no scroll/pan of its own — whatever doesn't fit vertically at this scale is
+// simply unreachable, not just off-screen — so this must also respect the height constraint the
+// same way the non-spread mobile fit already does, picking whichever axis is smaller. On a tall
+// A4 page that's usually height, which is exactly the point: the WHOLE left page has to fit.
+const MOBILE_SPREAD_PEEK_RATIO = 1.25
+
+const mobileSpreadFocusScale = computed(() => {
+  const availableHeight = stageSize.value.height - MOBILE_VERTICAL_PADDING * 2
+  const widthScale = stageSize.value.width / (A4_PAGE_WIDTH * MOBILE_SPREAD_PEEK_RATIO)
+  const heightScale = availableHeight / store.pageHeight
+
+  return Math.min(widthScale, heightScale)
+})
+
+function mobileSpreadFocusX(side: SpreadPageSide, scale: number): number {
+  const sheet = getSpreadPageSheets(store.pageHeight).find((entry) => entry.key === side)
+  return MOBILE_VERTICAL_PADDING - (sheet?.x ?? 0) * scale
+}
+
+const activeSpreadSide = ref<SpreadPageSide>('left')
+
+// Animated (not derived) scale/x for a mobile spread — tweened via runSpreadAnimation below,
+// both between the two states above on first open, and between left/right on dot navigation.
+const animatedSpreadScale = ref(0)
+const animatedSpreadX = ref(0)
+let spreadIntroPlayed = false
+
+// Shared RAF + ease-out-cubic tween over an arbitrary tuple of numbers — used both for the spread
+// intro/pagination animation below and for the item-5 "auto-frame selection" viewport animation.
+function tweenValues(from: number[], to: number[], duration: number, onTick: (values: number[]) => void): void {
+  const startTime = performance.now()
+
+  function tick(now: number): void {
+    const t = Math.min(1, (now - startTime) / duration)
+    const eased = 1 - (1 - t) ** 3
+
+    onTick(from.map((value, index) => value + (to[index] - value) * eased))
+
+    if (t < 1) {
+      requestAnimationFrame(tick)
+    }
+  }
+
+  requestAnimationFrame(tick)
+}
+
+function runSpreadAnimation(
+  fromScale: number,
+  fromX: number,
+  toScale: number,
+  toX: number,
+  duration = 550,
+): void {
+  tweenValues([fromScale, fromX], [toScale, toX], duration, ([scale, x]) => {
+    animatedSpreadScale.value = scale
+    animatedSpreadX.value = x
+  })
+}
+
+function goToSpreadSide(side: SpreadPageSide): void {
+  if (side === activeSpreadSide.value) {
+    return
+  }
+
+  // Switching sides always lands on a clean, unpanned/unzoomed framing — otherwise a leftover
+  // pinch/pan from the previous side would carry over and the new side wouldn't actually be
+  // "focused" the way the animation implies.
+  store.resetViewport()
+
+  const scale = mobileSpreadFocusScale.value
+  activeSpreadSide.value = side
+  runSpreadAnimation(
+    animatedSpreadScale.value,
+    animatedSpreadX.value,
+    scale,
+    mobileSpreadFocusX(side, scale),
+  )
+}
+
+function maybePlaySpreadIntro(): void {
+  if (!isMobileViewport.value || !store.isSpreadPage || spreadIntroPlayed) {
+    return
+  }
+
+  // stageSize starts at a desktop-sized placeholder (see its ref default) until
+  // updateStageSize() runs in onMounted — computing the overview/focus values before that
+  // measurement lands would snapshot this animation against the wrong container size, and
+  // since it's a one-shot imperative tween (not a reactive binding), it would never self-correct
+  // afterward. Callers must only invoke this once a real measurement is in.
+  if (!containerRef.value || stageSize.value.width !== containerRef.value.clientWidth) {
+    return
+  }
+
+  spreadIntroPlayed = true
+  const targetScale = mobileSpreadFocusScale.value
+  animatedSpreadScale.value = mobileSpreadOverviewScale.value
+  animatedSpreadX.value = mobileSpreadOverviewX.value
+  runSpreadAnimation(
+    mobileSpreadOverviewScale.value,
+    mobileSpreadOverviewX.value,
+    targetScale,
+    mobileSpreadFocusX('left', targetScale),
+    700,
+  )
+}
+
+// Covers the document loading asynchronously (store.isSpreadPage flips true after mount).
+watch(() => isMobileViewport.value && store.isSpreadPage, maybePlaySpreadIntro)
+
 const fitScale = computed(() => {
-  // Smaller on mobile — the bottom dock and header already eat most of the viewport height, so
-  // the generous desktop breathing room (48px above/below) would leave the page looking tiny.
-  const verticalPadding = isMobileViewport.value ? 12 : 48
+  if (isMobileViewport.value && store.isSpreadPage) {
+    return animatedSpreadScale.value
+  }
+
+  const verticalPadding = isMobileViewport.value ? MOBILE_VERTICAL_PADDING : 48
   const availableWidth = stageSize.value.width
   const availableHeight = stageSize.value.height - verticalPadding * 2
 
-  return Math.min(
-    availableWidth / layoutPageWidth.value,
-    availableHeight / store.pageHeight,
-    1,
-  )
+  const rawScale = Math.min(availableWidth / layoutPageWidth.value, availableHeight / store.pageHeight)
+
+  // The 1x cap keeps desktop from ever zooming a page in past its real size; on mobile we want
+  // the page to fill the screen at whatever scale that takes.
+  return isMobileViewport.value ? rawScale : Math.min(rawScale, 1)
 })
 
 const pageScale = computed(() => fitScale.value * store.canvasZoom)
@@ -549,10 +704,27 @@ const smartGuidesGroupConfig = computed(() => ({
   visible: smartGuideLineConfigs.value.length > 0 && !store.previewMode,
 }))
 
-const pageOffset = computed(() => ({
-  x: (stageSize.value.width - layoutPageWidth.value * pageScale.value) / 2,
-  y: (stageSize.value.height - store.pageHeight * pageScale.value) / 2,
-}))
+const pageOffset = computed(() => {
+  // On mobile with a spread, x tracks the animated pan (intro zoom + side navigation) computed
+  // above — the full two-page spread is wider than the screen at focus scale, so centering it
+  // would push the active side off-screen instead of showing it in full.
+  const x =
+    isMobileViewport.value && store.isSpreadPage
+      ? animatedSpreadX.value
+      : (stageSize.value.width - layoutPageWidth.value * pageScale.value) / 2
+
+  // On mobile, anchor the page near the top instead of vertically centering it — when the
+  // page's aspect ratio doesn't match the available area, centering splits the leftover space
+  // evenly above and below, which reads as a large, wasteful gap under the header. Pinning it to
+  // a small fixed top padding lets any leftover space fall below the page instead.
+  const y = isMobileViewport.value
+    ? MOBILE_VERTICAL_PADDING
+    : (stageSize.value.height - store.pageHeight * pageScale.value) / 2
+
+  // viewportPanX/Y are mobile-only pan state (see editor.store.ts) — deliberately never touched
+  // on desktop, where there is no pan gesture to produce a non-zero value in the first place.
+  return { x: x + store.viewportPanX, y: y + store.viewportPanY }
+})
 
 const stageConfig = computed(() => ({
   width: stageSize.value.width,
@@ -565,6 +737,69 @@ const pageGroupConfig = computed(() => ({
   y: pageOffset.value.y,
   scaleX: pageScale.value,
   scaleY: pageScale.value,
+}))
+
+function runViewportPanAnimation(fromX: number, fromY: number, toX: number, toY: number): void {
+  tweenValues([fromX, fromY], [toX, toY], 400, ([x, y]) => {
+    store.setViewportPan(x, y)
+  })
+}
+
+// Item 5: once a single element is tap-selected on mobile, bring it into a "comfortable" area of
+// the viewport — one not covered by the properties dock that's about to slide up from the bottom.
+function frameElementIntoView(id: string): void {
+  const bounds = getElementAbsoluteBounds(store.elements, id)
+  const visualX = spreadLogicalXToVisual(bounds.x, store.pageWidth, store.pageHeight, bounds.width)
+
+  const scale = pageScale.value
+  const offset = pageOffset.value
+
+  const screenLeft = offset.x + visualX * scale
+  const screenTop = offset.y + bounds.y * scale
+  const screenRight = screenLeft + bounds.width * scale
+  const screenBottom = screenTop + bounds.height * scale
+
+  const comfortableLeft = MOBILE_VERTICAL_PADDING
+  const comfortableRight = stageSize.value.width - MOBILE_VERTICAL_PADDING
+  const comfortableTop = MOBILE_VERTICAL_PADDING
+  const comfortableBottom = stageSize.value.height - store.mobileDockOccludedHeight - MOBILE_VERTICAL_PADDING
+
+  const alreadyComfortable =
+    screenLeft >= comfortableLeft &&
+    screenRight <= comfortableRight &&
+    screenTop >= comfortableTop &&
+    screenBottom <= comfortableBottom
+
+  if (alreadyComfortable) {
+    return
+  }
+
+  const targetPanX =
+    store.viewportPanX + ((comfortableLeft + comfortableRight) / 2 - (screenLeft + screenRight) / 2)
+  const targetPanY =
+    store.viewportPanY + ((comfortableTop + comfortableBottom) / 2 - (screenTop + screenBottom) / 2)
+
+  runViewportPanAnimation(store.viewportPanX, store.viewportPanY, targetPanX, targetPanY)
+}
+
+// Only reacts to an actual new tap-selection (mobile, single element, outside multi-select mode) —
+// setLiveDragPosition/updateElement never touch selectedElementIds, so dragging an already-selected
+// element never retriggers this.
+watch(
+  () => (isMobileViewport.value && !store.multiSelectMode ? store.selectedElementIds[0] ?? null : null),
+  (id) => {
+    if (id) {
+      frameElementIntoView(id)
+    }
+  },
+)
+
+// The pagination dots float at a fixed screen position, but the mobile bottom docks are
+// position:fixed with a higher z-index and can cover that same spot — lifting the dots above
+// whichever dock is currently open (its live height, reported into the store) keeps them visible
+// and out of the way, rather than just raising z-index and letting them sit on top of dock content.
+const spreadDotsStyle = computed(() => ({
+  bottom: `${10 + store.mobileDockOccludedHeight}px`,
 }))
 
 const pageClipConfig = computed(() => ({
@@ -688,6 +923,144 @@ const marqueeState = ref<{
   start: PagePointer
   current: PagePointer
 } | null>(null)
+
+// Mobile-only background gesture (one-finger pan / two-finger pinch-zoom). Kept separate from
+// marqueeState (desktop-only) rather than unified, since the two gestures are mutually exclusive
+// per viewport and mixing them into one state shape would just add unused fields to both branches.
+type MobileBackgroundGesture =
+  | { mode: 'pending'; startClientX: number; startClientY: number; startPan: { x: number; y: number } }
+  | { mode: 'pan'; lastClientX: number; lastClientY: number }
+  | { mode: 'pinch'; lastDist: number }
+
+const mobileBackgroundGesture = ref<MobileBackgroundGesture | null>(null)
+// Screen px a single touch must travel before "maybe a tap" commits to "this is a pan" — mirrors
+// the role of MARQUEE_MIN_SIZE, but in client space (zoom-independent) rather than page space.
+const PAN_START_THRESHOLD_PX = 6
+
+function getTouches(evt: MouseEvent | TouchEvent): TouchList | null {
+  return 'touches' in evt ? evt.touches : null
+}
+
+function touchDistance(touches: TouchList): number {
+  return Math.hypot(
+    touches[0].clientX - touches[1].clientX,
+    touches[0].clientY - touches[1].clientY,
+  )
+}
+
+function touchMidpoint(touches: TouchList): { x: number; y: number } {
+  return {
+    x: (touches[0].clientX + touches[1].clientX) / 2,
+    y: (touches[0].clientY + touches[1].clientY) / 2,
+  }
+}
+
+function startMobileBackgroundGesture(event: Konva.KonvaEventObject<MouseEvent | TouchEvent>): void {
+  // Crop-editing already returned earlier in handleStagePointerDown; text-edit and photo-dim
+  // overlays float above the canvas and own their own gestures while active.
+  if (store.textEditingElementId || store.photoDimElementId) {
+    return
+  }
+
+  const touches = getTouches(event.evt)
+
+  if (touches && touches.length >= 2) {
+    mobileBackgroundGesture.value = { mode: 'pinch', lastDist: touchDistance(touches) }
+    return
+  }
+
+  const point = touches ? touches[0] : (event.evt as MouseEvent)
+
+  mobileBackgroundGesture.value = {
+    mode: 'pending',
+    startClientX: point.clientX,
+    startClientY: point.clientY,
+    startPan: { x: store.viewportPanX, y: store.viewportPanY },
+  }
+}
+
+function applyPinchZoom(dist: number, midClient: { x: number; y: number }): void {
+  const gesture = mobileBackgroundGesture.value
+  if (!gesture || gesture.mode !== 'pinch' || !containerRef.value || gesture.lastDist <= 0 || dist <= 0) {
+    return
+  }
+
+  const rect = containerRef.value.getBoundingClientRect()
+  const midStage = { x: midClient.x - rect.left, y: midClient.y - rect.top }
+
+  // Anchor math: find the page-local point currently under the fingers' midpoint, apply the zoom
+  // step, then solve the pan that puts that same page-local point back under the (possibly moved)
+  // midpoint. Recomputing the anchor fresh each frame from the previous frame's actual rendered
+  // transform means a drifting midpoint (fingers moving together, not just apart) pans for free.
+  const beforeOffset = pageOffset.value
+  const beforeScale = pageScale.value
+  const anchorPageX = (midStage.x - beforeOffset.x) / beforeScale
+  const anchorPageY = (midStage.y - beforeOffset.y) / beforeScale
+
+  const oldPanX = store.viewportPanX
+  const oldPanY = store.viewportPanY
+
+  store.setCanvasZoom(store.canvasZoom * (dist / gesture.lastDist))
+
+  const afterScale = pageScale.value
+  const desiredX = midStage.x - anchorPageX * afterScale
+  const desiredY = midStage.y - anchorPageY * afterScale
+  const afterOffset = pageOffset.value // same base as before, still using the old pan
+
+  store.setViewportPan(oldPanX + (desiredX - afterOffset.x), oldPanY + (desiredY - afterOffset.y))
+}
+
+function updateMobileBackgroundGesture(event: Konva.KonvaEventObject<MouseEvent | TouchEvent>): void {
+  const gesture = mobileBackgroundGesture.value
+  if (!gesture) {
+    return
+  }
+
+  const touches = getTouches(event.evt)
+
+  if (touches && touches.length >= 2) {
+    const dist = touchDistance(touches)
+
+    if (gesture.mode !== 'pinch') {
+      mobileBackgroundGesture.value = { mode: 'pinch', lastDist: dist }
+      return
+    }
+
+    applyPinchZoom(dist, touchMidpoint(touches))
+    mobileBackgroundGesture.value = { mode: 'pinch', lastDist: dist }
+    return
+  }
+
+  const point = touches ? touches[0] : (event.evt as MouseEvent)
+  const clientX = point.clientX
+  const clientY = point.clientY
+
+  if (gesture.mode === 'pinch') {
+    // Dropped from two touches to one/zero mid-gesture — continue as a pan rather than re-arming
+    // the tap threshold, since a multi-touch gesture has already committed to "not a tap".
+    mobileBackgroundGesture.value = { mode: 'pan', lastClientX: clientX, lastClientY: clientY }
+    return
+  }
+
+  if (gesture.mode === 'pending') {
+    const dx = clientX - gesture.startClientX
+    const dy = clientY - gesture.startClientY
+
+    if (Math.hypot(dx, dy) < PAN_START_THRESHOLD_PX) {
+      return
+    }
+
+    store.setViewportPan(gesture.startPan.x + dx, gesture.startPan.y + dy)
+    mobileBackgroundGesture.value = { mode: 'pan', lastClientX: clientX, lastClientY: clientY }
+    return
+  }
+
+  store.setViewportPan(
+    store.viewportPanX + (clientX - gesture.lastClientX),
+    store.viewportPanY + (clientY - gesture.lastClientY),
+  )
+  mobileBackgroundGesture.value = { mode: 'pan', lastClientX: clientX, lastClientY: clientY }
+}
 
 const marqueeRectConfig = computed(() => {
   if (!marqueeState.value?.active) {
@@ -868,11 +1241,26 @@ function handleStagePointerDown(event: Konva.KonvaEventObject<MouseEvent | Touch
     store.clearSelection()
     store.exitGroupEditingToRoot()
 
+    // A background tap while building a mobile multi-selection should close the action bar
+    // outright, not leave it hanging open showing "Выбрано: 0" (clearSelection alone drops the
+    // count but multiSelectMode stays on, so the bar's root condition still holds).
+    if (store.multiSelectMode) {
+      store.exitMultiSelectMode()
+    }
+
     // On mobile, an empty-canvas tap should land on the base rail dock (Фото/Текст/.../Страница),
     // not jump straight into page properties — that's reached explicitly via its own menu item now.
     if (!isMobileViewport.value) {
       store.requestPageProperties()
     }
+  }
+
+  // On mobile, background drag means "pan the viewport", not "drag a marquee rectangle" — the two
+  // can't share one gesture, and mobile multi-select is already tap-to-toggle (EditorMobileMultiSelectBar),
+  // not drag-a-rectangle, so nothing is lost by skipping marqueeState here.
+  if (isMobileViewport.value) {
+    startMobileBackgroundGesture(event)
+    return
   }
 
   const pageGroup = getPageGroup(stage)
@@ -890,6 +1278,11 @@ function handleStagePointerDown(event: Konva.KonvaEventObject<MouseEvent | Touch
 }
 
 function handleStagePointerMove(event: Konva.KonvaEventObject<MouseEvent | TouchEvent>): void {
+  if (mobileBackgroundGesture.value) {
+    updateMobileBackgroundGesture(event)
+    return
+  }
+
   if (!marqueeState.value) {
     return
   }
@@ -910,6 +1303,25 @@ function handleStagePointerMove(event: Konva.KonvaEventObject<MouseEvent | Touch
 }
 
 function handleStagePointerUp(event: Konva.KonvaEventObject<MouseEvent | TouchEvent>): void {
+  if (mobileBackgroundGesture.value) {
+    const touches = getTouches(event.evt)
+
+    // touchend fires per lifted finger — if others remain, this is a pinch dropping to a pan, not
+    // the end of the whole gesture (the next touchmove would otherwise never get a chance to make
+    // that transition, since it only fires once a gesture is already active).
+    if (touches && touches.length > 0) {
+      mobileBackgroundGesture.value = {
+        mode: 'pan',
+        lastClientX: touches[0].clientX,
+        lastClientY: touches[0].clientY,
+      }
+      return
+    }
+
+    mobileBackgroundGesture.value = null
+    return
+  }
+
   if (!marqueeState.value) {
     return
   }
@@ -926,6 +1338,11 @@ function handleStagePointerUp(event: Konva.KonvaEventObject<MouseEvent | TouchEv
     }
   }
 
+  marqueeState.value = null
+}
+
+function handleStagePointerCancel(): void {
+  mobileBackgroundGesture.value = null
   marqueeState.value = null
 }
 
@@ -1203,6 +1620,7 @@ function handleCanvasKeydown(event: KeyboardEvent): void {
 
 onMounted(() => {
   updateStageSize()
+  maybePlaySpreadIntro()
 
   if (containerRef.value) {
     resizeObserver = new ResizeObserver(updateStageSize)
@@ -1226,6 +1644,8 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped lang="scss">
+@use '@/modules/editor/styles/properties-panel-theme' as pp;
+
 .editor-canvas {
   position: relative;
   width: 100%;
@@ -1340,6 +1760,37 @@ onBeforeUnmount(() => {
   &:disabled {
     opacity: 0.5;
     cursor: default;
+  }
+}
+
+.editor-canvas__spread-dots {
+  position: absolute;
+  left: 50%;
+  // bottom is set inline (spreadDotsStyle) — it tracks whichever mobile dock is currently open.
+  transform: translateX(-50%);
+  z-index: 21;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(13, 13, 13, 0.55);
+  backdrop-filter: blur(2px);
+}
+
+.editor-canvas__spread-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: none;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.45);
+  cursor: pointer;
+  transition: background-color 0.15s ease, transform 0.15s ease;
+
+  &--active {
+    background: pp.$accent;
+    transform: scale(1.3);
   }
 }
 </style>

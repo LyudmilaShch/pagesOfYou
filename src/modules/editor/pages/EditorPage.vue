@@ -4,7 +4,7 @@
     :class="{
       'editor-page--left-expanded': leftPanelExpanded,
       'editor-page--properties-open': store.showPropertiesPanel,
-      'editor-page--mobile-dock': showMobilePropertiesDock || showMobileLeftDock,
+      'editor-page--mobile-dock': showMobilePropertiesDock || showMobileLeftDock || showMobileMultiSelectBar,
     }"
   >
     <EditorLeftPanel
@@ -13,7 +13,7 @@
       @expanded="leftPanelExpanded = $event"
     />
     <EditorPropertiesPanel
-      v-if="store.showPropertiesPanel && !showMobilePropertiesDock"
+      v-if="store.showPropertiesPanel && !showMobilePropertiesDock && !showMobileMultiSelectBar"
       class="editor-page__panel editor-page__panel--properties"
     />
     <section class="editor-page__canvas" aria-label="Холст редактора">
@@ -21,6 +21,7 @@
     </section>
     <EditorMobilePropertiesDock v-if="showMobilePropertiesDock" />
     <EditorMobileLeftDock v-if="showMobileLeftDock" />
+    <EditorMobileMultiSelectBar v-if="showMobileMultiSelectBar" />
   </div>
 </template>
 
@@ -32,6 +33,7 @@ import EditorLeftPanel from '../components/EditorLeftPanel.vue'
 import EditorPropertiesPanel from '../components/EditorPropertiesPanel.vue'
 import EditorMobilePropertiesDock from '../components/EditorMobilePropertiesDock.vue'
 import EditorMobileLeftDock from '../components/EditorMobileLeftDock.vue'
+import EditorMobileMultiSelectBar from '../components/EditorMobileMultiSelectBar.vue'
 import { useMobileViewport } from '../composables/use-mobile-viewport'
 import { useEditorStore } from '../store/editor.store'
 
@@ -39,10 +41,20 @@ const store = useEditorStore()
 const leftPanelExpanded = ref(true)
 const isMobileViewport = useMobileViewport()
 
-const showMobilePropertiesDock = computed(
-  () => isMobileViewport.value && store.showPropertiesPanel && !store.isMultiSelection,
+// True either because the user explicitly entered multi-select mode (mobile "Выбрать несколько"),
+// or because the current selection just IS multiple elements for some other reason (ungroup,
+// marquee-drag on the canvas) — both cases need the same bar, so this is the one flag the other
+// two mobile docks below exclude. A plain derived value, not state kept in sync via a watcher:
+// isMultiSelection already reacts to every path that changes the selection.
+const showMobileMultiSelectBar = computed(
+  () => isMobileViewport.value && (store.multiSelectMode || store.isMultiSelection),
 )
-const showMobileLeftDock = computed(() => isMobileViewport.value && !store.showPropertiesPanel)
+const showMobilePropertiesDock = computed(
+  () => isMobileViewport.value && store.showPropertiesPanel && !showMobileMultiSelectBar.value,
+)
+const showMobileLeftDock = computed(
+  () => isMobileViewport.value && !store.showPropertiesPanel && !showMobileMultiSelectBar.value,
+)
 </script>
 
 <style scoped lang="scss">

@@ -145,6 +145,12 @@ export const useEditorStore = defineStore('editor', () => {
   const isDirty = ref(false)
   const previewMode = ref(false)
   const canvasZoom = ref(1)
+  // Viewport state (mobile pan/pinch-zoom) — sibling to canvasZoom, deliberately never part of
+  // CanvasSnapshot/history: pan/zoom describe how the user is looking at the document, not the
+  // document itself.
+  const viewportPanX = ref(0)
+  const viewportPanY = ref(0)
+  const mobileDockOccludedHeight = ref(0)
   const snapToGridEnabled = ref(true)
   const snapGridSize = ref(DEFAULT_SNAP_GRID_SIZE)
   const smartGuidesEnabled = ref(true)
@@ -169,6 +175,18 @@ export const useEditorStore = defineStore('editor', () => {
    * only an explicit background click, or an actual selection, should. Cleared once the user
    * deliberately navigates to a left-panel rail category. */
   const pagePropertiesRequested = ref(false)
+
+  /** Mobile-only: while true, tapping any element toggles it into/out of the selection instead
+   * of replacing it (there's no shift key on touch to hold for the equivalent desktop gesture). */
+  const multiSelectMode = ref(false)
+
+  function enterMultiSelectMode(): void {
+    multiSelectMode.value = true
+  }
+
+  function exitMultiSelectMode(): void {
+    multiSelectMode.value = false
+  }
 
   const historyPast = ref<CanvasSnapshot[]>([])
   const historyFuture = ref<CanvasSnapshot[]>([])
@@ -2122,6 +2140,21 @@ export const useEditorStore = defineStore('editor', () => {
     canvasZoom.value = 1
   }
 
+  function setViewportPan(x: number, y: number): void {
+    viewportPanX.value = x
+    viewportPanY.value = y
+  }
+
+  function resetViewport(): void {
+    viewportPanX.value = 0
+    viewportPanY.value = 0
+    canvasZoom.value = 1
+  }
+
+  function setMobileDockOccludedHeight(px: number): void {
+    mobileDockOccludedHeight.value = px
+  }
+
   function toggleSnapToGrid(): void {
     snapToGridEnabled.value = !snapToGridEnabled.value
   }
@@ -2289,6 +2322,9 @@ export const useEditorStore = defineStore('editor', () => {
     isDirty,
     previewMode,
     canvasZoom,
+    viewportPanX,
+    viewportPanY,
+    mobileDockOccludedHeight,
     snapToGridEnabled,
     snapGridSize,
     smartGuidesEnabled,
@@ -2316,6 +2352,9 @@ export const useEditorStore = defineStore('editor', () => {
     requestPageProperties,
     dismissPageProperties,
     closePropertiesPanel,
+    multiSelectMode,
+    enterMultiSelectMode,
+    exitMultiSelectMode,
     pageWidth,
     pageHeight,
     backgroundColor,
@@ -2406,6 +2445,9 @@ export const useEditorStore = defineStore('editor', () => {
     zoomIn,
     zoomOut,
     resetCanvasZoom,
+    setViewportPan,
+    resetViewport,
+    setMobileDockOccludedHeight,
     toggleSnapToGrid,
     setSnapGridSize,
     setSmartGuideLines,

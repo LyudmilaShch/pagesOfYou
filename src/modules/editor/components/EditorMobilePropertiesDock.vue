@@ -7,7 +7,7 @@
   >
 
       <div
-        v-if="expanded"
+        v-if="expanded || moreOpen"
         class="mobile-dock__handle"
         @pointerdown="onHandlePointerDown"
         @pointermove="onHandlePointerMove"
@@ -559,31 +559,60 @@
             </template>
 
             <!-- ============ POSITION (shared) ============ -->
+            <!-- Block order mirrors EditorPositionFields.vue (desktop) exactly: X/Y, W/H,
+                 rotation, then alignment — keep the two in sync when either one changes. The
+                 layer cluster (visibility/lock/reorder) below has no desktop counterpart here —
+                 those live only in the Layers panel on desktop — this is a mobile-only addition
+                 for quick access without leaving the properties dock. -->
             <template v-if="selected && activeCategory === 'position'">
-              <p class="mobile-dock__label-static">Выравнивание</p>
-              <div class="mobile-dock__align-canvas-row">
-                <button type="button" class="mobile-dock__align-canvas-btn" aria-label="По центру по горизонтали" @click="alignToPageCenter('horizontal')">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 4v16" /><path d="M3 12h6M9 12l-2.5-2.5M9 12l-2.5 2.5" /><path d="M21 12h-6M15 12l2.5-2.5M15 12l2.5 2.5" /></svg>
-                </button>
-                <button type="button" class="mobile-dock__align-canvas-btn" aria-label="По центру по вертикали" @click="alignToPageCenter('vertical')">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 12h16" /><path d="M12 3v6M12 9l-2.5-2.5M12 9l2.5-2.5" /><path d="M12 21v-6M12 15l-2.5 2.5M12 15l2.5 2.5" /></svg>
-                </button>
-                <button type="button" class="mobile-dock__align-canvas-btn" aria-label="По центру страницы" @click="alignToPageCenter('both')">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="8" /><path d="M12 2v4M12 18v4M2 12h4M18 12h4" /></svg>
-                </button>
+              <div class="mobile-dock__dim-row">
+                <label class="mobile-dock__dim-field">
+                  <span class="mobile-dock__dim-label">X</span>
+                  <input
+                    type="number"
+                    :value="displayPositionX"
+                    @change="updatePosition('x', ($event.target as HTMLInputElement).value)"
+                  />
+                </label>
+                <label class="mobile-dock__dim-field">
+                  <span class="mobile-dock__dim-label">Y</span>
+                  <input
+                    type="number"
+                    :value="selected.position.y"
+                    @change="updatePosition('y', ($event.target as HTMLInputElement).value)"
+                  />
+                </label>
+              </div>
+              <div class="mobile-dock__dim-row">
+                <label class="mobile-dock__dim-field">
+                  <span class="mobile-dock__dim-label">W</span>
+                  <input
+                    type="number"
+                    :value="selected.size.width"
+                    @change="updateSize('width', ($event.target as HTMLInputElement).value)"
+                  />
+                </label>
+                <label class="mobile-dock__dim-field">
+                  <span class="mobile-dock__dim-label">H</span>
+                  <input
+                    type="number"
+                    :value="selected.size.height"
+                    @change="updateSize('height', ($event.target as HTMLInputElement).value)"
+                  />
+                </label>
               </div>
 
-              <p class="mobile-dock__label-static">Поворот</p>
-              <div class="mobile-dock__size-row">
-                <div class="mobile-dock__size-box">
+              <div class="mobile-dock__rotation-row">
+                <label class="mobile-dock__angle-field">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9a8 8 0 1 1 1.3 7.7" /><path d="M4 4v5h5" /></svg>
                   <input
                     type="number"
                     :value="displayRotation"
                     @change="updateRotation(($event.target as HTMLInputElement).value)"
                   />
-                  <span class="mobile-dock__unit">°</span>
-                </div>
-                <div class="mobile-dock__stepper">
+                  <span class="mobile-dock__unit mobile-dock__unit--inline">°</span>
+                </label>
+                <div class="mobile-dock__stepper mobile-dock__stepper--inline">
                   <button type="button" aria-label="Увеличить" @click="updateRotation(displayRotation + 1)">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 15l7-7 7 7" /></svg>
                   </button>
@@ -591,46 +620,63 @@
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 9l7 7 7-7" /></svg>
                   </button>
                 </div>
-                <button type="button" class="mobile-dock__align-canvas-btn mobile-dock__align-canvas-btn--sm" aria-label="Повернуть на -90°" @click="rotateBy(-90)">
+                <button type="button" class="mobile-dock__align-canvas-btn mobile-dock__align-canvas-btn--sm" aria-label="Повернуть на -45°" @click="rotateBy(-45)">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 9a8 8 0 1 1 1.3 7.7" /><path d="M4 4v5h5" /></svg>
                 </button>
-                <button type="button" class="mobile-dock__align-canvas-btn mobile-dock__align-canvas-btn--sm" aria-label="Повернуть на +90°" @click="rotateBy(90)">
+                <button type="button" class="mobile-dock__align-canvas-btn mobile-dock__align-canvas-btn--sm" aria-label="Повернуть на +45°" @click="rotateBy(45)">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M20 9a8 8 0 1 0-1.3 7.7" /><path d="M20 4v5h-5" /></svg>
                 </button>
               </div>
 
-              <div class="mobile-dock__mini-row">
-                <span class="mobile-dock__mini-label">{{ positionLabel }}</span>
-                <div class="mobile-dock__mini-num-row">
-                  <input
-                    class="mobile-dock__mini-num-field"
-                    type="number"
-                    :value="displayPositionX"
-                    @change="updatePosition('x', ($event.target as HTMLInputElement).value)"
-                  />
-                  <input
-                    class="mobile-dock__mini-num-field"
-                    type="number"
-                    :value="selected.position.y"
-                    @change="updatePosition('y', ($event.target as HTMLInputElement).value)"
-                  />
+              <div class="mobile-dock__align-cluster-row">
+                <div class="mobile-dock__align-group">
+                  <p class="mobile-dock__label-static">Выравнивание</p>
+                  <div class="mobile-dock__align-canvas-row">
+                    <button type="button" class="mobile-dock__align-canvas-btn" aria-label="По центру по горизонтали" @click="alignToPageCenter('horizontal')">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 4v16" /><path d="M3 12h6M9 12l-2.5-2.5M9 12l-2.5 2.5" /><path d="M21 12h-6M15 12l2.5-2.5M15 12l2.5 2.5" /></svg>
+                    </button>
+                    <button type="button" class="mobile-dock__align-canvas-btn" aria-label="По центру по вертикали" @click="alignToPageCenter('vertical')">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 12h16" /><path d="M12 3v6M12 9l-2.5-2.5M12 9l2.5-2.5" /><path d="M12 21v-6M12 15l-2.5 2.5M12 15l2.5 2.5" /></svg>
+                    </button>
+                    <button type="button" class="mobile-dock__align-canvas-btn" aria-label="По центру страницы" @click="alignToPageCenter('both')">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="8" /><path d="M12 2v4M12 18v4M2 12h4M18 12h4" /></svg>
+                    </button>
+                  </div>
                 </div>
-              </div>
-              <div class="mobile-dock__mini-row">
-                <span class="mobile-dock__mini-label">Ширина / Высота</span>
-                <div class="mobile-dock__mini-num-row">
-                  <input
-                    class="mobile-dock__mini-num-field"
-                    type="number"
-                    :value="selected.size.width"
-                    @change="updateSize('width', ($event.target as HTMLInputElement).value)"
-                  />
-                  <input
-                    class="mobile-dock__mini-num-field"
-                    type="number"
-                    :value="selected.size.height"
-                    @change="updateSize('height', ($event.target as HTMLInputElement).value)"
-                  />
+
+                <div class="mobile-dock__cluster-group">
+                  <p class="mobile-dock__label-static">Слой</p>
+                  <div class="mobile-dock__cluster">
+                    <button
+                      type="button"
+                      class="mobile-dock__cluster-btn"
+                      :class="{ active: !selected.visible }"
+                      :aria-label="selected.visible ? 'Скрыть' : 'Показать'"
+                      :title="selected.visible ? 'Скрыть' : 'Показать'"
+                      @click="toggleElementVisible"
+                    >
+                      <v-icon size="16">{{ selected.visible ? 'mdi-eye-outline' : 'mdi-eye-off-outline' }}</v-icon>
+                    </button>
+                    <button
+                      type="button"
+                      class="mobile-dock__cluster-btn"
+                      :class="{ active: selected.locked }"
+                      :aria-label="selected.locked ? 'Разблокировать' : 'Заблокировать'"
+                      :title="selected.locked ? 'Разблокировать' : 'Заблокировать'"
+                      @click="toggleElementLocked"
+                    >
+                      <v-icon size="16">{{ selected.locked ? 'mdi-lock-outline' : 'mdi-lock-open-variant-outline' }}</v-icon>
+                    </button>
+
+                    <div class="mobile-dock__cluster-sep" />
+
+                    <button type="button" class="mobile-dock__cluster-btn" aria-label="На слой назад" title="На слой назад" @click="moveLayerBackward">
+                      <v-icon size="16">mdi-arrange-send-backward</v-icon>
+                    </button>
+                    <button type="button" class="mobile-dock__cluster-btn" aria-label="На слой вперед" title="На слой вперед" @click="moveLayerForward">
+                      <v-icon size="16">mdi-arrange-bring-forward</v-icon>
+                    </button>
+                  </div>
                 </div>
               </div>
             </template>
@@ -638,6 +684,13 @@
           </template>
 
         </div>
+      </div>
+
+      <div v-if="selected && moreOpen" class="mobile-dock__more">
+        <button type="button" class="mobile-dock__more-item" @click="onSelectMultiple">
+          <v-icon size="18">mdi-checkbox-multiple-marked-outline</v-icon>
+          Выбрать несколько
+        </button>
       </div>
 
       <div class="mobile-dock__chip-strip">
@@ -656,6 +709,16 @@
         <template v-if="selected">
           <div class="mobile-dock__chip-sep" />
 
+          <button
+            v-if="isGroupElement"
+            type="button"
+            class="mobile-dock__chip"
+            :disabled="store.previewMode"
+            @click="handleUngroup"
+          >
+            <v-icon size="20">mdi-ungroup</v-icon>
+            <span>Разгруппировать</span>
+          </button>
           <button type="button" class="mobile-dock__chip" :disabled="store.previewMode" @click="handleDuplicate">
             <v-icon size="20">mdi-content-copy</v-icon>
             <span>Дублировать</span>
@@ -663,6 +726,10 @@
           <button type="button" class="mobile-dock__chip mobile-dock__chip--danger" :disabled="store.previewMode" @click="handleRemove">
             <v-icon size="20">mdi-delete-outline</v-icon>
             <span>Удалить</span>
+          </button>
+          <button type="button" class="mobile-dock__chip" :class="{ active: moreOpen }" @click="moreOpen = !moreOpen">
+            <v-icon size="20">mdi-dots-horizontal</v-icon>
+            <span>Еще</span>
           </button>
         </template>
       </div>
@@ -710,7 +777,6 @@ import { PAGE_BACKGROUND_IMAGE_FIT_OPTIONS } from '../models/page-background.mod
 import type { PageBackgroundImageFit } from '../models/page-background.model'
 import {
   getSpreadPageSide,
-  getSpreadPageSideLabel,
   spreadGlobalXToPageLocal,
   spreadPageLocalXToGlobal,
 } from '../utils/spread.util'
@@ -738,15 +804,22 @@ const panelScreenComponent = computed(() =>
 const expanded = ref(false)
 const activeCategory = ref('content')
 const dockRootRef = ref<HTMLElement | null>(null)
+const moreOpen = ref(false)
+
+function onSelectMultiple(): void {
+  moreOpen.value = false
+  store.enterMultiSelectMode()
+}
 
 function onDocumentPointerDown(event: PointerEvent): void {
-  if (!expanded.value) {
+  if (!expanded.value && !moreOpen.value) {
     return
   }
 
   const target = event.target as Node | null
   if (dockRootRef.value && target && !dockRootRef.value.contains(target)) {
     expanded.value = false
+    moreOpen.value = false
   }
 }
 
@@ -756,6 +829,36 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', onDocumentPointerDown, true)
+  dockResizeObserver?.disconnect()
+  store.setMobileDockOccludedHeight(0)
+})
+
+// Feeds the dock's live height to the store so EditorCanvas.vue can keep an auto-framed selection
+// clear of it (see item 5 of the mobile interaction spec — "comfortable viewport area"). Watching
+// the ref itself (rather than adding this to the existing onMounted/onBeforeUnmount) means it
+// re-attaches correctly across the v-if toggling this root element on/off as selection changes.
+let dockResizeObserver: ResizeObserver | null = null
+
+watch(dockRootRef, (el, previousEl) => {
+  if (previousEl) {
+    dockResizeObserver?.unobserve(previousEl)
+  }
+
+  if (!el) {
+    store.setMobileDockOccludedHeight(0)
+    return
+  }
+
+  if (!dockResizeObserver) {
+    dockResizeObserver = new ResizeObserver((entries) => {
+      const height = entries[0]?.contentRect.height
+      if (height !== undefined) {
+        store.setMobileDockOccludedHeight(height)
+      }
+    })
+  }
+
+  dockResizeObserver.observe(el)
 })
 
 const CLOSE_DRAG_THRESHOLD = 90
@@ -809,7 +912,11 @@ function onHandlePointerUp(): void {
   dockDragOffset.value = 0
 
   if (shouldClose) {
-    closeDock()
+    if (moreOpen.value) {
+      moreOpen.value = false
+    } else {
+      closeDock()
+    }
   }
 }
 
@@ -828,10 +935,13 @@ watch(
     panelStack.reset({ id: 'root' })
     activeCategory.value = pageMode.value ? 'size' : 'content'
     expanded.value = false
+    moreOpen.value = false
   },
 )
 
 function onChipClick(id: string): void {
+  moreOpen.value = false
+
   if (activeCategory.value === id && expanded.value) {
     expanded.value = false
     return
@@ -886,6 +996,10 @@ const PAGE_CHIPS: DockChip[] = [
   { id: 'background', label: 'Фон', mdiIcon: 'mdi-palette-outline' },
 ]
 
+const GROUP_CHIPS: DockChip[] = [
+  { id: 'position', label: 'Позиция', mdiIcon: 'mdi-arrow-all' },
+]
+
 const isTextElement = computed(() => Boolean(selected.value && isTextPlaceholderElement(selected.value)))
 const isPhotoElement = computed(() => Boolean(selected.value && isPhotoPlaceholderElement(selected.value)))
 const isShapeElement = computed(
@@ -896,6 +1010,7 @@ const isShapeElement = computed(
 )
 const isLineElement = computed(() => selected.value?.type === 'shape-line')
 const isRectangleElement = computed(() => selected.value?.type === 'shape-rectangle')
+const isGroupElement = computed(() => selected.value?.type === 'group')
 
 const textElement = computed(() => selected.value as import('../models/text-placeholder.model').TextPlaceholder)
 const photoElement = computed(() => selected.value as import('../models/photo-placeholder.model').PhotoPlaceholder)
@@ -910,6 +1025,9 @@ const chips = computed<DockChip[]>(() => {
   }
   if (isShapeElement.value) {
     return isLineElement.value ? SHAPE_CHIPS_LINE : SHAPE_CHIPS_RECT
+  }
+  if (isGroupElement.value) {
+    return GROUP_CHIPS
   }
   if (pageMode.value) {
     return PAGE_CHIPS
@@ -1208,10 +1326,6 @@ const displayPositionX = computed(() => {
   return spreadGlobalXToPageLocal(selected.value.position.x, selectedSpreadSide.value)
 })
 
-const positionLabel = computed(() =>
-  selectedSpreadSide.value ? `X / Y (${getSpreadPageSideLabel(selectedSpreadSide.value)})` : 'X / Y',
-)
-
 const displayRotation = computed(() => (selected.value ? normalizeElementRotation(selected.value.rotation, 0) : 0))
 
 function updatePosition(axis: 'x' | 'y', value: string | number | null | undefined): void {
@@ -1257,6 +1371,38 @@ function rotateBy(delta: number): void {
   updateRotation(displayRotation.value + delta)
 }
 
+function toggleElementVisible(): void {
+  if (!selected.value) {
+    return
+  }
+
+  store.setElementVisible(selected.value.id, !selected.value.visible)
+}
+
+function toggleElementLocked(): void {
+  if (!selected.value) {
+    return
+  }
+
+  store.setElementLocked(selected.value.id, !selected.value.locked)
+}
+
+function moveLayerForward(): void {
+  if (!selected.value) {
+    return
+  }
+
+  store.moveElementLayer(selected.value.id, 'up')
+}
+
+function moveLayerBackward(): void {
+  if (!selected.value) {
+    return
+  }
+
+  store.moveElementLayer(selected.value.id, 'down')
+}
+
 function alignToPageCenter(axis: 'horizontal' | 'vertical' | 'both'): void {
   if (!selected.value || store.previewMode || selected.value.locked) {
     return
@@ -1266,6 +1412,8 @@ function alignToPageCenter(axis: 'horizontal' | 'vertical' | 'both'): void {
 }
 
 function handleDuplicate(): void {
+  moreOpen.value = false
+
   if (!selected.value || store.previewMode) {
     return
   }
@@ -1273,7 +1421,19 @@ function handleDuplicate(): void {
   store.duplicateElement(selected.value.id)
 }
 
+function handleUngroup(): void {
+  moreOpen.value = false
+
+  if (!selected.value || !isGroupElement.value || store.previewMode) {
+    return
+  }
+
+  store.ungroupElement(selected.value.id)
+}
+
 function handleRemove(): void {
+  moreOpen.value = false
+
   if (!selected.value) {
     return
   }
@@ -1507,6 +1667,221 @@ function handleRemove(): void {
       height: 9px;
     }
   }
+}
+
+// Mobile-only quick layer controls (visibility/lock/reorder) — no desktop counterpart, matches
+// the icon cluster from EditorMobileMultiSelectBar.vue's header row.
+.mobile-dock__align-cluster-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: $spacing-3;
+}
+
+.mobile-dock__align-group,
+.mobile-dock__cluster-group {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-2;
+}
+
+.mobile-dock__cluster-group {
+  align-items: flex-start;
+}
+
+.mobile-dock__cluster {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid pp.$border;
+  border-radius: 10px;
+  padding: 3px;
+}
+
+.mobile-dock__cluster-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: none;
+  background: none;
+  color: pp.$ink-soft;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+
+  // Hover-only feedback, gated to real pointer devices — on touch, :hover applies on tap and
+  // has no "mouse leaves" event to clear it, so a plain :hover rule here would leave one-shot
+  // buttons (На слой назад/вперед) looking permanently "lit up" as if they were toggled on.
+  @media (hover: hover) {
+    &:hover:not(:disabled) {
+      background: pp.$accent-tint;
+      color: pp.$accent-deep;
+    }
+  }
+
+  // :active covers touch instead — it only applies while actually pressed and clears the
+  // instant the finger lifts, so it can't get "stuck" the way :hover does on touch devices.
+  &:active:not(:disabled) {
+    background: pp.$accent-tint;
+    color: pp.$accent-deep;
+  }
+
+  &.active {
+    background: pp.$accent;
+    color: $white;
+
+    @media (hover: hover) {
+      &:hover {
+        background: pp.$accent-deep;
+      }
+    }
+
+    &:active {
+      background: pp.$accent-deep;
+    }
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+}
+
+.mobile-dock__cluster-sep {
+  width: 1px;
+  height: 20px;
+  background: pp.$border;
+  flex-shrink: 0;
+  margin: 0 1px;
+}
+
+// Matches EditorPositionFields.vue's dim-field pattern (desktop) — a letter chip built into the
+// left edge of the field, scaled up for touch instead of the desktop's 34px.
+.mobile-dock__dim-row {
+  display: flex;
+  gap: $spacing-2;
+}
+
+.mobile-dock__dim-hint {
+  margin: -#{$spacing-1} 0 0;
+  font-size: 11px;
+  color: pp.$ink-faint;
+}
+
+.mobile-dock__dim-field {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 48px;
+  border: 1px solid pp.$border;
+  border-radius: pp.$radius;
+  background: transparent;
+  overflow: hidden;
+
+  &:focus-within {
+    border-color: pp.$accent;
+    box-shadow: 0 0 0 3px pp.$accent-glow;
+  }
+
+  input {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    border: none;
+    background: none;
+    outline: none;
+    padding: 0 $spacing-2;
+    font-size: 16px;
+    font-family: inherit;
+    color: pp.$ink;
+
+    &::-webkit-outer-spin-button,
+    &::-webkit-inner-spin-button {
+      margin: 0;
+      appearance: none;
+    }
+
+    appearance: textfield;
+    -moz-appearance: textfield;
+  }
+}
+
+.mobile-dock__dim-label {
+  flex-shrink: 0;
+  width: 30px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: pp.$ink-faint;
+  background: rgba(13, 13, 13, 0.025);
+  border-right: 1px solid pp.$border;
+}
+
+// Matches EditorPositionFields.vue's rotation row (desktop) — an icon-prefixed angle field
+// instead of the plain size-box used for font size elsewhere in this dock.
+.mobile-dock__rotation-row {
+  display: flex;
+  align-items: center;
+  gap: $spacing-2;
+}
+
+.mobile-dock__angle-field {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 48px;
+  padding: 0 14px;
+  border: 1px solid pp.$border;
+  border-radius: pp.$radius;
+  background: transparent;
+
+  &:focus-within {
+    border-color: pp.$accent;
+    box-shadow: 0 0 0 3px pp.$accent-glow;
+  }
+
+  svg {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    color: pp.$ink-faint;
+  }
+
+  input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    background: none;
+    outline: none;
+    font-size: 16px;
+    font-family: inherit;
+    color: pp.$ink;
+
+    &::-webkit-outer-spin-button,
+    &::-webkit-inner-spin-button {
+      margin: 0;
+      appearance: none;
+    }
+
+    appearance: textfield;
+    -moz-appearance: textfield;
+  }
+}
+
+.mobile-dock__unit--inline {
+  position: static;
+  transform: none;
+}
+
+.mobile-dock__stepper--inline {
+  height: 48px;
 }
 
 .mobile-dock__fmt-row,
@@ -1872,8 +2247,8 @@ function handleRemove(): void {
 }
 
 .mobile-dock__align-canvas-btn {
-  width: 54px;
-  height: 54px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   border: 1px solid pp.$border;
   background: transparent;
@@ -1884,14 +2259,19 @@ function handleRemove(): void {
   cursor: pointer;
 
   svg {
-    width: 20px;
-    height: 20px;
+    width: 16px;
+    height: 16px;
   }
 
   &--sm {
     width: 48px;
     height: 48px;
     flex-shrink: 0;
+
+    svg {
+      width: 20px;
+      height: 20px;
+    }
   }
 }
 
@@ -1948,5 +2328,32 @@ function handleRemove(): void {
   background: pp.$border;
   margin: 8px 6px;
   align-self: stretch;
+}
+
+.mobile-dock__more {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-1;
+  padding: $spacing-2 $spacing-4;
+  border-top: 1px solid pp.$border;
+}
+
+.mobile-dock__more-item {
+  display: flex;
+  align-items: center;
+  gap: $spacing-2;
+  height: 40px;
+  padding: 0 $spacing-2;
+  border: none;
+  border-radius: pp.$radius;
+  background: transparent;
+  color: pp.$ink;
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+
+  &:hover {
+    background: pp.$field-hover;
+  }
 }
 </style>

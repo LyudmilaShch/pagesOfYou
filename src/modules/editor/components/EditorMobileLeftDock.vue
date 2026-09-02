@@ -105,12 +105,31 @@ function onDocumentPointerDown(event: PointerEvent): void {
   }
 }
 
+// Reports this dock's live height to the store — shared with EditorMobilePropertiesDock.vue and
+// EditorMobileMultiSelectBar.vue, which are mutually exclusive with this one (only one bottom
+// mobile panel is ever mounted at a time), so they can all safely feed the same store field. Used
+// by EditorCanvas.vue to keep floating UI (e.g. the spread pagination dots) clear of whichever
+// panel is currently open.
+let dockResizeObserver: ResizeObserver | null = null
+
 onMounted(() => {
   document.addEventListener('pointerdown', onDocumentPointerDown, true)
+
+  if (dockRootRef.value) {
+    dockResizeObserver = new ResizeObserver((entries) => {
+      const height = entries[0]?.contentRect.height
+      if (height !== undefined) {
+        store.setMobileDockOccludedHeight(height)
+      }
+    })
+    dockResizeObserver.observe(dockRootRef.value)
+  }
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', onDocumentPointerDown, true)
+  dockResizeObserver?.disconnect()
+  store.setMobileDockOccludedHeight(0)
 })
 
 function onChipClick(id: RailKey): void {

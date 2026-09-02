@@ -1033,7 +1033,7 @@ function handleSelect(event: Konva.KonvaEventObject<MouseEvent | TouchEvent>): v
   const nativeEvent = event.evt
   const shiftKey = 'shiftKey' in nativeEvent ? nativeEvent.shiftKey : false
 
-  if (shiftKey) {
+  if (shiftKey || editorStore.multiSelectMode) {
     store.toggleElementSelection(props.element.id)
     return
   }
