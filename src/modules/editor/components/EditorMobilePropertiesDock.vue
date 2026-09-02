@@ -817,6 +817,14 @@ function onDocumentPointerDown(event: PointerEvent): void {
   }
 
   const target = event.target as Node | null
+
+  // The color popover (EditorColorPicker.vue) is Teleported to <body>, so it lives outside
+  // dockRootRef in the DOM — without this check, tapping anything inside it would look like an
+  // "outside" tap and collapse the dock out from under the color picker mid-use.
+  if (target instanceof Element && target.closest('.editor-color-picker__sheet-overlay')) {
+    return
+  }
+
   if (dockRootRef.value && target && !dockRootRef.value.contains(target)) {
     expanded.value = false
     moreOpen.value = false
