@@ -49,11 +49,16 @@ const isMobileViewport = useMobileViewport()
 const showMobileMultiSelectBar = computed(
   () => isMobileViewport.value && (store.multiSelectMode || store.isMultiSelection),
 )
+// Keyed off hasSelection, not store.showPropertiesPanel — on mobile, "page properties" no longer
+// has a dock of its own (it's the rail dock's "Страница" category now), so pagePropertiesRequested
+// (a desktop-only concept: an empty-canvas tap opening the page panel with nothing selected) must
+// never affect which mobile dock is mounted, including transiently while resizing across the
+// breakpoint with it set from a prior desktop session.
 const showMobilePropertiesDock = computed(
-  () => isMobileViewport.value && store.showPropertiesPanel && !showMobileMultiSelectBar.value,
+  () => isMobileViewport.value && store.hasSelection && !showMobileMultiSelectBar.value,
 )
 const showMobileLeftDock = computed(
-  () => isMobileViewport.value && !store.showPropertiesPanel && !showMobileMultiSelectBar.value,
+  () => isMobileViewport.value && !store.hasSelection && !showMobileMultiSelectBar.value,
 )
 </script>
 

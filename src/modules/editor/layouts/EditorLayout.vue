@@ -441,7 +441,14 @@ onUnmounted(() => {
   // EditorPage.vue), so nothing here should ever need to grow past 100vh. Locking both the exact
   // height and overflow is a safety net in case something inside briefly overflows anyway.
   .editor-layout {
+    // 100vh on mobile is the "largest possible" viewport (address bar hidden) — with the URL bar
+    // actually showing, the real visible area is shorter, so a plain 100vh here pushes the bottom
+    // of the layout (docks, pagination dots) below the fold with no way to scroll to it (overflow
+    // is hidden below). 100dvh tracks the real, currently-visible viewport instead; the 100vh line
+    // stays first as a fallback for browsers that don't understand dvh (they just ignore the rule
+    // that follows and keep this one).
     height: 100vh;
+    height: 100dvh;
     min-height: 0;
     overflow: hidden;
     // Without this, a touch that overscrolls past an inner overflow:hidden boundary (e.g. the

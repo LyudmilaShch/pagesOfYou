@@ -218,28 +218,64 @@
           @update:model-value="updateBackgroundColor"
         />
 
-        <div v-if="editablePageBackground.backgroundImageUrl" class="editor-properties__image-preview">
-          <img :src="pageBackgroundImagePreviewUrl" alt="Фоновое изображение страницы" />
+        <p class="editor-properties__field-label editor-properties__field-label--spaced editor-properties__field-label--caps">Изображение фона</p>
+
+        <div class="editor-properties__default-image-row">
+
+          <div class="editor-properties__image-thumb">
+            <img v-if="editablePageBackground.backgroundImageUrl" :src="pageBackgroundImagePreviewUrl" alt="" />
+          </div>
 
           <v-btn
+            variant="outlined"
             size="small"
-            variant="text"
-            color="error"
-            @click="removePageBackgroundImage"
+            :loading="uploadingPageBackgroundImage"
+            @click="triggerPageBackgroundInput"
           >
-            Удалить
+            <template #prepend>
+              <svg class="editor-properties__btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                <path d="M12 16V4M8 8l4-4 4 4" />
+                <path d="M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3" />
+              </svg>
+            </template>
+            {{ editablePageBackground.backgroundImageUrl ? 'Заменить' : 'Загрузить' }}
           </v-btn>
-        </div>
 
-        <v-btn
-          variant="outlined"
-          size="small"
-          prepend-icon="mdi-image-plus-outline"
-          :loading="uploadingPageBackgroundImage"
-          @click="triggerPageBackgroundInput"
-        >
-          {{ editablePageBackground.backgroundImageUrl ? 'Заменить изображение' : 'Загрузить изображение' }}
-        </v-btn>
+          <v-tooltip v-if="editablePageBackground.backgroundImageUrl" location="top" content-class="editor-tooltip--arrow-top">
+            <template #activator="{ props: tooltipProps }">
+              <v-btn
+                v-bind="tooltipProps"
+                icon
+                variant="outlined"
+                size="small"
+                :disabled="store.previewMode"
+                aria-label="Кадрировать"
+                @click="handleStartPageBackgroundCrop"
+              >
+                <v-icon size="18">mdi-crop</v-icon>
+              </v-btn>
+            </template>
+            Кадрировать
+          </v-tooltip>
+
+          <v-tooltip v-if="editablePageBackground.backgroundImageUrl" location="top" content-class="editor-tooltip--arrow-top">
+            <template #activator="{ props: tooltipProps }">
+              <v-btn
+                v-bind="tooltipProps"
+                icon
+                variant="outlined"
+                size="small"
+                class="editor-properties__image-remove"
+                aria-label="Удалить изображение"
+                @click="removePageBackgroundImage"
+              >
+                <v-icon size="18">mdi-delete-outline</v-icon>
+              </v-btn>
+            </template>
+            Удалить изображение
+          </v-tooltip>
+
+        </div>
 
         <input
           ref="pageBackgroundInputRef"
@@ -249,29 +285,20 @@
           @change="onPageBackgroundSelected"
         />
 
-        <v-btn
-          v-if="editablePageBackground.backgroundImageUrl"
-          variant="outlined"
-          size="small"
-          prepend-icon="mdi-crop"
-          :disabled="store.previewMode"
-          @click="handleStartPageBackgroundCrop"
-        >
-          Кадрировать
-        </v-btn>
-
-        <v-select
-          v-if="editablePageBackground.backgroundImageUrl"
-          :model-value="editablePageBackground.backgroundImageFit"
-          :items="pageBackgroundFitOptions"
-          item-title="title"
-          item-value="value"
-          label="Масштабирование"
-          variant="outlined"
-          density="compact"
-          hide-details
-          @update:model-value="updatePageBackgroundFit"
-        />
+        <div v-if="editablePageBackground.backgroundImageUrl" class="editor-properties__setting-row">
+          <span class="editor-properties__setting-row-label">Масштабирование</span>
+          <v-select
+            class="editor-properties__setting-select"
+            :model-value="editablePageBackground.backgroundImageFit"
+            :items="pageBackgroundFitOptions"
+            item-title="title"
+            item-value="value"
+            variant="outlined"
+            density="compact"
+            hide-details
+            @update:model-value="updatePageBackgroundFit"
+          />
+        </div>
 
       </div>
 
@@ -1167,10 +1194,20 @@
 
           <EditorShapeStrokeFields
             :element="shapeElement"
-            :show-fill="!isLineElement"
             :show-corner-radius="isRectangleElement"
             :optional-stroke="!isLineElement"
-            :stroke-width-label="isLineElement ? 'Толщина' : 'Толщина'"
+            stroke-width-label="Толщина"
+            @patch="(patch) => patchElement(patch as ElementPatch)"
+          />
+
+        </div>
+
+        <div v-if="isShapeElement && !isLineElement" class="editor-properties__section">
+
+          <p class="editor-properties__section-title">Цвет</p>
+
+          <EditorShapeColorFields
+            :element="shapeElement"
             @patch="(patch) => patchElement(patch as ElementPatch)"
           />
 
@@ -1392,6 +1429,7 @@ import {
 } from '../models/page-background.model'
 import type { PageBackgroundImageFit, SpreadBackgroundMode, SpreadBackgroundSide } from '../models/page-background.model'
 import EditorShapeStrokeFields from './EditorShapeStrokeFields.vue'
+import EditorShapeColorFields from './EditorShapeColorFields.vue'
 import EditorColorPicker from './EditorColorPicker.vue'
 import EditorBorderFields from './EditorBorderFields.vue'
 import { adminPhotoFramesApi, type AdminPhotoFrame } from '@/shared/api/admin/photo-frames.api'
@@ -1527,9 +1565,9 @@ const fontOptions = mergedFontOptions
 
 const fitModeOptions = [
 
-  { label: 'Cover', value: 'cover' },
+  { label: 'Заполнить', value: 'cover' },
 
-  { label: 'Fill', value: 'fill' },
+  { label: 'Растянуть', value: 'fill' },
 
 ]
 
@@ -3060,34 +3098,20 @@ function handleRemove(): void {
 }
 
 
-.editor-properties__image-preview {
-
-  display: flex;
-
-  flex-direction: column;
-
-  gap: $spacing-2;
-
-
-
-  img {
-
-    width: 100%;
-
-    max-height: 140px;
-
-    object-fit: cover;
-
-    border-radius: $radius-md;
-
-  }
-
-}
-
 .editor-properties__default-image-row {
   display: flex;
   align-items: center;
   gap: $spacing-2;
+}
+
+.editor-properties__image-remove {
+  color: pp.$ink-soft;
+
+  &:hover {
+    color: #8a4b45;
+    border-color: #8a4b45;
+    background: rgba(138, 75, 69, 0.07);
+  }
 }
 
 .editor-properties__image-thumb {

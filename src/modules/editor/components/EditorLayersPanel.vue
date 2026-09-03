@@ -1,6 +1,6 @@
 <template>
   <aside class="editor-layers" aria-label="Слои страницы">
-    <div class="editor-layers__header">
+    <div v-if="!isMobileViewport" class="editor-layers__header">
       <p class="editor-layers__eyebrow">Структура</p>
       <h2 class="editor-layers__title">Слои</h2>
       <p class="editor-layers__hint">Сверху — элементы ближе к зрителю</p>
@@ -26,6 +26,7 @@
 import { computed, provide, ref } from 'vue'
 
 import { useEditorStore } from '../store/editor.store'
+import { useMobileViewport } from '../composables/use-mobile-viewport'
 import { findNodeById, locateNode } from '../utils/element-tree.util'
 import { isGroupElement } from '../models'
 import EditorLayerNode from './EditorLayerNode.vue'
@@ -36,6 +37,7 @@ import {
 } from './layers-drag.context'
 
 const store = useEditorStore()
+const isMobileViewport = useMobileViewport()
 
 const reversedRootElements = computed(() => [...store.elements].reverse())
 

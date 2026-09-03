@@ -36,7 +36,7 @@
       </template>
     </div>
 
-    <div class="editor-canvas__toolbar">
+    <div v-if="!isMobileViewport" class="editor-canvas__toolbar">
       <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
         <template #activator="{ props: tooltipProps }">
           <v-btn
@@ -81,13 +81,13 @@
             :variant="store.smartGuidesEnabled ? 'flat' : 'text'"
             :color="store.smartGuidesEnabled ? 'primary' : undefined"
             :disabled="store.previewMode"
-            aria-label="Smart guides — центр и края листа"
+            aria-label="Умные направляющие — центр и края листа"
             @click="store.toggleSmartGuides()"
           >
             <v-icon size="18">mdi-set-square</v-icon>
           </v-btn>
         </template>
-        Smart guides — центр и края листа
+        Умные направляющие — центр и края листа
       </v-tooltip>
 
       <v-tooltip location="top" content-class="editor-tooltip--arrow-top">

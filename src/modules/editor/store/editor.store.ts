@@ -862,7 +862,9 @@ export const useEditorStore = defineStore('editor', () => {
 
       location.siblings[location.index] = {
         ...location.node,
-        position: patch.position,
+        // Rounded for the same reason as in updateElement — this is the multi-element drag/
+        // transform commit path, and Konva's pointer coordinates are fractional.
+        position: { x: Math.round(patch.position.x), y: Math.round(patch.position.y) },
       } as PageElement
     }
 
@@ -1439,10 +1441,17 @@ export const useEditorStore = defineStore('editor', () => {
     }
 
     const current = location.node
+    const nextPosition = patch.position ? { ...current.position, ...patch.position } : current.position
     location.siblings[location.index] = {
       ...current,
       ...patch,
-      position: patch.position ? { ...current.position, ...patch.position } : current.position,
+      // Position is always whole pixels — drag (from Konva's fractional pointer coordinates) is
+      // the main source of non-integer values here; manual X/Y input is rounded at the field level
+      // too, but rounding it again here is harmless and keeps this the one place that guarantees it
+      // regardless of entry point.
+      position: patch.position
+        ? { x: Math.round(nextPosition.x), y: Math.round(nextPosition.y) }
+        : current.position,
       size: patch.size ? { ...current.size, ...patch.size } : current.size,
     } as PageElement
 

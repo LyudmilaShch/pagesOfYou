@@ -239,7 +239,7 @@ function updatePosition(axis: 'x' | 'y', value: string | number | null | undefin
   }
 
   if (axis === 'x' && selectedSpreadSide.value) {
-    const raw = toNumber(value, displayPositionX.value)
+    const raw = Math.round(toNumber(value, displayPositionX.value))
     const next = store.snapToGridEnabled ? store.snapCoordinate(raw) : raw
 
     patchElement({
@@ -250,7 +250,7 @@ function updatePosition(axis: 'x' | 'y', value: string | number | null | undefin
     return
   }
 
-  const raw = toNumber(value, selected.value.position[axis])
+  const raw = Math.round(toNumber(value, selected.value.position[axis]))
   const next = store.snapToGridEnabled
     ? store.snapCoordinate(raw)
     : raw

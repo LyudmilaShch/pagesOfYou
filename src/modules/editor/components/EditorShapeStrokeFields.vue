@@ -1,13 +1,5 @@
 <template>
   <div class="editor-shape-stroke-fields">
-    <EditorColorPicker
-      v-if="showFill"
-      label="Заливка"
-      :model-value="element.fill"
-      fallback="#E3DDD5"
-      @update:model-value="emitPatch({ fill: $event })"
-    />
-
     <div v-if="showCornerRadius" class="editor-shape-stroke-fields__field">
       <span class="editor-shape-stroke-fields__field-label">Скругление углов</span>
       <input
@@ -59,7 +51,6 @@ import EditorColorPicker from './EditorColorPicker.vue'
 import EditorSwitch from './EditorSwitch.vue'
 
 export interface ShapeStrokePatch {
-  fill?: string
   stroke?: string
   strokeWidth?: number
   cornerRadius?: number
@@ -68,14 +59,12 @@ export interface ShapeStrokePatch {
 const props = withDefaults(
   defineProps<{
     element: ShapeElement
-    showFill?: boolean
     showCornerRadius?: boolean
     optionalStroke?: boolean
     strokeLabel?: string
     strokeWidthLabel?: string
   }>(),
   {
-    showFill: true,
     showCornerRadius: false,
     optionalStroke: false,
     strokeLabel: 'Цвет обводки',

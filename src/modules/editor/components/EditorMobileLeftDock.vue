@@ -15,6 +15,8 @@
     <div class="mobile-left-dock__expand" :class="{ 'mobile-left-dock__expand--open': expanded }">
       <div class="mobile-left-dock__scroll">
         <EditorLayersPanel v-if="activeCategory === 'layers'" />
+        <EditorMobilePageBackgroundPanel v-else-if="activeCategory === 'page'" />
+        <EditorMobileCanvasSettingsPanel v-else-if="activeCategory === 'view'" />
         <EditorLibraryPanel v-else :category="activeCategory" />
       </div>
     </div>
@@ -67,10 +69,21 @@
       <button
         type="button"
         class="mobile-left-dock__chip"
-        @click="store.requestPageProperties()"
+        :class="{ active: activeCategory === 'page' && expanded }"
+        @click="onChipClick('page')"
       >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5" y="3" width="14" height="18" rx="1.5" /><path d="M8 8h8M8 12h8M8 16h5" /></svg>
         <span>Страница</span>
+      </button>
+
+      <button
+        type="button"
+        class="mobile-left-dock__chip"
+        :class="{ active: activeCategory === 'view' && expanded }"
+        @click="onChipClick('view')"
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3" y="3" width="18" height="18" rx="1.5" /><path d="M3 9h18M3 15h18M9 3v18M15 3v18" /></svg>
+        <span>Вид</span>
       </button>
 
     </div>
@@ -85,8 +98,10 @@ import { useEditorStore } from '../store/editor.store'
 import type { LibraryElementCategory } from '../factories/create-element.factory'
 import EditorLayersPanel from './EditorLayersPanel.vue'
 import EditorLibraryPanel from './EditorLibraryPanel.vue'
+import EditorMobilePageBackgroundPanel from './EditorMobilePageBackgroundPanel.vue'
+import EditorMobileCanvasSettingsPanel from './EditorMobileCanvasSettingsPanel.vue'
 
-type RailKey = LibraryElementCategory | 'layers'
+type RailKey = LibraryElementCategory | 'layers' | 'page' | 'view'
 
 const store = useEditorStore()
 

@@ -29,8 +29,8 @@ export const SPREAD_BACKGROUND_SIDE_OPTIONS = [
 ] as const
 
 export const PAGE_BACKGROUND_IMAGE_FIT_OPTIONS = [
-  { title: 'Cover', value: 'cover' as const },
-  { title: 'Fill', value: 'fill' as const },
+  { title: 'Заполнить', value: 'cover' as const },
+  { title: 'Растянуть', value: 'fill' as const },
 ] as const
 
 export function normalizePageBackgroundImageFit(value: unknown): PageBackgroundImageFit {

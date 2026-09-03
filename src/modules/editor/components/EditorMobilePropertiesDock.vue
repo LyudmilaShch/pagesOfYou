@@ -1,6 +1,6 @@
 <template>
   <div
-    v-if="selected || pageMode"
+    v-if="selected"
     ref="dockRootRef"
     class="mobile-dock"
     :style="dockDragStyle"
@@ -28,8 +28,6 @@
           </template>
 
           <template v-else>
-
-            <p class="mobile-dock__panel-title">{{ activeCategoryLabel }}</p>
 
             <!-- ============ TEXT ============ -->
             <template v-if="isTextElement">
@@ -395,10 +393,16 @@
               <template v-if="activeCategory === 'shape'">
                 <EditorShapeStrokeFields
                   :element="shapeElement"
-                  :show-fill="!isLineElement"
                   :show-corner-radius="isRectangleElement"
                   :optional-stroke="!isLineElement"
                   stroke-width-label="Толщина"
+                  @patch="(patch) => patchElement(patch as ElementPatch)"
+                />
+              </template>
+
+              <template v-if="activeCategory === 'color'">
+                <EditorShapeColorFields
+                  :element="shapeElement"
                   @patch="(patch) => patchElement(patch as ElementPatch)"
                 />
               </template>
@@ -449,111 +453,6 @@
                   Все эффекты
                   <v-icon size="12">mdi-chevron-right</v-icon>
                 </button>
-              </template>
-
-            </template>
-
-            <!-- ============ PAGE (nothing selected) ============ -->
-            <template v-if="pageMode">
-
-              <template v-if="activeCategory === 'size'">
-                <label class="mobile-dock__field">
-                  <span class="mobile-dock__field-label">Размер страницы</span>
-                  <v-select
-                    class="mobile-dock__vselect"
-                    :model-value="pagePreset"
-                    :items="pagePresetItems"
-                    item-title="label"
-                    item-value="key"
-                    variant="outlined"
-                    density="compact"
-                    hide-details
-                    :disabled="store.isSpreadPage"
-                    @update:model-value="applyPagePreset"
-                  />
-                </label>
-                <div class="mobile-dock__mini-row">
-                  <span class="mobile-dock__mini-label">Ширина / Высота</span>
-                  <div class="mobile-dock__mini-num-row">
-                    <input
-                      class="mobile-dock__mini-num-field"
-                      type="number"
-                      :value="store.pageWidth"
-                      :disabled="store.isSpreadPage"
-                      @change="updatePageSize('width', ($event.target as HTMLInputElement).value)"
-                    />
-                    <input
-                      class="mobile-dock__mini-num-field"
-                      type="number"
-                      :value="store.pageHeight"
-                      :disabled="store.isSpreadPage"
-                      @change="updatePageSize('height', ($event.target as HTMLInputElement).value)"
-                    />
-                  </div>
-                </div>
-              </template>
-
-              <template v-if="activeCategory === 'background'">
-                <template v-if="store.isSpreadPage">
-                  <p class="mobile-dock__label-static">
-                    Для разворотов фон каждой страницы настраивается отдельно — откройте редактор на компьютере.
-                  </p>
-                </template>
-                <template v-else>
-                  <EditorColorPicker
-                    :model-value="editablePageBackground.backgroundColor"
-                    label="Цвет фона"
-                    fallback="#FFFFFF"
-                    @update:model-value="updateBackgroundColor"
-                  />
-
-                  <div v-if="editablePageBackground.backgroundImageUrl" class="mobile-dock__default-image-row">
-                    <div class="mobile-dock__image-thumb">
-                      <img :src="pageBackgroundImagePreviewUrl" alt="" />
-                    </div>
-                    <button type="button" class="mobile-dock__btn-compact" @click="removePageBackgroundImage">
-                      Удалить
-                    </button>
-                  </div>
-
-                  <button type="button" class="mobile-dock__btn-compact" :disabled="uploadingPageBackgroundImage" @click="triggerPageBackgroundInput">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 16V4M8 8l4-4 4 4" /><path d="M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3" /></svg>
-                    {{ editablePageBackground.backgroundImageUrl ? 'Заменить изображение' : 'Загрузить изображение' }}
-                  </button>
-                  <input
-                    ref="pageBackgroundInputRef"
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    hidden
-                    @change="onPageBackgroundSelected"
-                  />
-
-                  <button
-                    v-if="editablePageBackground.backgroundImageUrl"
-                    type="button"
-                    class="mobile-dock__btn-compact"
-                    :disabled="store.previewMode"
-                    @click="handleStartPageBackgroundCrop"
-                  >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 2v14a2 2 0 002 2h14" /><path d="M18 22V8a2 2 0 00-2-2H2" /></svg>
-                    Кадрировать
-                  </button>
-
-                  <label v-if="editablePageBackground.backgroundImageUrl" class="mobile-dock__field">
-                    <span class="mobile-dock__field-label">Масштабирование</span>
-                    <v-select
-                      class="mobile-dock__vselect"
-                      :model-value="editablePageBackground.backgroundImageFit"
-                      :items="pageBackgroundFitOptions"
-                      item-title="title"
-                      item-value="value"
-                      variant="outlined"
-                      density="compact"
-                      hide-details
-                      @update:model-value="updatePageBackgroundFit"
-                    />
-                  </label>
-                </template>
               </template>
 
             </template>
@@ -772,9 +671,7 @@ import { useErrorMessageModal } from '@/shared/composables/useErrorMessageModal'
 import { getUploadErrorMessage } from '@/shared/utils/api-error.util'
 import { mergedFontOptions } from '../utils/custom-fonts.util'
 import { isPhotoPlaceholderElement, isTextPlaceholderElement } from '../utils/placeholder-display.util'
-import { A4_SPREAD_PAGE_HEIGHT, A4_SPREAD_PAGE_WIDTH, PAGE_SIZE_PRESETS } from '../constants/page.constants'
-import { PAGE_BACKGROUND_IMAGE_FIT_OPTIONS } from '../models/page-background.model'
-import type { PageBackgroundImageFit } from '../models/page-background.model'
+import { A4_SPREAD_PAGE_HEIGHT, A4_SPREAD_PAGE_WIDTH } from '../constants/page.constants'
 import {
   getSpreadPageSide,
   spreadGlobalXToPageLocal,
@@ -784,6 +681,7 @@ import { normalizeElementRotation } from '../utils/transformer.util'
 import EditorColorPicker from './EditorColorPicker.vue'
 import EditorBorderFields from './EditorBorderFields.vue'
 import EditorShapeStrokeFields from './EditorShapeStrokeFields.vue'
+import EditorShapeColorFields from './EditorShapeColorFields.vue'
 import EditorSwitch from './EditorSwitch.vue'
 
 const store = useEditorStore()
@@ -928,20 +826,11 @@ function onHandlePointerUp(): void {
   }
 }
 
-const pageMode = computed(() => !store.hasSelection && store.showPropertiesPanel)
-
 watch(
-  [() => selected.value?.id, pageMode],
-  ([selectedId]) => {
-    // A background tap can leave pagePropertiesRequested stale once an element gets selected
-    // afterwards (only the page-mode close path clears it) — without this, deselecting that
-    // element later falls back to the page dock instead of the idle rail dock.
-    if (selectedId) {
-      store.dismissPageProperties()
-    }
-
+  () => selected.value?.id,
+  () => {
     panelStack.reset({ id: 'root' })
-    activeCategory.value = pageMode.value ? 'size' : 'content'
+    activeCategory.value = 'content'
     expanded.value = false
     moreOpen.value = false
   },
@@ -987,6 +876,7 @@ const PHOTO_CHIPS: DockChip[] = [
 
 const SHAPE_CHIPS_RECT: DockChip[] = [
   { id: 'shape', label: 'Фигура', mdiIcon: 'mdi-vector-square' },
+  { id: 'color', label: 'Цвет', mdiIcon: 'mdi-palette-outline' },
   { id: 'shadow', label: 'Тени', mdiIcon: 'mdi-square-off-outline' },
   { id: 'effects', label: 'Эффекты', mdiIcon: 'mdi-star-four-points-outline' },
   { id: 'position', label: 'Позиция', mdiIcon: 'mdi-arrow-all' },
@@ -997,11 +887,6 @@ const SHAPE_CHIPS_LINE: DockChip[] = [
   { id: 'shadow', label: 'Тени', mdiIcon: 'mdi-square-off-outline' },
   { id: 'effects', label: 'Эффекты', mdiIcon: 'mdi-star-four-points-outline' },
   { id: 'position', label: 'Позиция', mdiIcon: 'mdi-arrow-all' },
-]
-
-const PAGE_CHIPS: DockChip[] = [
-  { id: 'size', label: 'Размер', mdiIcon: 'mdi-crop' },
-  { id: 'background', label: 'Фон', mdiIcon: 'mdi-palette-outline' },
 ]
 
 const GROUP_CHIPS: DockChip[] = [
@@ -1037,105 +922,8 @@ const chips = computed<DockChip[]>(() => {
   if (isGroupElement.value) {
     return GROUP_CHIPS
   }
-  if (pageMode.value) {
-    return PAGE_CHIPS
-  }
   return []
 })
-
-const activeCategoryLabel = computed(
-  () => chips.value.find((chip) => chip.id === activeCategory.value)?.label ?? '',
-)
-
-const pagePresetItems = PAGE_SIZE_PRESETS.map((preset, index) => ({
-  key: String(index),
-  label: `${preset.label} (${preset.width}×${preset.height})`,
-  width: preset.width,
-  height: preset.height,
-}))
-
-const pagePreset = computed(() => {
-  const match = pagePresetItems.findIndex(
-    (item) => item.width === store.pageWidth && item.height === store.pageHeight,
-  )
-  return match >= 0 ? String(match) : 'custom'
-})
-
-function applyPagePreset(key: string): void {
-  const preset = pagePresetItems[Number(key)]
-  if (!preset) {
-    return
-  }
-  store.updatePageSettings({ width: preset.width, height: preset.height })
-}
-
-function updatePageSize(axis: 'width' | 'height', value: string | number | null | undefined): void {
-  store.updatePageSettings({ [axis]: toNumber(value, axis === 'width' ? store.pageWidth : store.pageHeight) })
-}
-
-const pageBackgroundFitOptions = PAGE_BACKGROUND_IMAGE_FIT_OPTIONS
-const editablePageBackground = computed(() => store.editablePageBackground)
-const pageBackgroundImagePreviewUrl = computed(
-  () => resolveAssetUrl(editablePageBackground.value.backgroundImageUrl) ?? '',
-)
-
-const pageBackgroundInputRef = ref<HTMLInputElement | null>(null)
-const uploadingPageBackgroundImage = ref(false)
-
-function updateBackgroundColor(value: string | null | undefined): void {
-  if (!value?.trim()) {
-    return
-  }
-  store.updatePageSettings({ backgroundColor: value.trim() })
-}
-
-function triggerPageBackgroundInput(): void {
-  pageBackgroundInputRef.value?.click()
-}
-
-function removePageBackgroundImage(): void {
-  store.stopPageBackgroundCropEditing()
-  store.updatePageSettings({
-    backgroundImageUrl: null,
-    backgroundImageCropX: 0,
-    backgroundImageCropY: 0,
-    backgroundImageScale: 1,
-  })
-}
-
-function handleStartPageBackgroundCrop(): void {
-  store.startPageBackgroundCropEditing()
-}
-
-function updatePageBackgroundFit(value: PageBackgroundImageFit): void {
-  store.updatePageSettings({ backgroundImageFit: value })
-}
-
-async function onPageBackgroundSelected(event: Event): Promise<void> {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-
-  if (!file) {
-    return
-  }
-
-  uploadingPageBackgroundImage.value = true
-
-  try {
-    const { url } = await uploadAdminImage(file)
-    store.updatePageSettings({
-      backgroundImageUrl: toStoredAssetPath(url) ?? url,
-      backgroundImageCropX: 0,
-      backgroundImageCropY: 0,
-      backgroundImageScale: 1,
-    })
-  } catch (error) {
-    showErrorMessageModal(getUploadErrorMessage(error), 'Не удалось загрузить фоновое изображение')
-  } finally {
-    uploadingPageBackgroundImage.value = false
-    input.value = ''
-  }
-}
 
 const isTextBold = computed(() => Boolean(selected.value && isTextPlaceholderElement(selected.value) && selected.value.fontWeight >= 600))
 const isTextItalic = computed(() => Boolean(selected.value && isTextPlaceholderElement(selected.value) && selected.value.fontItalic))
@@ -1150,8 +938,8 @@ const LINE_HEIGHT_MAX = 3
 
 const fontOptions = mergedFontOptions
 const fitModeOptions = [
-  { label: 'Cover', value: 'cover' },
-  { label: 'Fill', value: 'fill' },
+  { label: 'Заполнить', value: 'cover' },
+  { label: 'Растянуть', value: 'fill' },
 ]
 
 const displayImageUrl = computed(() => resolveAssetUrl(photoElement.value?.defaultImageUrl ?? null) ?? undefined)
@@ -1342,14 +1130,14 @@ function updatePosition(axis: 'x' | 'y', value: string | number | null | undefin
   }
 
   if (axis === 'x' && selectedSpreadSide.value) {
-    const raw = toNumber(value, displayPositionX.value)
+    const raw = Math.round(toNumber(value, displayPositionX.value))
     const next = store.snapToGridEnabled ? store.snapCoordinate(raw) : raw
 
     patchElement({ position: { x: spreadPageLocalXToGlobal(next, selectedSpreadSide.value) } })
     return
   }
 
-  const raw = toNumber(value, selected.value.position[axis])
+  const raw = Math.round(toNumber(value, selected.value.position[axis]))
   const next = store.snapToGridEnabled ? store.snapCoordinate(raw) : raw
 
   patchElement({ position: { [axis]: next } })
@@ -1498,13 +1286,13 @@ function handleRemove(): void {
   transition: max-height 0.22s cubic-bezier(0.4, 0, 0.2, 1);
 
   &--open {
-    max-height: 60vh;
+    max-height: 40vh;
     border-bottom: 1px solid pp.$border;
   }
 }
 
 .mobile-dock__scroll {
-  max-height: 60vh;
+  max-height: 40vh;
   overflow-y: auto;
   padding: $spacing-4 $spacing-4 $spacing-4;
   display: flex;
@@ -1514,15 +1302,6 @@ function handleRemove(): void {
 
 .mobile-dock__screen-body {
   padding: $spacing-4 0 0;
-}
-
-.mobile-dock__panel-title {
-  margin: 0 0 $spacing-1;
-  font-size: 10px;
-  font-weight: $font-weight-semibold;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: pp.$ink-faint;
 }
 
 .mobile-dock__field {
@@ -1895,6 +1674,8 @@ function handleRemove(): void {
 .mobile-dock__fmt-row,
 .mobile-dock__align-row {
   display: flex;
+  flex-shrink: 0;
+  height: 36px;
   border: 1px solid pp.$border;
   border-radius: pp.$radius;
   overflow: hidden;
@@ -1904,7 +1685,7 @@ function handleRemove(): void {
 .mobile-dock__fmt-btn,
 .mobile-dock__align-btn {
   flex: 1;
-  height: 44px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1926,8 +1707,8 @@ function handleRemove(): void {
   }
 
   svg {
-    width: 16px;
-    height: 16px;
+    width: 13px;
+    height: 13px;
   }
 }
 

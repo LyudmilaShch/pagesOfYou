@@ -13,6 +13,22 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
   // ---------------------------------------------------------------------------
+  // CORS — allow requests from the Vue frontend
+  // ---------------------------------------------------------------------------
+  // Must be registered before useStaticAssets below: Express runs middleware in
+  // registration order, and express.static() fully handles (and ends) a matching
+  // request itself — registering it first meant /uploads/* responses never picked
+  // up the Access-Control-Allow-Origin header, only /api/* ones did. Konva needs
+  // that header on frame/photo images (crossOrigin="anonymous", required for pixel
+  // filters) or the browser blocks the load, showing as a missing frame/image.
+  app.enableCors({
+    origin: getCorsOrigins(),
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  });
+
+  // ---------------------------------------------------------------------------
   // Static files — uploads served at /uploads/* (outside the /api prefix)
   // ---------------------------------------------------------------------------
   app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads' });
@@ -21,16 +37,6 @@ async function bootstrap() {
   // Global prefix
   // ---------------------------------------------------------------------------
   app.setGlobalPrefix('api');
-
-  // ---------------------------------------------------------------------------
-  // CORS — allow requests from the Vue frontend
-  // ---------------------------------------------------------------------------
-  app.enableCors({
-    origin: getCorsOrigins(),
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-  });
 
   // ---------------------------------------------------------------------------
   // Global validation pipe
