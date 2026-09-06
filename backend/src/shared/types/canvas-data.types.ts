@@ -174,7 +174,6 @@ export interface CanvasStrokeEffectParams {
 }
 
 export interface CanvasNeonEffectParams {
-  color: string;
   glow: number;
   blur: number;
   intensity: number;

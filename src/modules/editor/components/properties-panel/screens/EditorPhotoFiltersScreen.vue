@@ -43,105 +43,16 @@
       </button>
     </div>
 
-    <div v-if="activeFilter?.preset" class="editor-photo-filters-screen__row">
-      <span class="editor-photo-filters-screen__row-label">Интенсивность</span>
-      <div class="editor-photo-filters-screen__row-control">
-        <v-slider
-          :model-value="activeFilter.intensity"
-          :min="0"
-          :max="100"
-          :step="1"
-          color="primary"
-          hide-details
-          @update:model-value="patchIntensity(Number($event))"
-        />
-        <v-text-field
-          :model-value="activeFilter.intensity"
-          type="number"
-          min="0"
-          max="100"
-          step="1"
-          density="compact"
-          variant="outlined"
-          hide-details
-          class="editor-photo-filters-screen__row-input"
-          @update:model-value="patchIntensity(toNumber($event, activeFilter.intensity))"
-        />
-      </div>
-    </div>
-
     <div class="editor-photo-filters-screen__correction">
       <p class="editor-photo-filters-screen__section-title">Пользовательские настройки</p>
-
-      <div
-        v-for="field in CORRECTION_FIELDS"
-        :key="field.key"
-        class="editor-photo-filters-screen__row"
-      >
-        <span class="editor-photo-filters-screen__row-label">{{ field.label }}</span>
-        <div class="editor-photo-filters-screen__row-control">
-          <v-slider
-            :model-value="getCorrectionValue(field.key)"
-            :min="field.min"
-            :max="field.max"
-            :step="field.step"
-            color="primary"
-            hide-details
-            @update:model-value="patchCorrection(field.key, Number($event))"
-          />
-          <v-text-field
-            :model-value="getCorrectionValue(field.key)"
-            type="number"
-            :min="field.min"
-            :max="field.max"
-            :step="field.step"
-            density="compact"
-            variant="outlined"
-            hide-details
-            class="editor-photo-filters-screen__row-input"
-            @update:model-value="patchCorrection(field.key, toNumber($event, getCorrectionValue(field.key)))"
-          />
-        </div>
-      </div>
-
-      <div class="editor-photo-filters-screen__row">
-        <span class="editor-photo-filters-screen__row-label">Прозрачность</span>
-        <div class="editor-photo-filters-screen__row-control">
-          <v-slider
-            :model-value="opacityPercent"
-            :min="0"
-            :max="100"
-            :step="1"
-            color="primary"
-            hide-details
-            @update:model-value="patchOpacity(Number($event))"
-          />
-          <v-text-field
-            :model-value="opacityPercent"
-            type="number"
-            :min="0"
-            :max="100"
-            step="1"
-            density="compact"
-            variant="outlined"
-            hide-details
-            class="editor-photo-filters-screen__row-input"
-            @update:model-value="patchOpacity(toNumber($event, opacityPercent))"
-          />
-        </div>
-      </div>
+      <EditorPhotoFilterSettingsForm
+        :filter="displayFilter"
+        :opacity-percent="opacityPercent"
+        @patch-filter="patchFilter"
+        @patch-opacity="patchOpacity"
+        @reset="resetFilter"
+      />
     </div>
-
-    <v-btn
-      block
-      variant="outlined"
-      color="error"
-      prepend-icon="mdi-close-circle-outline"
-      class="editor-photo-filters-screen__reset"
-      @click="resetFilter"
-    >
-      Сбросить фильтр
-    </v-btn>
   </div>
 </template>
 
@@ -157,28 +68,11 @@ import {
   getPhotoFilterPresetDef,
   getCssFilterPreview,
   isCustomPhotoFilter,
-  lerpCorrection,
 } from '../../../models/photo-filter.model'
-import type { PhotoCorrectionParams, PhotoFilter, PhotoFilterPresetKey } from '../../../models/photo-filter.model'
+import type { PhotoFilter, PhotoFilterPresetKey } from '../../../models/photo-filter.model'
 import type { PhotoPlaceholder } from '../../../models/photo-placeholder.model'
 import { resolveAssetUrl } from '@/shared/config/assets'
-
-interface CorrectionField {
-  key: keyof PhotoCorrectionParams
-  label: string
-  min: number
-  max: number
-  step: number
-}
-
-const CORRECTION_FIELDS: CorrectionField[] = [
-  { key: 'brightness', label: 'Яркость', min: -100, max: 100, step: 1 },
-  { key: 'contrast', label: 'Контраст', min: -100, max: 100, step: 1 },
-  { key: 'saturation', label: 'Насыщенность', min: -100, max: 100, step: 1 },
-  { key: 'temperature', label: 'Температура', min: -100, max: 100, step: 1 },
-  { key: 'hue', label: 'Оттенок', min: -180, max: 180, step: 1 },
-  { key: 'blur', label: 'Размытие', min: 0, max: 20, step: 1 },
-]
+import EditorPhotoFilterSettingsForm from '../EditorPhotoFilterSettingsForm.vue'
 
 const store = useEditorStore()
 const { selectedElement: selected } = storeToRefs(store)
@@ -210,27 +104,16 @@ function selectPreset(key: PhotoFilterPresetKey): void {
   patchElement({ filter: { preset: key, intensity: 100, correction: { ...def.correction } } })
 }
 
-function patchIntensity(value: number): void {
-  const current = activeFilter.value
-  if (!current?.preset) {
-    return
-  }
-  const def = getPhotoFilterPresetDef(current.preset)
-  const clamped = Math.min(100, Math.max(0, value))
-  const correction = lerpCorrection(PHOTO_CORRECTION_NEUTRAL, def.correction, clamped / 100)
-  patchElement({ filter: { preset: current.preset, intensity: clamped, correction } })
-}
+// EditorPhotoFilterSettingsForm needs a concrete PhotoFilter to bind to even before one exists —
+// dragging any correction slider with no active filter starts one from scratch (preset: null),
+// matching the original inline behavior these sliders always had.
+const displayFilter = computed<PhotoFilter>(
+  () => activeFilter.value ?? { preset: null, intensity: 100, correction: PHOTO_CORRECTION_NEUTRAL },
+)
 
-function getCorrectionValue(key: keyof PhotoCorrectionParams): number {
-  return activeFilter.value?.correction[key] ?? PHOTO_CORRECTION_NEUTRAL[key]
-}
-
-function patchCorrection(key: keyof PhotoCorrectionParams, value: number): void {
-  const current = activeFilter.value
-  const correction = { ...(current?.correction ?? PHOTO_CORRECTION_NEUTRAL), [key]: value }
-  patchElement({
-    filter: { preset: current?.preset ?? null, intensity: current?.intensity ?? 100, correction },
-  })
+function patchFilter(partial: Partial<PhotoFilter>): void {
+  const current = displayFilter.value
+  patchElement({ filter: { ...current, ...partial } })
 }
 
 function patchOpacity(percent: number): void {
@@ -240,11 +123,6 @@ function patchOpacity(percent: number): void {
 
 function resetFilter(): void {
   patchElement({ filter: null })
-}
-
-function toNumber(value: string | number | null | undefined, fallback: number): number {
-  const parsed = Number(value)
-  return Number.isFinite(parsed) ? parsed : fallback
 }
 </script>
 
@@ -340,41 +218,4 @@ function toNumber(value: string | number | null | undefined, fallback: number): 
   color: pp.$ink-faint;
 }
 
-.editor-photo-filters-screen__row {
-  display: flex;
-  flex-direction: column;
-  gap: $spacing-1;
-}
-
-.editor-photo-filters-screen__row-label {
-  font-size: $font-size-body-sm;
-  color: pp.$ink-soft;
-}
-
-.editor-photo-filters-screen__row-control {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 56px;
-  gap: $spacing-2;
-  align-items: center;
-
-  // color="primary" alone renders black — Vuetify's .v-theme--light class re-declares the theme
-  // variables on the component itself, beating an inherited override from .editor-properties.
-  :deep(.v-slider-track__fill) {
-    background-color: pp.$accent !important;
-  }
-
-  :deep(.v-slider-thumb__surface) {
-    color: pp.$accent !important;
-  }
-}
-
-.editor-photo-filters-screen__row-input {
-  :deep(.v-field) {
-    font-size: $font-size-body-sm;
-  }
-}
-
-.editor-photo-filters-screen__reset {
-  margin-top: $spacing-2;
-}
 </style>

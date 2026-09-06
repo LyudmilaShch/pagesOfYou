@@ -1,8 +1,9 @@
 <template>
   <div class="editor-effect-settings-form">
     <EditorColorPicker
+      v-if="hasColor"
       label="Цвет"
-      :model-value="effect.params.color"
+      :model-value="colorValue"
       fallback="#111111"
       @update:model-value="emitPatch({ color: $event })"
     />
@@ -78,6 +79,11 @@ const emit = defineEmits<{
 
 const numberFields = computed(() => TEXT_EFFECT_FIELDS[props.effect.type])
 const hasOpacity = computed(() => 'opacity' in props.effect.params)
+const hasColor = computed(() => 'color' in props.effect.params)
+const colorValue = computed(() => {
+  const value = (props.effect.params as unknown as Record<string, unknown>).color
+  return typeof value === 'string' ? value : ''
+})
 
 function getFieldValue(key: string): number {
   const value = (props.effect.params as unknown as Record<string, unknown>)[key]

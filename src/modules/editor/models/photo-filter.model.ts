@@ -143,6 +143,24 @@ export function getPhotoFilterLabel(filter: PhotoFilter | null): string {
   return 'Пользовательский'
 }
 
+export interface PhotoCorrectionField {
+  key: keyof PhotoCorrectionParams
+  label: string
+  min: number
+  max: number
+  step: number
+}
+
+/** Shared by the "Все фильтры" screen and the mobile dock's inline settings — same sliders either way. */
+export const PHOTO_CORRECTION_FIELDS: PhotoCorrectionField[] = [
+  { key: 'brightness', label: 'Яркость', min: -100, max: 100, step: 1 },
+  { key: 'contrast', label: 'Контраст', min: -100, max: 100, step: 1 },
+  { key: 'saturation', label: 'Насыщенность', min: -100, max: 100, step: 1 },
+  { key: 'temperature', label: 'Температура', min: -100, max: 100, step: 1 },
+  { key: 'hue', label: 'Оттенок', min: -180, max: 180, step: 1 },
+  { key: 'blur', label: 'Размытие', min: 0, max: 20, step: 1 },
+]
+
 /** CSS-only approximation of the Konva pixel filter, used purely for preset thumbnails/previews. */
 export function getCssFilterPreview(correction: PhotoCorrectionParams): string {
   const brightness = 1 + correction.brightness / 200

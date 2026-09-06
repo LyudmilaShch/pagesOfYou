@@ -269,7 +269,7 @@ function updateSize(axis: 'width' | 'height', value: string | number | null | un
 
   patchElement({
     size: {
-      [axis]: toNumber(value, selected.value.size[axis]),
+      [axis]: Math.round(toNumber(value, selected.value.size[axis])),
     },
   })
 }

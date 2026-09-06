@@ -48,7 +48,6 @@ export interface StrokeEffectParams {
 }
 
 export interface NeonEffectParams {
-  color: string
   glow: number
   blur: number
   intensity: number
@@ -111,7 +110,8 @@ export const TEXT_EFFECT_CARDS: TextEffectCardDef[] = [
   {
     type: 'neon',
     label: 'Неон',
-    defaultParams: { color: '#4AD9FF', glow: 12, blur: 10, intensity: 80 } satisfies NeonEffectParams,
+    // No color of its own — renders using the text's own base color (see getTextEffectKonvaProps).
+    defaultParams: { glow: 12, blur: 10, intensity: 80 } satisfies NeonEffectParams,
     rendersOnCanvas: true,
   },
 ]

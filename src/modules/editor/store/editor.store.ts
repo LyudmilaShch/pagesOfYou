@@ -1442,17 +1442,20 @@ export const useEditorStore = defineStore('editor', () => {
 
     const current = location.node
     const nextPosition = patch.position ? { ...current.position, ...patch.position } : current.position
+    const nextSize = patch.size ? { ...current.size, ...patch.size } : current.size
     location.siblings[location.index] = {
       ...current,
       ...patch,
-      // Position is always whole pixels — drag (from Konva's fractional pointer coordinates) is
-      // the main source of non-integer values here; manual X/Y input is rounded at the field level
-      // too, but rounding it again here is harmless and keeps this the one place that guarantees it
-      // regardless of entry point.
+      // Position and size are always whole pixels — drag/resize (from Konva's fractional pointer
+      // coordinates) is the main source of non-integer values here; manual X/Y/W/H input is
+      // rounded at the field level too, but rounding it again here is harmless and keeps this the
+      // one place that guarantees it regardless of entry point.
       position: patch.position
         ? { x: Math.round(nextPosition.x), y: Math.round(nextPosition.y) }
         : current.position,
-      size: patch.size ? { ...current.size, ...patch.size } : current.size,
+      size: patch.size
+        ? { width: Math.round(nextSize.width), height: Math.round(nextSize.height) }
+        : current.size,
     } as PageElement
 
     const updated = location.siblings[location.index]

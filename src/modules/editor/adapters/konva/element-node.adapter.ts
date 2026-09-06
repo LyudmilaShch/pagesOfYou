@@ -883,7 +883,7 @@ export function getTextConfig(element: PageElement, displayText?: string | null)
 
   return {
     ...buildBaseTextConfig(textEl, displayText),
-    ...getTextEffectKonvaProps(textEl.effect),
+    ...getTextEffectKonvaProps(textEl.effect, textEl.color ?? '#111111'),
   }
 }
 
@@ -943,7 +943,7 @@ function withAlpha(color: string, opacity: number): string {
  * getTextEchoLayerConfigs above) — both are handled outside this function since a single Text
  * config object can't express them.
  */
-function getTextEffectKonvaProps(effect: TextEffect | null): Record<string, unknown> {
+function getTextEffectKonvaProps(effect: TextEffect | null, textColor: string): Record<string, unknown> {
   if (!effect) {
     return {}
   }
@@ -990,12 +990,12 @@ function getTextEffectKonvaProps(effect: TextEffect | null): Record<string, unkn
         fillAfterStrokeEnabled: true,
       }
     case 'neon':
-      // Tints the text itself to the neon color and radiates a colored shadow — 'glow' and
-      // 'blur' both widen the halo (Konva only exposes one shadowBlur radius per node), while
-      // 'intensity' drives how opaque/bright that halo reads.
+      // Radiates a colored shadow using the text's own base color (no separate color of its
+      // own) — 'glow' and 'blur' both widen the halo (Konva only exposes one shadowBlur radius
+      // per node), while 'intensity' drives how opaque/bright that halo reads.
       return {
-        fill: effect.params.color,
-        shadowColor: effect.params.color,
+        fill: textColor,
+        shadowColor: textColor,
         shadowOpacity: Math.min(1, effect.params.intensity / 100),
         shadowBlur: effect.params.blur + effect.params.glow,
         shadowOffsetX: 0,

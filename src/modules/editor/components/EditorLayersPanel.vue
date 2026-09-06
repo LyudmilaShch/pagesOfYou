@@ -49,7 +49,7 @@ function startDrag(id: string): void {
   dragOverInfo.value = null
 }
 
-function overRow(id: string, isGroup: boolean, event: DragEvent, rowEl: HTMLElement | null): void {
+function overRow(id: string, isGroup: boolean, event: MouseEvent, rowEl: HTMLElement | null): void {
   if (!draggedId.value || draggedId.value === id || !rowEl) {
     return
   }
@@ -90,7 +90,10 @@ function dropOnRow(targetId: string): void {
       if (targetLocation) {
         const parentId = targetLocation.parent?.id ?? null
         const sourceLocation = locateNode(root, sourceId)
-        let insertIndex = zone === 'before' ? targetLocation.index : targetLocation.index + 1
+        // The layers list displays elements in reverse array order (top of the list = end of the
+        // array, closest to the viewer) — so "before" visually (dropped above the target row)
+        // means AFTER the target in actual array-index terms, and vice versa.
+        let insertIndex = zone === 'before' ? targetLocation.index + 1 : targetLocation.index
 
         // Removing the source first (if it's a sibling before the target) shifts later indices left.
         if (

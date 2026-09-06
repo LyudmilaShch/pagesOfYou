@@ -36,11 +36,13 @@
       </button>
     </div>
 
-    <EditorEffectSettingsForm
-      v-if="activeEffect"
-      :effect="activeEffect"
-      @patch="patchEffectParams"
-    />
+    <div v-if="activeEffect" class="editor-effects-screen__settings">
+      <p class="editor-effects-screen__settings-title">Настройки эффекта — {{ activeEffectLabel }}</p>
+      <EditorEffectSettingsForm
+        :effect="activeEffect"
+        @patch="patchEffectParams"
+      />
+    </div>
   </div>
 </template>
 
@@ -60,6 +62,9 @@ const { selectedElement: selected } = storeToRefs(store)
 
 const textElement = computed(() => selected.value as TextPlaceholder | null)
 const activeEffect = computed<TextEffect | null>(() => textElement.value?.effect ?? null)
+const activeEffectLabel = computed(
+  () => TEXT_EFFECT_CARDS.find((card) => card.type === activeEffect.value?.type)?.label ?? '',
+)
 
 function patchElement(patch: ElementPatch): void {
   if (!selected.value) {
@@ -105,6 +110,21 @@ function removeEffect(): void {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: $spacing-2;
+}
+
+.editor-effects-screen__settings {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-3;
+}
+
+.editor-effects-screen__settings-title {
+  margin: 0;
+  font-size: 10px;
+  font-weight: $font-weight-semibold;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: pp.$ink-faint;
 }
 
 .editor-effects-screen__card {

@@ -11,6 +11,8 @@
           dragContext.dragOverInfo.value?.id === element.id &&
           dragContext.dragOverInfo.value.zone === 'inside',
       }"
+      :data-layer-id="element.id"
+      :data-layer-group="isGroup ? 'true' : 'false'"
       :draggable="!store.previewMode"
       @click="handleSelect"
       @dragstart="handleDragStart"
@@ -35,7 +37,11 @@
       </button>
       <span v-else class="editor-layer-node__chevron-spacer" />
 
-      <span class="editor-layer-node__drag-handle" aria-hidden="true">
+      <span
+        class="editor-layer-node__drag-handle"
+        aria-hidden="true"
+        @pointerdown="handleHandlePointerDown"
+      >
         <v-icon size="16">mdi-drag-vertical</v-icon>
       </span>
 
@@ -111,7 +117,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject, nextTick, ref } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, ref } from 'vue'
 
 import type { GroupElement, PageElement } from '../models'
 import { isGroupElement } from '../models'
@@ -162,6 +168,63 @@ function handleDragStart(event: DragEvent): void {
 function handleDragOver(event: DragEvent): void {
   dragContext.overRow(props.element.id, isGroup.value, event, rowRef.value)
 }
+
+// Native HTML5 drag-and-drop (above) only fires from a mouse — most mobile browsers never start
+// a native drag from a touch gesture at all. This is a parallel, Pointer Events-based path for
+// touch/pen input on the same handle; mouse pointers fall through to the native path unchanged.
+function findRowAt(clientX: number, clientY: number): HTMLElement | null {
+  const el = document.elementFromPoint(clientX, clientY)
+  return el ? (el.closest('.editor-layer-node__row') as HTMLElement | null) : null
+}
+
+function handlePointerDragMove(event: PointerEvent): void {
+  const row = findRowAt(event.clientX, event.clientY)
+  const targetId = row?.dataset.layerId
+  if (!row || !targetId) {
+    return
+  }
+
+  dragContext.overRow(targetId, row.dataset.layerGroup === 'true', event, row)
+}
+
+function stopPointerDragTracking(): void {
+  window.removeEventListener('pointermove', handlePointerDragMove)
+  window.removeEventListener('pointerup', handlePointerDragEnd)
+  window.removeEventListener('pointercancel', handlePointerDragCancel)
+}
+
+function handlePointerDragEnd(event: PointerEvent): void {
+  stopPointerDragTracking()
+
+  const targetId = findRowAt(event.clientX, event.clientY)?.dataset.layerId
+  if (targetId) {
+    dragContext.dropOnRow(targetId)
+  } else {
+    dragContext.endDrag()
+  }
+}
+
+function handlePointerDragCancel(): void {
+  stopPointerDragTracking()
+  dragContext.endDrag()
+}
+
+function handleHandlePointerDown(event: PointerEvent): void {
+  if (event.pointerType === 'mouse' || store.previewMode) {
+    return
+  }
+
+  event.preventDefault()
+  dragContext.startDrag(props.element.id)
+
+  window.addEventListener('pointermove', handlePointerDragMove)
+  window.addEventListener('pointerup', handlePointerDragEnd)
+  window.addEventListener('pointercancel', handlePointerDragCancel)
+}
+
+onBeforeUnmount(() => {
+  stopPointerDragTracking()
+})
 
 function startRename(): void {
   renameDraft.value = props.element.name
@@ -258,6 +321,9 @@ function cancelRename(): void {
   color: $text-muted;
   cursor: grab;
   flex-shrink: 0;
+  // Without this, a touch drag starting here is first interpreted as an attempt to scroll the
+  // layers list, fighting the pointer-based reorder drag (see handleHandlePointerDown).
+  touch-action: none;
 }
 
 .editor-layer-node__type-icon {

@@ -897,8 +897,14 @@
             class="editor-properties__fx-more"
             @click="panelStack.push({ id: 'text-effects', title: 'Эффекты' })"
           >
-            Все эффекты
-            <v-icon size="12">mdi-chevron-right</v-icon>
+            <template v-if="activeTextEffectLabel">
+              <v-icon size="14">mdi-tune-variant</v-icon>
+              Настроить «{{ activeTextEffectLabel }}»
+            </template>
+            <template v-else>
+              Все эффекты
+              <v-icon size="12">mdi-chevron-right</v-icon>
+            </template>
           </button>
 
         </div>
@@ -1119,8 +1125,14 @@
             class="editor-properties__fx-more"
             @click="panelStack.push({ id: 'photo-filters', title: 'Фильтры' })"
           >
-            Все фильтры
-            <v-icon size="12">mdi-chevron-right</v-icon>
+            <template v-if="photoElement.filter">
+              <v-icon size="14">mdi-tune-variant</v-icon>
+              Настроить «{{ getPhotoFilterLabel(photoElement.filter) }}»
+            </template>
+            <template v-else>
+              Все фильтры
+              <v-icon size="12">mdi-chevron-right</v-icon>
+            </template>
           </button>
 
         </div>
@@ -1393,6 +1405,7 @@ import {
   getPhotoFilterPresetDef,
   getCssFilterPreview,
   isCustomPhotoFilter,
+  getPhotoFilterLabel,
 } from '../models/photo-filter.model'
 import type { PhotoFilterPresetKey } from '../models/photo-filter.model'
 import { SHAPE_SHADOW_DESCRIPTORS, SHAPE_SHADOW_ICONS } from '../models/shape-shadow.model'
@@ -1610,6 +1623,14 @@ const isRectangleElement = computed(() => selected.value?.type === 'shape-rectan
 
 
 const textElement = computed(() => selected.value as import('../models/text-placeholder.model').TextPlaceholder)
+
+const activeTextEffectLabel = computed(() => {
+  const effect = textElement.value?.effect
+  if (!effect) {
+    return ''
+  }
+  return TEXT_EFFECT_CARDS.find((card) => card.type === effect.type)?.label ?? ''
+})
 
 const isTextBold = computed(() => {
   if (!selected.value || !isTextPlaceholderElement(selected.value)) {

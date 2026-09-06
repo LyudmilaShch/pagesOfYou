@@ -193,10 +193,27 @@
                     <span class="mobile-dock__fx-label">{{ card.label }}</span>
                   </button>
                 </div>
-                <button type="button" class="mobile-dock__fx-more" @click="panelStack.push({ id: 'text-effects', title: 'Эффекты' })">
-                  Все эффекты
-                  <v-icon size="12">mdi-chevron-right</v-icon>
-                </button>
+                <template v-if="textElement.effect">
+                  <button
+                    type="button"
+                    class="mobile-dock__inline-toggle"
+                    @click="effectSettingsOpen = !effectSettingsOpen"
+                  >
+                    <span>Настройки эффекта</span>
+                    <v-icon
+                      size="16"
+                      class="mobile-dock__inline-toggle-icon"
+                      :class="{ 'mobile-dock__inline-toggle-icon--open': effectSettingsOpen }"
+                    >
+                      mdi-chevron-down
+                    </v-icon>
+                  </button>
+
+                  <template v-if="effectSettingsOpen">
+                    <p class="mobile-dock__label-static">Настройки эффекта — {{ activeTextEffectLabel }}</p>
+                    <EditorEffectSettingsForm :effect="textElement.effect" @patch="patchEffectParams" />
+                  </template>
+                </template>
               </template>
 
               <template v-if="activeCategory === 'behavior'">
@@ -338,10 +355,29 @@
                     <span class="mobile-dock__fx-label">{{ preset.label }}</span>
                   </button>
                 </div>
-                <button type="button" class="mobile-dock__fx-more" @click="panelStack.push({ id: 'photo-filters', title: 'Фильтры' })">
-                  Все фильтры
-                  <v-icon size="12">mdi-chevron-right</v-icon>
+                <button
+                  type="button"
+                  class="mobile-dock__inline-toggle"
+                  @click="filterSettingsOpen = !filterSettingsOpen"
+                >
+                  <span>Пользовательские настройки</span>
+                  <v-icon
+                    size="16"
+                    class="mobile-dock__inline-toggle-icon"
+                    :class="{ 'mobile-dock__inline-toggle-icon--open': filterSettingsOpen }"
+                  >
+                    mdi-chevron-down
+                  </v-icon>
                 </button>
+
+                <EditorPhotoFilterSettingsForm
+                  v-if="filterSettingsOpen"
+                  :filter="displayPhotoFilter"
+                  :opacity-percent="filterOpacityPercent"
+                  @patch-filter="patchPhotoFilter"
+                  @patch-opacity="patchPhotoFilterOpacity"
+                  @reset="removePhotoFilter"
+                />
               </template>
 
               <template v-if="activeCategory === 'mask'">
@@ -367,11 +403,25 @@
                     </span>
                     <span class="mobile-dock__fx-label">{{ def.label }}</span>
                   </button>
+                  <button
+                    v-for="custom in customPhotoMasks"
+                    :key="custom.id"
+                    type="button"
+                    class="mobile-dock__fx-item"
+                    :class="{ active: isActiveCustomPhotoMask(custom) }"
+                    @click="selectCustomPhotoMask(custom)"
+                  >
+                    <span class="mobile-dock__fx-thumb">
+                      <img v-if="displayImageUrl" :src="displayImageUrl" alt="" :style="{ clipPath: getCustomPhotoMaskCssClipPath(custom.points) }" />
+                      <v-icon v-else size="20" color="textMuted">mdi-image-outline</v-icon>
+                    </span>
+                    <span class="mobile-dock__fx-label">{{ custom.name }}</span>
+                  </button>
                 </div>
-                <button type="button" class="mobile-dock__fx-more" @click="panelStack.push({ id: 'photo-mask', title: 'Маска' })">
-                  Все маски
-                  <v-icon size="12">mdi-chevron-right</v-icon>
-                </button>
+
+                <p v-if="photoElement.mask" class="mobile-dock__label-static">
+                  Дважды нажмите на фото — можно перемещать, масштабировать и вращать изображение внутри маски.
+                </p>
               </template>
 
               <template v-if="activeCategory === 'behavior'">
@@ -651,20 +701,22 @@ import { TEXT_EFFECT_CARDS, getTextEffectDemoStyle } from '../models/text-effect
 import type { TextEffect, TextEffectCardDef } from '../models/text-effect.model'
 import {
   PHOTO_FILTER_PRESETS,
+  PHOTO_CORRECTION_NEUTRAL,
   getPhotoFilterPresetDef,
   getCssFilterPreview,
   isCustomPhotoFilter,
 } from '../models/photo-filter.model'
-import type { PhotoFilterPresetKey } from '../models/photo-filter.model'
+import type { PhotoFilter, PhotoFilterPresetKey } from '../models/photo-filter.model'
 import { SHAPE_SHADOW_DESCRIPTORS, SHAPE_SHADOW_ICONS } from '../models/shape-shadow.model'
 import type { ShapeShadow, ShapeShadowType } from '../models/shape-shadow.model'
 import { SHAPE_VISUAL_EFFECT_DESCRIPTORS, getShapeVisualEffectPreviewStyle } from '../models/shape-visual-effect.model'
 import type { ShapeVisualEffect, ShapeVisualEffectType } from '../models/shape-visual-effect.model'
 import type { EffectDescriptor } from '../models/effect-descriptor.model'
-import { PHOTO_MASK_DESCRIPTORS } from '../models/photo-mask.model'
+import { PHOTO_MASK_DESCRIPTORS, getCustomPhotoMaskCssClipPath } from '../models/photo-mask.model'
 import type { PhotoMaskType } from '../models/photo-mask.model'
 import type { TextAlign, TextVerticalAlign } from '../models/text-placeholder.model'
 import { adminPhotoFramesApi, type AdminPhotoFrame } from '@/shared/api/admin/photo-frames.api'
+import { adminCustomPhotoMasksApi, type AdminCustomPhotoMask } from '@/shared/api/admin/custom-photo-masks.api'
 import { uploadAdminImage } from '@/shared/api/admin/uploads.api'
 import { resolveAssetUrl, toStoredAssetPath } from '@/shared/config/assets'
 import { useErrorMessageModal } from '@/shared/composables/useErrorMessageModal'
@@ -683,6 +735,8 @@ import EditorBorderFields from './EditorBorderFields.vue'
 import EditorShapeStrokeFields from './EditorShapeStrokeFields.vue'
 import EditorShapeColorFields from './EditorShapeColorFields.vue'
 import EditorSwitch from './EditorSwitch.vue'
+import EditorEffectSettingsForm from './properties-panel/EditorEffectSettingsForm.vue'
+import EditorPhotoFilterSettingsForm from './properties-panel/EditorPhotoFilterSettingsForm.vue'
 
 const store = useEditorStore()
 const { showErrorMessageModal } = useErrorMessageModal()
@@ -906,6 +960,29 @@ const isRectangleElement = computed(() => selected.value?.type === 'shape-rectan
 const isGroupElement = computed(() => selected.value?.type === 'group')
 
 const textElement = computed(() => selected.value as import('../models/text-placeholder.model').TextPlaceholder)
+
+const activeTextEffectLabel = computed(() => {
+  const effect = textElement.value?.effect
+  if (!effect) {
+    return ''
+  }
+  return TEXT_EFFECT_CARDS.find((card) => card.type === effect.type)?.label ?? ''
+})
+
+// Settings render inline below the horizontal strip (no drill-in screen) on mobile — these just
+// toggle whether that section is expanded, mirroring EditorEffectsScreen.vue/
+// EditorPhotoFiltersScreen.vue's own settings forms/logic without the extra navigation.
+const effectSettingsOpen = ref(true)
+const filterSettingsOpen = ref(true)
+
+function patchEffectParams(partial: Record<string, unknown>): void {
+  const effect = textElement.value?.effect
+  if (!effect) {
+    return
+  }
+  patchElement({ effect: { type: effect.type, params: { ...effect.params, ...partial } } as TextEffect })
+}
+
 const photoElement = computed(() => selected.value as import('../models/photo-placeholder.model').PhotoPlaceholder)
 const shapeElement = computed(() => selected.value as import('../models/shape-element.model').ShapeElement)
 
@@ -1013,6 +1090,22 @@ function removePhotoFilter(): void {
   patchElement({ filter: null })
 }
 
+// EditorPhotoFilterSettingsForm needs a concrete PhotoFilter even before one exists — dragging any
+// correction slider with no active filter starts one from scratch (preset: null), same as the
+// "Все фильтры" screen.
+const displayPhotoFilter = computed<PhotoFilter>(
+  () => photoElement.value?.filter ?? { preset: null, intensity: 100, correction: PHOTO_CORRECTION_NEUTRAL },
+)
+const filterOpacityPercent = computed(() => Math.round((photoElement.value?.opacity ?? 1) * 100))
+
+function patchPhotoFilter(partial: Partial<PhotoFilter>): void {
+  patchElement({ filter: { ...displayPhotoFilter.value, ...partial } })
+}
+
+function patchPhotoFilterOpacity(percent: number): void {
+  patchElement({ opacity: Math.min(100, Math.max(0, percent)) / 100 })
+}
+
 function selectPhotoMask(type: Exclude<PhotoMaskType, 'custom'>): void {
   patchElement({
     mask: { type },
@@ -1025,6 +1118,31 @@ function selectPhotoMask(type: Exclude<PhotoMaskType, 'custom'>): void {
 
 function removePhotoMask(): void {
   patchElement({ mask: null })
+}
+
+const customPhotoMasks = ref<AdminCustomPhotoMask[]>([])
+
+onMounted(async () => {
+  try {
+    customPhotoMasks.value = await adminCustomPhotoMasksApi.list()
+  } catch {
+    customPhotoMasks.value = []
+  }
+})
+
+function isActiveCustomPhotoMask(custom: AdminCustomPhotoMask): boolean {
+  const mask = photoElement.value?.mask
+  return mask?.type === 'custom' && mask.name === custom.name
+}
+
+function selectCustomPhotoMask(custom: AdminCustomPhotoMask): void {
+  patchElement({
+    mask: { type: 'custom', name: custom.name, points: custom.points },
+    cropX: 0,
+    cropY: 0,
+    imageScale: 1,
+    imageRotation: 0,
+  })
 }
 
 function selectPhotoFrame(item: AdminPhotoFrame): void {
@@ -1148,7 +1266,7 @@ function updateSize(axis: 'width' | 'height', value: string | number | null | un
     return
   }
 
-  patchElement({ size: { [axis]: toNumber(value, selected.value.size[axis]) } })
+  patchElement({ size: { [axis]: Math.round(toNumber(value, selected.value.size[axis])) } })
 }
 
 function updateRotation(value: string | number | null | undefined): void {
@@ -1915,6 +2033,7 @@ function handleRemove(): void {
 
 .mobile-dock__fx-scroll {
   display: flex;
+  flex-shrink: 0;
   gap: 10px;
   overflow-x: auto;
   margin: 0 -#{$spacing-4} 0;
@@ -2016,6 +2135,29 @@ function handleRemove(): void {
   font-weight: 500;
   color: pp.$ink-soft;
   cursor: pointer;
+}
+
+.mobile-dock__inline-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  border: none;
+  border-top: 1px solid pp.$border;
+  background: none;
+  padding: 12px 2px;
+  font-family: inherit;
+  font-size: 13px;
+  color: pp.$ink-soft;
+  cursor: pointer;
+}
+
+.mobile-dock__inline-toggle-icon {
+  transition: transform 0.15s ease;
+
+  &--open {
+    transform: rotate(180deg);
+  }
 }
 
 .mobile-dock__toggle-row {
