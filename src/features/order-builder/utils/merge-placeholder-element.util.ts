@@ -1,4 +1,5 @@
 import type { PageElement } from '@/modules/editor/models'
+import type { LeafElement } from '@/modules/editor/models'
 import type { ShapeElement } from '@/modules/editor/models/shape-element.model'
 import type { PhotoPlaceholder } from '@/modules/editor/models/photo-placeholder.model'
 import type {
@@ -7,11 +8,13 @@ import type {
   TextTransform,
   TextVerticalAlign,
 } from '@/modules/editor/models/text-placeholder.model'
+import type { CanvasData } from '@/modules/editor/models/canvas-data.model'
 import {
   normalizePhotoStrokePosition,
   normalizePhotoStrokeStyle,
   normalizePhotoStrokeWidth,
 } from '@/modules/editor/utils/element-stroke.util'
+import { mapTree } from '@/modules/editor/utils/element-tree.util'
 import type { PlaceholderJsonValue, PlaceholderValue } from '../types/order.types'
 
 export interface LocalPlaceholderDraft {
@@ -179,4 +182,24 @@ export function mergeElementWithPlaceholderValue(
   }
 
   return template
+}
+
+/**
+ * Bakes every saved `PlaceholderValue` directly into `canvasData` — unlike the simple fill mode
+ * (which merges only fillable elements on the fly for preview), this covers every leaf element and
+ * produces a real, standalone document: the seed for the advanced per-element editor, which edits
+ * and saves the full canvas rather than diffing individual placeholder values.
+ */
+export function materializeCanvasData(
+  canvasData: CanvasData,
+  placeholderValues: PlaceholderValue[],
+): CanvasData {
+  const byElementId = new Map(placeholderValues.map((value) => [value.elementId, value]))
+
+  return {
+    ...canvasData,
+    elements: mapTree(canvasData.elements, (leaf) =>
+      mergeElementWithPlaceholderValue(leaf, byElementId.get(leaf.id)) as LeafElement,
+    ),
+  }
 }

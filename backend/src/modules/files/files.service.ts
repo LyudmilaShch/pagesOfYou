@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../../database';
@@ -25,6 +31,17 @@ export interface UploadUrlResponse {
   publicUrl: string;
   /** Storage key — pass back to confirmUpload() */
   storageKey: string;
+}
+
+/** Who a gallery request is acting as — either a signed-in user (identity.userId) or a guest
+ * session (a scope.guestId, no auth). Exactly one of scope.orderId/scope.guestId is expected. */
+export interface GalleryIdentity {
+  userId?: string;
+}
+
+export interface GalleryScope {
+  orderId?: string;
+  guestId?: string;
 }
 
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
@@ -96,38 +113,46 @@ export class FilesService {
     return file;
   }
 
-  /**
-   * TODO: Soft-delete uploaded file. Remove from R2 only after order is completed.
-   */
-  async deleteFile(fileId: string, userId: string): Promise<void> {
-    const file = await this.prisma.uploadedFile.findFirst({
-      where: { id: fileId, userId, deletedAt: null },
+  private async assertOwnsOrder(orderId: string, userId: string): Promise<void> {
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, userId, deletedAt: null },
+      select: { id: true },
     });
 
-    if (!file) throw new NotFoundException('File not found');
-
-    await this.prisma.uploadedFile.update({
-      where: { id: fileId },
-      data: { deletedAt: new Date() },
-    });
-
-    this.logger.log(`File soft-deleted: ${fileId}`);
+    if (!order) {
+      throw new NotFoundException('Order not found.');
+    }
   }
 
-  /**
-   * Return files uploaded by the current user.
-   */
-  async findAllByUser(userId: string) {
-    return this.prisma.uploadedFile.findMany({
-      where: { userId, deletedAt: null },
-      orderBy: { createdAt: 'desc' },
-    });
-  }
-
-  /** Local disk upload for order photos (MVP without R2). */
-  registerLocalUpload(userId: string, file: Express.Multer.File | undefined) {
+  /** Local disk upload — general authenticated uploads (no scope) keep working exactly as
+   * before; `scope.orderId`/`scope.guestId` additionally attach the file to an order or guest
+   * gallery. */
+  async registerLocalUpload(
+    file: Express.Multer.File | undefined,
+    identity: GalleryIdentity,
+    scope: GalleryScope & { width?: number; height?: number },
+  ) {
     if (!file) {
       throw new BadRequestException('File is required.');
+    }
+
+    let userId: string | null = identity.userId ?? null;
+    let orderId: string | null = null;
+    let guestId: string | null = null;
+
+    if (scope.orderId) {
+      if (!identity.userId) {
+        throw new UnauthorizedException('Sign in to upload to an order gallery.');
+      }
+      await this.assertOwnsOrder(scope.orderId, identity.userId);
+      orderId = scope.orderId;
+    } else if (scope.guestId) {
+      // Guest gallery uploads aren't tied to an account, even if the caller happens to also be
+      // signed in — the guest token is what the frontend keeps reading the gallery back by.
+      guestId = scope.guestId;
+      userId = null;
+    } else if (!identity.userId) {
+      throw new UnauthorizedException('Sign in to upload files.');
     }
 
     const backendUrl =
@@ -142,18 +167,131 @@ export class FilesService {
     const url = `${backendUrl}/${publicPath}`;
     const storedPath = toStoredAssetPath(url) ?? publicPath;
 
-    return this.prisma.uploadedFile.create({
-      data: {
-        userId,
-        storageKey: storedPath,
-        url: storedPath,
-        originalName: file.originalname,
-        mimeType: file.mimetype,
-        size: file.size,
-      },
-    }).then((record) => ({
-      ...record,
-      url: resolveAssetUrl(record.url, backendUrl) ?? record.url,
-    }));
+    return this.prisma.uploadedFile
+      .create({
+        data: {
+          userId,
+          orderId,
+          guestId,
+          storageKey: storedPath,
+          url: storedPath,
+          originalName: file.originalname,
+          mimeType: file.mimetype,
+          size: file.size,
+          width: scope.width ?? null,
+          height: scope.height ?? null,
+        },
+      })
+      .then((record) => ({
+        ...record,
+        url: resolveAssetUrl(record.url, backendUrl) ?? record.url,
+      }));
+  }
+
+  /**
+   * TODO: Soft-delete uploaded file. Remove from R2 only after order is completed.
+   */
+  async deleteFile(fileId: string, identity: GalleryIdentity & GalleryScope): Promise<void> {
+    await this.getOwnedFileOrThrow(fileId, identity);
+
+    await this.prisma.uploadedFile.update({
+      where: { id: fileId },
+      data: { deletedAt: new Date() },
+    });
+
+    this.logger.log(`File soft-deleted: ${fileId}`);
+  }
+
+  async setFavorite(
+    fileId: string,
+    identity: GalleryIdentity & GalleryScope,
+    isFavorite: boolean,
+  ) {
+    const file = await this.getOwnedFileOrThrow(fileId, identity);
+
+    return this.prisma.uploadedFile.update({
+      where: { id: file.id },
+      data: { isFavorite },
+    });
+  }
+
+  /** Re-parents a guest's gallery photos onto a real order once one exists (e.g. at
+   * registration/checkout) — not called from anywhere yet (that flow doesn't exist yet), but the
+   * file model already supports it, so wiring the endpoint now avoids a second migration later. */
+  async claimGuestPhotos(
+    guestId: string,
+    orderId: string,
+    userId: string,
+  ): Promise<{ count: number }> {
+    await this.assertOwnsOrder(orderId, userId);
+
+    const result = await this.prisma.uploadedFile.updateMany({
+      where: { guestId, orderId: null, deletedAt: null },
+      data: { guestId: null, orderId, userId },
+    });
+
+    this.logger.log(`Claimed ${result.count} guest photo(s) for order ${orderId}`);
+    return { count: result.count };
+  }
+
+  private async getOwnedFileOrThrow(fileId: string, identity: GalleryIdentity & GalleryScope) {
+    const file = await this.prisma.uploadedFile.findFirst({
+      where: { id: fileId, deletedAt: null },
+    });
+
+    if (!file) {
+      throw new NotFoundException('File not found');
+    }
+
+    const owns =
+      (file.userId != null && identity.userId != null && file.userId === identity.userId) ||
+      (file.guestId != null && identity.guestId != null && file.guestId === identity.guestId);
+
+    if (!owns) {
+      // 404, not 403 — don't reveal that the id exists to a caller who doesn't own it.
+      throw new NotFoundException('File not found');
+    }
+
+    return file;
+  }
+
+  /**
+   * Return files scoped to an order gallery, a guest gallery, or (legacy, no scope) all files
+   * uploaded by the current user.
+   */
+  async list(identity: GalleryIdentity, scope: GalleryScope) {
+    if (scope.orderId) {
+      if (!identity.userId) {
+        throw new UnauthorizedException('Sign in to view this order gallery.');
+      }
+      await this.assertOwnsOrder(scope.orderId, identity.userId);
+      return this.prisma.uploadedFile.findMany({
+        where: { orderId: scope.orderId, deletedAt: null },
+        orderBy: { createdAt: 'desc' },
+      });
+    }
+
+    if (scope.guestId) {
+      return this.prisma.uploadedFile.findMany({
+        where: { guestId: scope.guestId, deletedAt: null },
+        orderBy: { createdAt: 'desc' },
+      });
+    }
+
+    if (!identity.userId) {
+      throw new UnauthorizedException('Sign in to view your files.');
+    }
+
+    return this.findAllByUser(identity.userId);
+  }
+
+  /**
+   * Return files uploaded by the current user.
+   */
+  async findAllByUser(userId: string) {
+    return this.prisma.uploadedFile.findMany({
+      where: { userId, deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 }

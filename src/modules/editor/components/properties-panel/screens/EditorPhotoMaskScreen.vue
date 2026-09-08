@@ -90,8 +90,8 @@ import { PHOTO_MASK_DESCRIPTORS, getCustomPhotoMaskCssClipPath } from '../../../
 import type { PhotoMask, PhotoMaskType } from '../../../models/photo-mask.model'
 import type { PhotoPlaceholder } from '../../../models/photo-placeholder.model'
 import { resolveAssetUrl } from '@/shared/config/assets'
-import { adminCustomPhotoMasksApi } from '@/shared/api/admin/custom-photo-masks.api'
 import type { AdminCustomPhotoMask } from '@/shared/api/admin/custom-photo-masks.api'
+import { editorAssets } from '../../../services/editor-assets'
 
 const store = useEditorStore()
 const { selectedElement: selected } = storeToRefs(store)
@@ -104,7 +104,7 @@ const customMasks = ref<AdminCustomPhotoMask[]>([])
 
 onMounted(async () => {
   try {
-    customMasks.value = await adminCustomPhotoMasksApi.list()
+    customMasks.value = await editorAssets.value.listCustomPhotoMasks()
   } catch {
     customMasks.value = []
   }

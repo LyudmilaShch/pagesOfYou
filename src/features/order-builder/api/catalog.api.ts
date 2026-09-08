@@ -9,6 +9,8 @@ import { resolveAssetUrl } from '@/shared/config/assets'
 import { http } from '@/shared/api/http'
 import type { BackendResponse } from '@/types/api.types'
 import type { MagazineType } from '../types/magazine-type'
+import type { AdminPhotoFrame } from '@/shared/api/admin/photo-frames.api'
+import type { AdminCustomPhotoMask } from '@/shared/api/admin/custom-photo-masks.api'
 
 interface CatalogMagazineType {
   id: string
@@ -81,6 +83,24 @@ export const catalogApi = {
           }
         : null,
     }))
+  },
+
+  /** Read-only reflection of the admin photo frame library — used by the customer-facing
+   * advanced page editor, which has no admin session. */
+  async getPhotoFrames(): Promise<AdminPhotoFrame[]> {
+    const { data } = await http.get<BackendResponse<AdminPhotoFrame[]>>('/catalog/photo-frames')
+    return data.data.map((item) => ({
+      ...item,
+      imageUrl: resolveAssetUrl(item.imageUrl) ?? item.imageUrl,
+    }))
+  },
+
+  /** Read-only reflection of the admin custom photo mask library — same reasoning as above. */
+  async getCustomPhotoMasks(): Promise<AdminCustomPhotoMask[]> {
+    const { data } = await http.get<BackendResponse<AdminCustomPhotoMask[]>>(
+      '/catalog/custom-photo-masks',
+    )
+    return data.data
   },
 }
 

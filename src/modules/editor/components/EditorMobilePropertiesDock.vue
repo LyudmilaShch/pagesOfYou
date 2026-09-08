@@ -250,6 +250,10 @@
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 16V4M8 8l4-4 4 4" /><path d="M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3" /></svg>
                     {{ photoElement.defaultImageUrl ? 'Заменить' : 'Загрузить' }}
                   </button>
+                  <button v-if="editorPhotoPicker" type="button" class="mobile-dock__btn-compact" @click="pickFromGallery">
+                    <v-icon size="16">mdi-image-multiple-outline</v-icon>
+                    Из галереи
+                  </button>
                   <input ref="imageInputRef" type="file" accept="image/jpeg,image/png,image/webp" hidden @change="onImageSelected" />
                 </div>
               </template>
@@ -715,9 +719,10 @@ import type { EffectDescriptor } from '../models/effect-descriptor.model'
 import { PHOTO_MASK_DESCRIPTORS, getCustomPhotoMaskCssClipPath } from '../models/photo-mask.model'
 import type { PhotoMaskType } from '../models/photo-mask.model'
 import type { TextAlign, TextVerticalAlign } from '../models/text-placeholder.model'
-import { adminPhotoFramesApi, type AdminPhotoFrame } from '@/shared/api/admin/photo-frames.api'
-import { adminCustomPhotoMasksApi, type AdminCustomPhotoMask } from '@/shared/api/admin/custom-photo-masks.api'
-import { uploadAdminImage } from '@/shared/api/admin/uploads.api'
+import type { AdminPhotoFrame } from '@/shared/api/admin/photo-frames.api'
+import type { AdminCustomPhotoMask } from '@/shared/api/admin/custom-photo-masks.api'
+import { editorAssets } from '../services/editor-assets'
+import { editorPhotoPicker } from '../services/editor-photo-picker'
 import { resolveAssetUrl, toStoredAssetPath } from '@/shared/config/assets'
 import { useErrorMessageModal } from '@/shared/composables/useErrorMessageModal'
 import { getUploadErrorMessage } from '@/shared/utils/api-error.util'
@@ -1027,8 +1032,8 @@ const uploadingImage = ref(false)
 const photoFrames = ref<AdminPhotoFrame[]>([])
 const activePhotoFrames = computed(() => photoFrames.value.filter((item) => item.isActive))
 
-adminPhotoFramesApi
-  .list()
+editorAssets.value
+  .listPhotoFrames()
   .then((items) => {
     photoFrames.value = items
   })
@@ -1124,7 +1129,7 @@ const customPhotoMasks = ref<AdminCustomPhotoMask[]>([])
 
 onMounted(async () => {
   try {
-    customPhotoMasks.value = await adminCustomPhotoMasksApi.list()
+    customPhotoMasks.value = await editorAssets.value.listCustomPhotoMasks()
   } catch {
     customPhotoMasks.value = []
   }
@@ -1182,7 +1187,7 @@ async function onImageSelected(event: Event): Promise<void> {
   uploadingImage.value = true
 
   try {
-    const { url } = await uploadAdminImage(file)
+    const { url } = await editorAssets.value.uploadImage(file)
     patchElement({
       defaultImageUrl: toStoredAssetPath(url) ?? url,
       cropX: 0,
@@ -1195,6 +1200,24 @@ async function onImageSelected(event: Event): Promise<void> {
     uploadingImage.value = false
     input.value = ''
   }
+}
+
+async function pickFromGallery(): Promise<void> {
+  if (!selected.value || !editorPhotoPicker.value) {
+    return
+  }
+
+  const url = await editorPhotoPicker.value.open()
+  if (!url) {
+    return
+  }
+
+  patchElement({
+    defaultImageUrl: toStoredAssetPath(url) ?? url,
+    cropX: 0,
+    cropY: 0,
+    imageScale: 1,
+  })
 }
 
 function selectShapeShadow(type: ShapeShadowType): void {
@@ -1975,6 +1998,7 @@ function handleRemove(): void {
 .mobile-dock__default-image-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: $spacing-2;
 }
 

@@ -2,16 +2,9 @@
   <div class="editor-layout">
     <header class="editor-layout__header">
       <div class="editor-layout__header-left">
-        <router-link
-          :to="{
-            name: 'admin-magazine-type-edit',
-            params: { id: magazineTypeId },
-            query: { tab: 'pages' },
-          }"
-          class="editor-layout__back"
-        >
+        <router-link :to="resolvedBackTo" class="editor-layout__back">
           <v-icon size="18">mdi-arrow-left</v-icon>
-          <span class="editor-layout__back-label">Страницы</span>
+          <span class="editor-layout__back-label">{{ backLabel }}</span>
         </router-link>
 
         <div class="editor-layout__divider editor-layout__desktop-only" aria-hidden="true" />
@@ -144,13 +137,13 @@
         <v-btn
           color="primary"
           size="small"
-          prepend-icon="mdi-content-save-outline"
+          :prepend-icon="topAction ? (topAction.icon ?? 'mdi-cart-outline') : 'mdi-content-save-outline'"
           class="editor-layout__desktop-only"
-          :loading="store.saving"
-          :disabled="!store.document || !store.isDirty || store.previewMode"
-          @click="handleSave"
+          :loading="topAction ? topAction.isLoading() : store.saving"
+          :disabled="topAction ? topAction.isDisabled() : (!store.document || !store.isDirty || store.previewMode)"
+          @click="handleTopAction"
         >
-          Сохранить
+          {{ topAction ? topAction.label : 'Сохранить' }}
         </v-btn>
 
         <v-tooltip location="bottom" content-class="editor-tooltip--arrow-bottom">
@@ -161,20 +154,25 @@
               size="small"
               variant="text"
               class="editor-layout__mobile-save"
-              :loading="store.saving"
-              :disabled="!store.document || !store.isDirty || store.previewMode"
-              aria-label="Сохранить"
-              @click="handleSave"
+              :loading="topAction ? topAction.isLoading() : store.saving"
+              :disabled="topAction ? topAction.isDisabled() : (!store.document || !store.isDirty || store.previewMode)"
+              :aria-label="topAction ? topAction.label : 'Сохранить'"
+              @click="handleTopAction"
             >
-              <v-icon size="20">mdi-content-save-outline</v-icon>
+              <v-icon size="20">{{ topAction ? (topAction.icon ?? 'mdi-cart-outline') : 'mdi-content-save-outline' }}</v-icon>
             </v-btn>
           </template>
-          Сохранить
+          {{ topAction ? topAction.label : 'Сохранить' }}
         </v-tooltip>
       </div>
     </header>
 
     <main class="editor-layout__main">
+      <!-- No :key here on purpose: the order builder's "Структура" panel switches :journalPageId
+           within this same route, and forcing a remount on that would tear down and rebuild the
+           whole EditorPage tree (including the rail/flyout panels) on every page switch — visibly
+           flashing them away. JournalPageEditorPage.vue instead watches the param and reloads the
+           document in place, keeping the rail mounted throughout. -->
       <router-view />
     </main>
 
@@ -187,13 +185,40 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive } from 'vue'
 import { useRoute } from 'vue-router'
+import type { RouteLocationRaw } from 'vue-router'
 
 import { useEditorStore } from '../store/editor.store'
+import { editorTopAction } from '../services/editor-top-action'
+
+const props = withDefaults(
+  defineProps<{
+    /** Defaults to the admin "back to template pages" destination when omitted. */
+    backTo?: RouteLocationRaw
+    backLabel?: string
+    savedMessage?: string
+    saveErrorMessage?: string
+  }>(),
+  {
+    backTo: undefined,
+    backLabel: 'Страницы',
+    savedMessage: 'Шаблон сохранён',
+    saveErrorMessage: 'Не удалось сохранить шаблон',
+  },
+)
 
 const route = useRoute()
 const store = useEditorStore()
+const topAction = editorTopAction
 
 const magazineTypeId = computed(() => route.params.magazineTypeId as string)
+const resolvedBackTo = computed<RouteLocationRaw>(
+  () =>
+    props.backTo ?? {
+      name: 'admin-magazine-type-edit',
+      params: { id: magazineTypeId.value },
+      query: { tab: 'pages' },
+    },
+)
 
 const snackbar = reactive({
   show: false,
@@ -318,14 +343,27 @@ function ungroupSelection(): void {
 async function handleSave(): Promise<void> {
   try {
     await store.saveCanvas()
-    snackbar.text = 'Шаблон сохранён'
+    snackbar.text = props.savedMessage
     snackbar.color = 'success'
     snackbar.show = true
   } catch {
-    snackbar.text = 'Не удалось сохранить шаблон'
+    snackbar.text = props.saveErrorMessage
     snackbar.color = 'error'
     snackbar.show = true
   }
+}
+
+/** The top-bar button's click handler — delegates to whatever `provideEditorTopAction` registered
+ * (e.g. "Оформить заказ" in the order builder), which owns its own feedback (its own snackbar,
+ * navigation, etc.); falls back to the plain save otherwise. Deliberately not wired to Ctrl+S —
+ * that stays a plain save everywhere, so the shortcut can never accidentally submit an order. */
+async function handleTopAction(): Promise<void> {
+  if (topAction.value) {
+    await topAction.value.onClick()
+    return
+  }
+
+  await handleSave()
 }
 
 onMounted(() => {

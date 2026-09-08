@@ -25,6 +25,7 @@ import { useRoute } from 'vue-router'
 import EditorPage from '@/modules/editor/pages/EditorPage.vue'
 import { useEditorStore } from '@/modules/editor/store/editor.store'
 import { ensureCustomFontsLoaded } from '@/modules/editor/utils/custom-fonts.util'
+import { adminMagazinePagesApi } from '@/shared/api/admin/magazine-pages.api'
 
 const route = useRoute()
 const store = useEditorStore()
@@ -39,7 +40,10 @@ onMounted(async () => {
   const fontsReady = ensureCustomFontsLoaded()
 
   try {
-    await store.fetchAndLoad(magazineTypeId, pageId)
+    await store.fetchAndLoad(
+      () => adminMagazinePagesApi.getOne(magazineTypeId, pageId),
+      (canvasData) => adminMagazinePagesApi.update(magazineTypeId, pageId, { canvasData }).then(() => undefined),
+    )
   } catch (err: unknown) {
     const message =
       (err as { response?: { data?: { message?: string } } })?.response?.data?.message ??

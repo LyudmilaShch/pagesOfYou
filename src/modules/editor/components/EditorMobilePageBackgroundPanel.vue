@@ -138,7 +138,7 @@ import type {
   SpreadBackgroundMode,
   SpreadBackgroundSide,
 } from '../models/page-background.model'
-import { uploadAdminImage } from '@/shared/api/admin/uploads.api'
+import { editorAssets } from '../services/editor-assets'
 import { resolveAssetUrl, toStoredAssetPath } from '@/shared/config/assets'
 import { useErrorMessageModal } from '@/shared/composables/useErrorMessageModal'
 import { getUploadErrorMessage } from '@/shared/utils/api-error.util'
@@ -206,7 +206,7 @@ async function onPageBackgroundSelected(event: Event): Promise<void> {
   uploadingPageBackgroundImage.value = true
 
   try {
-    const { url } = await uploadAdminImage(file)
+    const { url } = await editorAssets.value.uploadImage(file)
     store.updatePageSettings({
       backgroundImageUrl: toStoredAssetPath(url) ?? url,
       backgroundImageCropX: 0,

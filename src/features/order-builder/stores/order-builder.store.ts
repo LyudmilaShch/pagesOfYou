@@ -6,7 +6,7 @@ import { ordersApi, type SetJournalPageTemplatePayload } from '../api/orders.api
 import { MIN_JOURNAL_SPREADS } from '../constants/journal.constants'
 import { normalizeCanvasData, type CanvasData } from '@/modules/editor/models/canvas-data.model'
 import type { MagazineType } from '../types/magazine-type'
-import type { JournalPage, OrderDetail, PlaceholderInput } from '../types/order.types'
+import type { JournalPage, OrderDetail } from '../types/order.types'
 import {
   buildInitialJournalSlots,
   buildJournalPageSnapshot,
@@ -37,10 +37,6 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
   const isSaving = ref(false)
   const isSubmitting = ref(false)
   const orderError = ref<string | null>(null)
-
-  const currentPageIndex = ref(0)
-
-  const currentJournalPage = computed(() => order.value?.journalPages[currentPageIndex.value] ?? null)
 
   const groupedTemplates = computed(() => groupTemplatesByPageType(templateCatalog.value))
 
@@ -165,8 +161,6 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
             : undefined,
         ),
       }
-
-      currentPageIndex.value = 0
     } catch (err: unknown) {
       if (!orderError.value) {
         orderError.value =
@@ -195,7 +189,6 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
         rightMagazinePageId: spread.rightMagazinePageId,
       }))
       order.value = await ordersApi.createDraft(magazineTypeId)
-      currentPageIndex.value = 0
       return order.value
     } catch {
       orderError.value = 'Не удалось создать заказ. Попробуйте ещё раз.'
@@ -224,7 +217,12 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     }
   }
 
-  function applyLocalPlaceholderValues(journalPageId: string, values: PlaceholderInput[]): void {
+  /** Keeps this store's in-memory copy of a page's document current after the advanced per-element
+   * editor saves it — for a real order this runs alongside the backend save (see
+   * `JournalPageEditorPage.vue`), for a local draft it *is* the save. Mirrors the backend's
+   * `saveJournalPageCanvas`: replaces the page's document wholesale and clears any placeholder
+   * diffs, since they're now baked into the snapshot. */
+  function applyJournalPageCanvasEdit(journalPageId: string, canvasData: CanvasData): void {
     if (!order.value) {
       return
     }
@@ -234,78 +232,10 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
       return
     }
 
-    const page = order.value.journalPages[pageIndex]
-    const nextValues = new Map(page.placeholderValues.map((value) => [value.elementId, value]))
-
-    for (const input of values) {
-      const isEmpty =
-        input.valueType === 'PHOTO'
-          ? !input.jsonValue?.url?.trim()
-          : !input.textValue?.trim()
-
-      if (isEmpty) {
-        nextValues.delete(input.elementId)
-        continue
-      }
-
-      nextValues.set(input.elementId, {
-        id: nextValues.get(input.elementId)?.id ?? `local-value-${input.elementId}`,
-        elementId: input.elementId,
-        valueType: input.valueType,
-        textValue: input.textValue ?? null,
-        jsonValue: input.jsonValue ?? null,
-      })
-    }
-
-    order.value.journalPages[pageIndex] = {
-      ...page,
-      placeholderValues: Array.from(nextValues.values()),
-    }
-  }
-
-  function updateCurrentPageSnapshot(pageSnapshot: CanvasData): void {
-    if (!order.value || !currentJournalPage.value) {
-      return
-    }
-
-    const pageIndex = order.value.journalPages.findIndex(
-      (page) => page.id === currentJournalPage.value!.id,
-    )
-
-    if (pageIndex === -1) {
-      return
-    }
-
     order.value.journalPages[pageIndex] = {
       ...order.value.journalPages[pageIndex],
-      pageSnapshot,
-    }
-  }
-
-  async function saveCurrentPagePlaceholders(values: PlaceholderInput[]): Promise<void> {
-    if (!order.value || !currentJournalPage.value) {
-      return
-    }
-
-    isSaving.value = true
-    orderError.value = null
-
-    try {
-      if (isLocalDraft.value) {
-        applyLocalPlaceholderValues(currentJournalPage.value.id, values)
-        return
-      }
-
-      order.value = await ordersApi.savePlaceholders(
-        order.value.id,
-        currentJournalPage.value.id,
-        values,
-      )
-    } catch {
-      orderError.value = 'Не удалось сохранить данные страницы.'
-      throw new Error(orderError.value)
-    } finally {
-      isSaving.value = false
+      pageSnapshot: canvasData,
+      placeholderValues: [],
     }
   }
 
@@ -464,20 +394,10 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     }
 
     const orderedSpreads = spreadIds.map((id) => spreads.find((page) => page.id === id)!)
-    const nextPages = [cover, ...orderedSpreads, backCover].map((page, index) => ({
+    order.value.journalPages = [cover, ...orderedSpreads, backCover].map((page, index) => ({
       ...page,
       sortOrder: index,
     }))
-
-    const currentId = currentJournalPage.value?.id
-    order.value.journalPages = nextPages
-
-    if (currentId) {
-      const nextIndex = nextPages.findIndex((page) => page.id === currentId)
-      if (nextIndex !== -1) {
-        currentPageIndex.value = nextIndex
-      }
-    }
   }
 
   async function reorderJournalSpreads(spreadIds: string[]): Promise<void> {
@@ -601,16 +521,11 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     }
   }
 
-  function setCurrentPageIndex(index: number): void {
-    currentPageIndex.value = index
-  }
-
   function resetOrderFlow(): void {
     order.value = null
     templateCatalog.value = []
     configuredDefaultSpreads.value = []
     isLocalDraft.value = false
-    currentPageIndex.value = 0
     orderError.value = null
   }
 
@@ -630,18 +545,14 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     isSaving,
     isSubmitting,
     orderError,
-    currentPageIndex,
-    currentJournalPage,
     loadLocalDraft,
     createDraftOrder,
     loadOrder,
-    saveCurrentPagePlaceholders,
-    updateCurrentPageSnapshot,
+    applyJournalPageCanvasEdit,
     setJournalPageTemplate,
     addJournalSpread,
     reorderJournalSpreads,
     submitOrder,
-    setCurrentPageIndex,
     resetOrderFlow,
   }
 })

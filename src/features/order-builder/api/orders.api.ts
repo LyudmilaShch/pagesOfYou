@@ -1,6 +1,7 @@
 import { resolveAssetUrl } from '@/shared/config/assets'
 import { http } from '@/shared/api/http'
 import type { BackendResponse } from '@/types/api.types'
+import type { CanvasData } from '@/modules/editor/models/canvas-data.model'
 import type { OrderDetail, PlaceholderInput } from '../types/order.types'
 import type { JournalSpreadLayout } from '../constants/journal.constants'
 
@@ -63,6 +64,20 @@ export const ordersApi = {
     const { data } = await http.patch<BackendResponse<OrderDetail>>(
       `/orders/${orderId}/journal-pages/${journalPageId}/template`,
       payload,
+    )
+    return data.data
+  },
+
+  /** Advanced per-element editor save — replaces the journal page's full document and clears any
+   * simple-mode placeholder diffs (see backend `saveJournalPageCanvas`). */
+  async saveJournalPageCanvas(
+    orderId: string,
+    journalPageId: string,
+    canvasData: CanvasData,
+  ): Promise<OrderDetail> {
+    const { data } = await http.patch<BackendResponse<OrderDetail>>(
+      `/orders/${orderId}/journal-pages/${journalPageId}/canvas`,
+      { canvasData },
     )
     return data.data
   },

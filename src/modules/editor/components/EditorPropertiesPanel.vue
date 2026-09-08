@@ -960,6 +960,16 @@
               {{ photoElement.defaultImageUrl ? 'Заменить' : 'Загрузить' }}
             </v-btn>
 
+            <v-btn
+              v-if="editorPhotoPicker"
+              variant="outlined"
+              size="small"
+              prepend-icon="mdi-image-multiple-outline"
+              @click="pickFromGallery"
+            >
+              Из галереи
+            </v-btn>
+
           </div>
 
           <input ref="imageInputRef" type="file" accept="image/jpeg,image/png,image/webp" hidden @change="onImageSelected" />
@@ -1418,7 +1428,8 @@ import type { PhotoMaskType } from '../models/photo-mask.model'
 
 
 
-import { uploadAdminImage } from '@/shared/api/admin/uploads.api'
+import { editorAssets } from '../services/editor-assets'
+import { editorPhotoPicker } from '../services/editor-photo-picker'
 
 import { resolveAssetUrl, toStoredAssetPath } from '@/shared/config/assets'
 import { useErrorMessageModal } from '@/shared/composables/useErrorMessageModal'
@@ -1445,7 +1456,7 @@ import EditorShapeStrokeFields from './EditorShapeStrokeFields.vue'
 import EditorShapeColorFields from './EditorShapeColorFields.vue'
 import EditorColorPicker from './EditorColorPicker.vue'
 import EditorBorderFields from './EditorBorderFields.vue'
-import { adminPhotoFramesApi, type AdminPhotoFrame } from '@/shared/api/admin/photo-frames.api'
+import type { AdminPhotoFrame } from '@/shared/api/admin/photo-frames.api'
 import EditorStepperField from './EditorStepperField.vue'
 import EditorSwitch from './EditorSwitch.vue'
 import EditorPositionFields from './EditorPositionFields.vue'
@@ -1496,8 +1507,8 @@ const uploadingImage = ref(false)
 const photoFrames = ref<AdminPhotoFrame[]>([])
 const activePhotoFrames = computed(() => photoFrames.value.filter((item) => item.isActive))
 
-adminPhotoFramesApi
-  .list()
+editorAssets.value
+  .listPhotoFrames()
   .then((items) => {
     photoFrames.value = items
   })
@@ -1974,7 +1985,7 @@ async function onPageBackgroundSelected(event: Event): Promise<void> {
   uploadingPageBackgroundImage.value = true
 
   try {
-    const { url } = await uploadAdminImage(file)
+    const { url } = await editorAssets.value.uploadImage(file)
     store.updatePageSettings({
       backgroundImageUrl: toStoredAssetPath(url) ?? url,
       backgroundImageCropX: 0,
@@ -2042,7 +2053,7 @@ async function onImageSelected(event: Event): Promise<void> {
 
   try {
 
-    const { url } = await uploadAdminImage(file)
+    const { url } = await editorAssets.value.uploadImage(file)
 
     patchElement({
       defaultImageUrl: toStoredAssetPath(url) ?? url,
@@ -2068,6 +2079,23 @@ async function onImageSelected(event: Event): Promise<void> {
 
 }
 
+async function pickFromGallery(): Promise<void> {
+  if (!selected.value || !editorPhotoPicker.value) {
+    return
+  }
+
+  const url = await editorPhotoPicker.value.open()
+  if (!url) {
+    return
+  }
+
+  patchElement({
+    defaultImageUrl: toStoredAssetPath(url) ?? url,
+    cropX: 0,
+    cropY: 0,
+    imageScale: 1,
+  })
+}
 
 
 function handleDuplicate(): void {
@@ -3122,6 +3150,7 @@ function handleRemove(): void {
 .editor-properties__default-image-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: $spacing-2;
 }
 

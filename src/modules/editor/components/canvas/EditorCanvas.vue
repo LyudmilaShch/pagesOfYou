@@ -398,7 +398,7 @@ import PageBackgroundCropLayer from './PageBackgroundCropLayer.vue'
 import EditorTextEditOverlay from './EditorTextEditOverlay.vue'
 import EditorPhotoCropOverlay from './EditorPhotoCropOverlay.vue'
 import EditorPrintCropWarning from './EditorPrintCropWarning.vue'
-import { uploadAdminImage } from '@/shared/api/admin/uploads.api'
+import { editorAssets } from '../../services/editor-assets'
 import { useErrorMessageModal } from '@/shared/composables/useErrorMessageModal'
 import { getUploadErrorMessage } from '@/shared/utils/api-error.util'
 import {
@@ -1435,7 +1435,7 @@ async function handlePhotoDrop(event: DragEvent): Promise<void> {
   photoDropUploading.value = true
 
   try {
-    const { url } = await uploadAdminImage(file)
+    const { url } = await editorAssets.value.uploadImage(file)
     store.setPhotoImage(target.id, url)
     store.selectElement(target.id)
   } catch (error) {

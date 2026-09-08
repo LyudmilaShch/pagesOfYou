@@ -141,7 +141,16 @@ async function handleNext(): Promise<void> {
 
   try {
     await store.loadLocalDraft(store.selectedMagazineType.id)
-    await router.push({ name: 'create-order-fill' })
+
+    const firstPage = store.order?.journalPages[0]
+    if (!store.order || !firstPage) {
+      return
+    }
+
+    await router.push({
+      name: 'journal-page-editor',
+      params: { orderId: store.order.id, journalPageId: firstPage.id },
+    })
   } catch {
     // orderError is set in the store
   }

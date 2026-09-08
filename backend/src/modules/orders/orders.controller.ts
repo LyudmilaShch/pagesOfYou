@@ -6,6 +6,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { CreateDraftOrderDto } from './dto/create-draft-order.dto';
 import { ReorderJournalSpreadsDto } from './dto/reorder-journal-spreads.dto';
+import { SaveJournalPageCanvasDto } from './dto/save-journal-page-canvas.dto';
 import { SetJournalPageTemplateDto } from './dto/set-journal-page-template.dto';
 import { UpsertPlaceholdersDto } from './dto/upsert-placeholders.dto';
 
@@ -49,6 +50,19 @@ export class OrdersController {
     @Body() body: UpsertPlaceholdersDto,
   ) {
     return this.ordersService.upsertPlaceholders(orderId, journalPageId, user.sub, body);
+  }
+
+  @Patch(':orderId/journal-pages/:journalPageId/canvas')
+  @ApiOperation({
+    summary: 'Save the full page document (advanced per-element editor) — replaces pageSnapshot and clears placeholder diffs',
+  })
+  saveJournalPageCanvas(
+    @CurrentUser() user: JwtPayload,
+    @Param('orderId') orderId: string,
+    @Param('journalPageId') journalPageId: string,
+    @Body() body: SaveJournalPageCanvasDto,
+  ) {
+    return this.ordersService.saveJournalPageCanvas(orderId, journalPageId, user.sub, body);
   }
 
   @Patch(':orderId/journal-pages/:journalPageId/template')

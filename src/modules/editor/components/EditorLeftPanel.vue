@@ -2,6 +2,18 @@
   <div class="editor-left-panel">
     <nav class="editor-left-panel__rail" aria-label="Категории элементов">
       <button
+        v-for="category in editorLeftPanelExtraCategories"
+        :key="category.key"
+        type="button"
+        class="editor-left-panel__rail-btn"
+        :class="{ 'editor-left-panel__rail-btn--active': activeCategory === category.key }"
+        @click="toggleCategory(category.key)"
+      >
+        <v-icon size="18">{{ category.icon }}</v-icon>
+        <span>{{ category.label }}</span>
+      </button>
+
+      <button
         type="button"
         class="editor-left-panel__rail-btn"
         :class="{ 'editor-left-panel__rail-btn--active': activeCategory === 'photo' }"
@@ -62,7 +74,8 @@
 
     <div v-if="activeCategory" class="editor-left-panel__flyout">
       <EditorLayersPanel v-if="activeCategory === 'layers'" />
-      <EditorLibraryPanel v-else :category="activeCategory" />
+      <component :is="activeExtraCategory.panel" v-else-if="activeExtraCategory" />
+      <EditorLibraryPanel v-else :category="(activeCategory as LibraryElementCategory)" />
 
       <button
         type="button"
@@ -77,21 +90,33 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import EditorLayersPanel from './EditorLayersPanel.vue'
 import EditorLibraryPanel from './EditorLibraryPanel.vue'
 import type { LibraryElementCategory } from '../factories/create-element.factory'
 import { useEditorStore } from '../store/editor.store'
+import { editorLeftPanelExtraCategories } from '../services/editor-left-panel-extra-category'
 
-type RailKey = LibraryElementCategory | 'layers'
+type RailKey = LibraryElementCategory | 'layers' | string
 
 const emit = defineEmits<{
   expanded: [value: boolean]
 }>()
 
 const store = useEditorStore()
-const activeCategory = ref<RailKey | null>('photo')
+// Opens straight into the first registered extra category (e.g. the order builder's
+// "Структура") when any are registered — otherwise the usual default. Reads the ref once, at
+// this component's own setup() time, which runs before the entry page's onMounted — see
+// provideEditorLeftPanelExtraCategories' doc comment for why the caller must provide it
+// synchronously, not from onMounted, for this to work.
+const activeCategory = ref<RailKey | null>(
+  editorLeftPanelExtraCategories.value[0]?.key ?? 'photo',
+)
+
+const activeExtraCategory = computed(() =>
+  editorLeftPanelExtraCategories.value.find((category) => category.key === activeCategory.value),
+)
 
 
 // Only one side panel is open at a time — opening a rail flyout deselects the canvas and drops any
@@ -111,6 +136,20 @@ function toggleCategory(key: RailKey): void {
 }
 
 watch(activeCategory, (value) => emit('expanded', value !== null), { immediate: true })
+
+// Defensive: if the active extra category disappears while its flyout is open (e.g. the entry
+// page unmounts and clears the list), fall back rather than leave the rail pointed at a category
+// with nothing to show. Only resets when the active category *was* one of the extras (checked
+// against the previous list) — a built-in category (photo/text/shape/layers) is never in this
+// list at all, so it must not be reset just because the extras changed.
+watch(editorLeftPanelExtraCategories, (categories, previousCategories) => {
+  const wasActiveExtra = previousCategories?.some((category) => category.key === activeCategory.value)
+  const stillPresent = categories.some((category) => category.key === activeCategory.value)
+
+  if (wasActiveExtra && !stillPresent) {
+    activeCategory.value = null
+  }
+})
 
 // The properties column is about to show (element selected, or page properties explicitly
 // requested via a canvas background click) — close this panel so they don't overlap.

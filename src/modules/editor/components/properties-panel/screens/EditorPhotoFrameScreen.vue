@@ -46,7 +46,8 @@ import { useEditorStore } from '../../../store/editor.store'
 import type { ElementPatch } from '../../../store/editor.store'
 import type { PhotoFrameRef } from '../../../models/photo-placeholder.model'
 import type { PhotoPlaceholder } from '../../../models/photo-placeholder.model'
-import { adminPhotoFramesApi, type AdminPhotoFrame } from '@/shared/api/admin/photo-frames.api'
+import type { AdminPhotoFrame } from '@/shared/api/admin/photo-frames.api'
+import { editorAssets } from '../../../services/editor-assets'
 
 const store = useEditorStore()
 const { selectedElement: selected } = storeToRefs(store)
@@ -61,7 +62,7 @@ const activeFrames = computed(() => frames.value.filter((item) => item.isActive)
 onMounted(async () => {
   loading.value = true
   try {
-    frames.value = await adminPhotoFramesApi.list()
+    frames.value = await editorAssets.value.listPhotoFrames()
   } catch {
     frames.value = []
   } finally {

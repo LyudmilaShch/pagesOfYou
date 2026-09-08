@@ -25,6 +25,7 @@ import {
 } from '../../shared/utils/placeholder.util';
 import type { CreateDraftOrderDto } from './dto/create-draft-order.dto';
 import type { ReorderJournalSpreadsDto } from './dto/reorder-journal-spreads.dto';
+import type { SaveJournalPageCanvasDto } from './dto/save-journal-page-canvas.dto';
 import type { SetJournalPageTemplateDto } from './dto/set-journal-page-template.dto';
 import type { UpsertPlaceholdersDto } from './dto/upsert-placeholders.dto';
 
@@ -260,6 +261,45 @@ export class OrdersService {
         });
       }
     }
+
+    return this.findOne(orderId, userId);
+  }
+
+  /**
+   * Full-document save used by the advanced (per-element) journal page editor — unlike
+   * `upsertPlaceholders`, this is not restricted to fillable elements/value types. Once a page has
+   * gone through this path its `pageSnapshot` is the sole source of truth, so any prior
+   * `PlaceholderValue` diffs are cleared to avoid the simple mode re-applying stale overrides.
+   */
+  async saveJournalPageCanvas(
+    orderId: string,
+    journalPageId: string,
+    userId: string,
+    dto: SaveJournalPageCanvasDto,
+  ) {
+    const order = await this.getOwnedOrderOrThrow(orderId, userId);
+
+    if (order.status !== OrderStatus.DRAFT) {
+      throw new BadRequestException('Only draft orders can be edited.');
+    }
+
+    const journalPage = await this.prisma.journalPage.findFirst({
+      where: { id: journalPageId, orderId },
+    });
+
+    if (!journalPage) {
+      throw new NotFoundException('Journal page not found in this order.');
+    }
+
+    const normalized = normalizeCanvasData(dto.canvasData);
+
+    await this.prisma.$transaction([
+      this.prisma.placeholderValue.deleteMany({ where: { journalPageId } }),
+      this.prisma.journalPage.update({
+        where: { id: journalPageId },
+        data: { pageSnapshot: normalized as unknown as Prisma.InputJsonValue },
+      }),
+    ]);
 
     return this.findOne(orderId, userId);
   }

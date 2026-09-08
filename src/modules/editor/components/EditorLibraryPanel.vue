@@ -60,7 +60,8 @@ import { computed, onMounted, ref } from 'vue'
 import { LIBRARY_ELEMENTS } from '../factories/create-element.factory'
 import type { LibraryElementCategory, LibraryElementType } from '../factories/create-element.factory'
 import { useEditorStore } from '../store/editor.store'
-import { adminPhotoFramesApi, type AdminPhotoFrame } from '@/shared/api/admin/photo-frames.api'
+import { editorAssets } from '../services/editor-assets'
+import type { AdminPhotoFrame } from '@/shared/api/admin/photo-frames.api'
 
 const props = defineProps<{
   category: LibraryElementCategory
@@ -77,7 +78,7 @@ const activeFrames = computed(() => frames.value.filter((frame) => frame.isActiv
 async function loadFrames(): Promise<void> {
   loadingFrames.value = true
   try {
-    frames.value = await adminPhotoFramesApi.list()
+    frames.value = await editorAssets.value.listPhotoFrames()
   } catch {
     frames.value = []
   } finally {

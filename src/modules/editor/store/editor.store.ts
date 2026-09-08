@@ -43,14 +43,13 @@ import {
 import { isSelectableEditorElement } from '../utils/element-bounds.util'
 import { createElementFromLibrary } from '../factories/create-element.factory'
 import type { LibraryElementType } from '../factories/create-element.factory'
-import type { AdminMagazinePage } from '@/shared/api/admin/magazine-pages.api'
-import { adminMagazinePagesApi } from '@/shared/api/admin/magazine-pages.api'
 import { toStoredAssetPath } from '@/shared/config/assets'
 import type { PageElement } from '../models'
 import { isGroupElement } from '../models'
 import type { GroupElement } from '../models/group-element.model'
-import type { EditorDocument } from '../models/page-template.model'
+import type { EditorDocument, EditorSourceDocument } from '../models/page-template.model'
 import { normalizeCanvasData } from '../models/canvas-data.model'
+import type { CanvasData } from '../models/canvas-data.model'
 import type { Position, Size } from '../models/geometry.model'
 import type { TextPlaceholder } from '../models/text-placeholder.model'
 import type { PhotoFrameRef, PhotoPlaceholder } from '../models/photo-placeholder.model'
@@ -586,10 +585,10 @@ export const useEditorStore = defineStore('editor', () => {
     }
   }
 
-  function loadFromApi(page: AdminMagazinePage): void {
-    const canvasData = normalizeCanvasData(page.canvasData)
+  function loadDocument(source: EditorSourceDocument): void {
+    const canvasData = normalizeCanvasData(source.canvasData)
 
-    if (isSpreadPageType(page.pageType)) {
+    if (isSpreadPageType(source.pageType)) {
       canvasData.pageWidth = A4_SPREAD_PAGE_WIDTH
       canvasData.pageHeight = A4_SPREAD_PAGE_HEIGHT
     }
@@ -611,10 +610,9 @@ export const useEditorStore = defineStore('editor', () => {
         : createPerPageBackgroundsFromRoot(canvasData)
 
     document.value = {
-      magazineTypeId: page.magazineTypeId,
-      magazinePageId: page.id,
-      name: page.name,
-      pageType: page.pageType,
+      id: source.id,
+      name: source.name,
+      pageType: source.pageType,
       width: canvasData.pageWidth ?? A4_PAGE_WIDTH,
       height: canvasData.pageHeight ?? A4_PAGE_HEIGHT,
       backgroundColor: rootBackground.backgroundColor,
@@ -623,7 +621,7 @@ export const useEditorStore = defineStore('editor', () => {
       backgroundImageCropX: rootBackground.backgroundImageCropX,
       backgroundImageCropY: rootBackground.backgroundImageCropY,
       backgroundImageScale: rootBackground.backgroundImageScale,
-      spreadBackgroundMode: isSpreadPageType(page.pageType) ? spreadMode : DEFAULT_SPREAD_BACKGROUND_MODE,
+      spreadBackgroundMode: isSpreadPageType(source.pageType) ? spreadMode : DEFAULT_SPREAD_BACKGROUND_MODE,
       leftPageBackground: perPageBackgrounds.leftPageBackground,
       rightPageBackground: perPageBackgrounds.rightPageBackground,
       canvasData,
@@ -2270,18 +2268,27 @@ export const useEditorStore = defineStore('editor', () => {
     }
   }
 
-  async function fetchAndLoad(magazineTypeId: string, pageId: string): Promise<void> {
+  /** Persists edits back to wherever the document came from — set by `fetchAndLoad`, called by
+   * `saveCanvas`. A plain closure variable (like `isApplyingHistory` above), not a ref: it's a
+   * wiring detail of the current editor session, not document state. */
+  let saveDocument: ((canvasData: CanvasData) => Promise<void>) | null = null
+
+  async function fetchAndLoad(
+    fetchDocument: () => Promise<EditorSourceDocument>,
+    saveFn: (canvasData: CanvasData) => Promise<void>,
+  ): Promise<void> {
     loading.value = true
     try {
-      const page = await adminMagazinePagesApi.getOne(magazineTypeId, pageId)
-      loadFromApi(page)
+      const source = await fetchDocument()
+      saveDocument = saveFn
+      loadDocument(source)
     } finally {
       loading.value = false
     }
   }
 
   async function saveCanvas(): Promise<void> {
-    if (!document.value) {
+    if (!document.value || !saveDocument) {
       return
     }
 
@@ -2289,11 +2296,7 @@ export const useEditorStore = defineStore('editor', () => {
     saving.value = true
     try {
       syncCanvasMeta()
-      await adminMagazinePagesApi.update(
-        document.value.magazineTypeId,
-        document.value.magazinePageId,
-        { canvasData: document.value.canvasData },
-      )
+      await saveDocument(document.value.canvasData)
       isDirty.value = false
     } finally {
       saving.value = false
@@ -2302,6 +2305,7 @@ export const useEditorStore = defineStore('editor', () => {
 
   function reset(): void {
     document.value = null
+    saveDocument = null
     selectedElementIds.value = []
     groupEditingPath.value = []
     textEditingElementId.value = null

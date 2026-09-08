@@ -87,9 +87,25 @@ export const routes: RouteRecordRaw[] = [
     component: () => import('@/features/order-builder/pages/CreateOrderPage.vue'),
   },
   {
-    path: '/order/create/fill',
-    name: 'create-order-fill',
-    component: () => import('@/features/order-builder/pages/FillOrderPage.vue'),
+    path: '/order/:orderId/journal-pages/:journalPageId/editor',
+    component: () => import('@/modules/editor/layouts/EditorLayout.vue'),
+    props: {
+      backTo: { name: 'catalog' },
+      backLabel: 'В каталог',
+      savedMessage: 'Сохранено',
+      saveErrorMessage: 'Не удалось сохранить',
+    },
+    // No requiresAuth: the advanced editor works against a local, not-yet-persisted draft for
+    // guests too (see JournalPageEditorPage.vue's ensureOrderLoaded) — only submitting the
+    // finished order requires an account. A real order's URL still safely 401s for a guest, since
+    // the backend enforces auth + ownership on /orders/* regardless of this route's meta.
+    children: [
+      {
+        path: '',
+        name: 'journal-page-editor',
+        component: () => import('@/features/order-builder/pages/JournalPageEditorPage.vue'),
+      },
+    ],
   },
   {
     path: '/auth',
