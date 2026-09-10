@@ -32,37 +32,37 @@
         @drop="entry.draggable ? onDrop(entry.page.id) : undefined"
         @dragend="draggingSpreadId = null"
       >
-        <div class="journal-structure__thumb">
-          <JournalSpreadThumbnail :canvas-data="materializedCanvas(entry.page)" />
+        <div class="journal-structure__card">
+          <div class="journal-structure__thumb">
+            <JournalSpreadThumbnail :canvas-data="materializedCanvas(entry.page)" :container-ratio="1.19" />
 
-          <span
-            v-if="entry.draggable"
-            class="journal-structure__drag"
-            aria-hidden="true"
-            @pointerdown="handleDragHandlePointerDown($event, entry.page.id)"
-            @click.stop
-          >
-            <v-icon size="14">mdi-drag-vertical</v-icon>
-          </span>
+            <span
+              v-if="entry.draggable"
+              class="journal-structure__drag"
+              aria-hidden="true"
+              @pointerdown="handleDragHandlePointerDown($event, entry.page.id)"
+              @click.stop
+            >
+              <v-icon size="14" color="primary">mdi-drag-vertical</v-icon>
+            </span>
 
-          <v-tooltip location="top" content-class="editor-tooltip--arrow-bottom">
-            <template #activator="{ props: tooltipProps }">
-              <v-btn
-                v-bind="tooltipProps"
-                icon="mdi-view-grid-outline"
-                size="small"
-                variant="text"
-                color="primary"
-                class="journal-structure__template-btn"
-                aria-label="Выбрать шаблон"
-                @click.stop="openTemplatePicker(entry.page.id)"
-              />
-            </template>
-            Выбрать шаблон
-          </v-tooltip>
-        </div>
+            <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+              <template #activator="{ props: tooltipProps }">
+                <v-btn
+                  v-bind="tooltipProps"
+                  icon="mdi-view-grid-outline"
+                  size="small"
+                  variant="text"
+                  color="white"
+                  class="journal-structure__template-btn"
+                  aria-label="Выбрать шаблон"
+                  @click.stop="openTemplatePicker(entry.page.id)"
+                />
+              </template>
+              Выбрать шаблон
+            </v-tooltip>
+          </div>
 
-        <div class="journal-structure__meta">
           <div class="journal-structure__meta-row">
             <span class="journal-structure__index">{{ entry.label }}</span>
             <span class="journal-structure__name">{{ entry.templateLabel }}</span>
@@ -179,7 +179,10 @@ const sidebarEntries = computed(() => {
       page,
       label,
       templateLabel,
-      layoutHint: page.slotType === 'SPREAD' ? layoutHint : undefined,
+      // Always set (not just for SPREAD, unlike the old sidebar which only showed this for
+      // spreads) — the subtitle line under the name is a second row in every card's height now,
+      // so leaving it empty for covers/back-covers made just those cards shorter than the rest.
+      layoutHint,
       draggable: isSpread,
     }
   })
@@ -422,107 +425,147 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
   align-content: start;
-  gap: $spacing-3;
+  // Default `stretch` forces every card to the row track's height — harmless once that height is
+  // correct, but `<JournalSpreadThumbnail>` renders one frame at `height: 0` before its own
+  // `ResizeObserver` callback measures a real width and corrects it (see `containerRatio` prop),
+  // and a stretched card can end up locked to that first, too-short measurement with `overflow:
+  // hidden` then clipping it. `start` lets each card keep its own full natural height instead.
+  align-items: start;
+  gap: 20px 10px;
   padding: $spacing-3 $spacing-4;
 }
 
 .journal-structure__row {
-  display: flex;
-  flex-direction: column;
-  gap: $spacing-2;
+  // Deliberately no border/overflow/radius here — those live on `.journal-structure__card` below
+  // instead. `overflow` other than `visible` on a *grid item* zeroes out its "automatic minimum
+  // size" contribution to the row's `auto`-track sizing (a real CSS Grid/box-sizing rule, not a
+  // rendering bug) — Grid then has no guaranteed floor for this row's height and can lock it to
+  // whatever height `<JournalSpreadThumbnail>` happens to report on its very first (pre-measurement)
+  // frame, which is 0. Moving the clipping to a plain, non-grid-item child sidesteps that rule
+  // entirely: the grid item's own height is now a normal content-based measurement with no special
+  // minimum-size carve-out, and the card can still round/clip its corners as before.
   cursor: pointer;
+
+  &:focus-visible .journal-structure__card {
+    outline: 2px solid $accent;
+    outline-offset: 2px;
+  }
 
   &--dragging {
     opacity: 0.55;
   }
 
-  &--drag-over .journal-structure__thumb {
+  &--drag-over .journal-structure__card {
     border-color: $text-primary;
     box-shadow: 0 0 0 2px $state-hover-bg;
   }
 
-  &--active .journal-structure__thumb {
-    border-color: $text-primary;
-    box-shadow: 0 0 0 2px $bg-primary;
+  &--active .journal-structure__card {
+    border-color: $accent;
+    box-shadow: 0 0 0 1px $accent;
+  }
+}
+
+.journal-structure__card {
+  border: 1px solid $border-default;
+  border-radius: $radius-md;
+  overflow: hidden;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+
+  .journal-structure__row:hover & {
+    border-color: $border-strong;
   }
 }
 
 .journal-structure__thumb {
+  // No width/height/ratio CSS here on purpose — `<JournalSpreadThumbnail container-ratio="1.19">`
+  // measures its own width via JS and sets its height as an explicit pixel value (see that
+  // component's `containerRatio` prop doc) — a second layer of defense alongside moving `overflow`
+  // off the grid item itself (see `.journal-structure__row`'s comment for the actual root cause).
+  // `position: relative` is just to anchor the drag/template-button overlays below.
   position: relative;
-  width: 100%;
-  aspect-ratio: 1.4;
-  border-radius: $radius-md;
-  overflow: hidden;
   background: $bg-muted;
-  border: 1px solid $border-light;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
 .journal-structure__drag {
   position: absolute;
-  top: $spacing-1;
-  left: $spacing-1;
+  top: 6px;
+  left: 6px;
   z-index: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 22px;
   height: 22px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.85);
-  color: $text-secondary;
+  border-radius: $radius-sm;
+  background: rgba(251, 223, 233, 0.92);
   cursor: grab;
+  opacity: 1;
+  transition: opacity 0.12s ease;
   // Without this, a touch drag starting here is first interpreted as an attempt to scroll the
   // spread list, fighting the pointer-based reorder drag (see handleDragHandlePointerDown).
   touch-action: none;
 }
 
-.journal-structure__thumb-index {
-  position: absolute;
-  bottom: $spacing-1;
-  left: $spacing-1;
+.journal-structure__template-btn {
+  position: absolute !important;
+  right: 6px;
+  bottom: 6px;
   z-index: 1;
-  min-width: 16px;
+  width: 26px !important;
+  height: 26px !important;
+  border-radius: 7px !important;
+  background: rgba(251, 223, 233, 0.92) !important;
+  opacity: 1;
+  transition: opacity 0.12s ease, background 0.12s ease;
+
+  &:hover {
+    background: $accent-tint !important;
+  }
+}
+
+// The drag handle and template-switch button only surface on hover, so the thumbnail reads clean
+// at rest — but that's a mouse-only affordance (there's no real ":hover" on touch), so touch/pen
+// devices keep them always visible instead of hiding a control they'd have no way to reveal.
+@media (hover: hover) and (pointer: fine) {
+  .journal-structure__drag,
+  .journal-structure__template-btn {
+    opacity: 0;
+  }
+
+  .journal-structure__row:hover .journal-structure__drag,
+  .journal-structure__row:hover .journal-structure__template-btn,
+  .journal-structure__row:focus-within .journal-structure__drag,
+  .journal-structure__row:focus-within .journal-structure__template-btn {
+    opacity: 1;
+  }
+}
+
+.journal-structure__meta-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: $spacing-2 $spacing-2 0;
+}
+
+.journal-structure__index {
+  flex-shrink: 0;
+  width: 16px;
   height: 16px;
-  padding: 0 4px;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.45);
+  background: $text-primary;
   color: $white;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 9px;
-  line-height: 1;
-}
-
-.journal-structure__complete {
-  position: absolute;
-  top: $spacing-1;
-  right: $spacing-1;
-  z-index: 1;
-  padding: 2px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.85);
-}
-
-.journal-structure__template-btn {
-  position: absolute !important;
-  bottom: $spacing-1;
-  right: $spacing-1;
-  z-index: 1;
-  background: rgba(255, 255, 255, 0.85) !important;
-}
-
-.journal-structure__meta {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  padding: 0 2px;
+  font-size: 8.5px;
+  font-weight: $font-weight-medium;
 }
 
 .journal-structure__name {
-  font-size: $font-size-caption;
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
   font-weight: $font-weight-medium;
   color: $text-primary;
   white-space: nowrap;
@@ -530,8 +573,27 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
 }
 
+.journal-structure__status {
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+  border-radius: 999px;
+  border: 1.5px solid $border-strong;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  &--done {
+    border-color: $accent;
+    background: $accent;
+    color: $white;
+  }
+}
+
 .journal-structure__type {
-  font-size: 10px;
+  display: block;
+  padding: 2px $spacing-2 $spacing-2 31px;
+  font-size: 10.5px;
   color: $text-muted;
 }
 

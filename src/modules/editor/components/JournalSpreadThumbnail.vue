@@ -1,5 +1,5 @@
 <template>
-  <div ref="containerRef" class="spread-thumb">
+  <div ref="containerRef" class="spread-thumb" :style="rootStyle">
     <div class="spread-thumb__page" :style="pageStyle">
       <img v-if="canvasData.backgroundImageUrl" class="spread-thumb__bg" :src="canvasData.backgroundImageUrl" alt="" />
 
@@ -36,12 +36,26 @@ import { isPhotoElement, isShapeElement, isTextElement } from '../models'
 import { flattenTree } from '../utils/element-tree.util'
 import { A4_PAGE_HEIGHT, A4_PAGE_WIDTH } from '../constants/page.constants'
 
-const props = defineProps<{ canvasData: CanvasData }>()
+const props = defineProps<{
+  canvasData: CanvasData
+  /** When set, this component sizes its OWN height from its measured width (`width / containerRatio`,
+   * via JS) instead of expecting a parent-supplied `height: 100%` box. Needed inside a CSS Grid cell
+   * whose column comes from `auto-fill`/`minmax(_, 1fr)`: `aspect-ratio`/`padding-bottom` (both
+   * width-dependent-height CSS techniques) size incorrectly there — Grid's implicit `auto` row-track
+   * measurement can under-measure them, clipping or overlapping neighbouring cards. A definite,
+   * already-resolved pixel height set via JS has no such ambiguity for Grid to get wrong. */
+  containerRatio?: number
+}>()
 
 const containerRef = ref<HTMLDivElement | null>(null)
 const scale = ref(0)
 const offsetX = ref(0)
 const offsetY = ref(0)
+const selfHeight = ref(0)
+
+const rootStyle = computed(() =>
+  props.containerRatio ? { height: `${selfHeight.value}px` } : undefined,
+)
 
 const pageWidth = computed(() => props.canvasData.pageWidth ?? A4_PAGE_WIDTH)
 const pageHeight = computed(() => props.canvasData.pageHeight ?? A4_PAGE_HEIGHT)
@@ -74,7 +88,17 @@ function updateScale(): void {
   }
 
   const containerWidth = containerRef.value.clientWidth
-  const containerHeight = containerRef.value.clientHeight
+  // Derived from the just-measured width, not read back via `clientHeight` — when
+  // `containerRatio` is set, the root's own height is itself driven by this same value (see
+  // `rootStyle`), and reading `clientHeight` here could race the DOM update from that.
+  const containerHeight = props.containerRatio
+    ? containerWidth / props.containerRatio
+    : containerRef.value.clientHeight
+
+  if (props.containerRatio) {
+    selfHeight.value = containerHeight
+  }
+
   const fit = Math.min(containerWidth / pageWidth.value, containerHeight / pageHeight.value)
 
   scale.value = fit
