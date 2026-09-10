@@ -15,40 +15,66 @@
         v-for="entry in sidebarEntries"
         :key="entry.page.id"
         class="journal-structure__row"
-        :class="{ 'journal-structure__row--dragging': draggingSpreadId === entry.page.id }"
+        :class="{
+          'journal-structure__row--dragging': draggingSpreadId === entry.page.id,
+          'journal-structure__row--drag-over':
+            dragOverSpreadId === entry.page.id && draggingSpreadId !== entry.page.id,
+          'journal-structure__row--active': entry.page.id === activeJournalPageId,
+        }"
+        :data-spread-id="entry.page.id"
         :draggable="entry.draggable"
+        role="button"
+        tabindex="0"
+        @click="navigateToPage(entry.page.id)"
+        @keydown.enter="navigateToPage(entry.page.id)"
         @dragstart="entry.draggable ? onDragStart(entry.page.id) : undefined"
         @dragover.prevent
         @drop="entry.draggable ? onDrop(entry.page.id) : undefined"
         @dragend="draggingSpreadId = null"
       >
-        <button
-          type="button"
-          class="journal-structure__item"
-          :class="{ 'journal-structure__item--active': entry.page.id === activeJournalPageId }"
-          @click="navigateToPage(entry.page.id)"
-        >
-          <span v-if="entry.draggable" class="journal-structure__drag" aria-hidden="true">
-            <v-icon size="16">mdi-drag-vertical</v-icon>
+        <div class="journal-structure__thumb">
+          <JournalSpreadThumbnail :canvas-data="materializedCanvas(entry.page)" />
+
+          <span
+            v-if="entry.draggable"
+            class="journal-structure__drag"
+            aria-hidden="true"
+            @pointerdown="handleDragHandlePointerDown($event, entry.page.id)"
+            @click.stop
+          >
+            <v-icon size="14">mdi-drag-vertical</v-icon>
           </span>
 
-          <span class="journal-structure__index">{{ entry.label }}</span>
+          <v-tooltip location="top" content-class="editor-tooltip--arrow-bottom">
+            <template #activator="{ props: tooltipProps }">
+              <v-btn
+                v-bind="tooltipProps"
+                icon="mdi-view-grid-outline"
+                size="small"
+                variant="text"
+                color="primary"
+                class="journal-structure__template-btn"
+                aria-label="Выбрать шаблон"
+                @click.stop="openTemplatePicker(entry.page.id)"
+              />
+            </template>
+            Выбрать шаблон
+          </v-tooltip>
+        </div>
 
-          <div class="journal-structure__meta">
+        <div class="journal-structure__meta">
+          <div class="journal-structure__meta-row">
+            <span class="journal-structure__index">{{ entry.label }}</span>
             <span class="journal-structure__name">{{ entry.templateLabel }}</span>
-            <span v-if="entry.layoutHint" class="journal-structure__type">{{ entry.layoutHint }}</span>
+            <span
+              class="journal-structure__status"
+              :class="{ 'journal-structure__status--done': isPageComplete(entry.page) }"
+            >
+              <v-icon v-if="isPageComplete(entry.page)" size="10" color="white">mdi-check</v-icon>
+            </span>
           </div>
-
-          <v-icon v-if="isPageComplete(entry.page)" size="16" color="success">mdi-check-circle</v-icon>
-        </button>
-
-        <v-btn
-          icon="mdi-palette-outline"
-          size="x-small"
-          variant="text"
-          aria-label="Выбрать шаблон"
-          @click.stop="openTemplatePicker(entry.page.id)"
-        />
+          <span v-if="entry.layoutHint" class="journal-structure__type">{{ entry.layoutHint }}</span>
+        </div>
       </div>
     </div>
 
@@ -81,14 +107,17 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import type { CanvasData } from '@/modules/editor/models/canvas-data.model'
+import { normalizeCanvasData } from '@/modules/editor/models/canvas-data.model'
 import type { PageElement } from '@/modules/editor/models'
 import { useEditorStore } from '@/modules/editor/store/editor.store'
+import JournalSpreadThumbnail from '@/modules/editor/components/JournalSpreadThumbnail.vue'
 import { getJournalPageDisplayName } from '../utils/journal-structure.util'
 import { isFillableElement, isPlaceholderFilled } from '../utils/placeholder.utils'
+import { materializeCanvasData } from '../utils/merge-placeholder-element.util'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
 import type { SetJournalPageTemplatePayload } from '../api/orders.api'
 import type { JournalPage } from '../types/order.types'
@@ -102,6 +131,7 @@ const editorStore = useEditorStore()
 const activeJournalPageId = computed(() => route.params.journalPageId as string)
 
 const draggingSpreadId = ref<string | null>(null)
+const dragOverSpreadId = ref<string | null>(null)
 
 const snackbar = reactive({
   show: false,
@@ -154,6 +184,13 @@ const sidebarEntries = computed(() => {
     }
   })
 })
+
+/** Bakes saved placeholder-value diffs into the page's own document — same materialization the
+ * advanced editor uses — so the row thumbnail reflects what's actually placed, not just the bare
+ * template. */
+function materializedCanvas(page: JournalPage): CanvasData {
+  return materializeCanvasData(normalizeCanvasData(page.pageSnapshot), page.placeholderValues)
+}
 
 /** Required-field completeness — falls back to the element's own `defaultText`/`defaultImageUrl`
  * when there's no separate placeholder value, so this reads correctly whether the page was filled
@@ -252,6 +289,7 @@ function onDragStart(spreadId: string): void {
 async function onDrop(targetSpreadId: string): Promise<void> {
   const sourceId = draggingSpreadId.value
   draggingSpreadId.value = null
+  dragOverSpreadId.value = null
 
   if (!sourceId || sourceId === targetSpreadId) {
     return
@@ -280,6 +318,62 @@ async function onDrop(targetSpreadId: string): Promise<void> {
     snackbar.show = true
   }
 }
+
+// Native HTML5 drag-and-drop (draggable/@dragstart/@dragover/@drop above) only fires from a
+// mouse — most mobile browsers never start a native drag from a touch gesture at all. This is a
+// parallel, Pointer Events-based path for touch/pen input on the same handle; mouse pointers fall
+// through to the native path unchanged (mirrors EditorLayerNode.vue's reorder handle).
+function findRowAt(clientX: number, clientY: number): HTMLElement | null {
+  const el = document.elementFromPoint(clientX, clientY)
+  return el ? (el.closest('.journal-structure__row') as HTMLElement | null) : null
+}
+
+function handlePointerDragMove(event: PointerEvent): void {
+  const row = findRowAt(event.clientX, event.clientY)
+  const targetId = row?.dataset.spreadId
+  dragOverSpreadId.value = targetId && targetId !== draggingSpreadId.value ? targetId : null
+}
+
+function stopPointerDragTracking(): void {
+  window.removeEventListener('pointermove', handlePointerDragMove)
+  window.removeEventListener('pointerup', handlePointerDragEnd)
+  window.removeEventListener('pointercancel', handlePointerDragCancel)
+}
+
+function handlePointerDragEnd(event: PointerEvent): void {
+  stopPointerDragTracking()
+
+  const targetId = findRowAt(event.clientX, event.clientY)?.dataset.spreadId
+  if (targetId) {
+    void onDrop(targetId)
+  } else {
+    draggingSpreadId.value = null
+    dragOverSpreadId.value = null
+  }
+}
+
+function handlePointerDragCancel(): void {
+  stopPointerDragTracking()
+  draggingSpreadId.value = null
+  dragOverSpreadId.value = null
+}
+
+function handleDragHandlePointerDown(event: PointerEvent, spreadId: string): void {
+  if (event.pointerType === 'mouse') {
+    return
+  }
+
+  event.preventDefault()
+  onDragStart(spreadId)
+
+  window.addEventListener('pointermove', handlePointerDragMove)
+  window.addEventListener('pointerup', handlePointerDragEnd)
+  window.addEventListener('pointercancel', handlePointerDragCancel)
+}
+
+onBeforeUnmount(() => {
+  stopPointerDragTracking()
+})
 
 </script>
 
@@ -325,58 +419,98 @@ async function onDrop(targetSpreadId: string): Promise<void> {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: $spacing-2;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+  align-content: start;
+  gap: $spacing-3;
   padding: $spacing-3 $spacing-4;
 }
 
 .journal-structure__row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: $spacing-1;
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-2;
+  cursor: pointer;
 
   &--dragging {
     opacity: 0.55;
   }
-}
 
-.journal-structure__item {
-  display: grid;
-  grid-template-columns: auto auto 1fr auto;
-  align-items: center;
-  gap: $spacing-2;
-  width: 100%;
-  padding: $spacing-3;
-  border: 1px solid $border-light;
-  border-radius: $radius-md;
-  background: $bg-elevated;
-  text-align: left;
-  cursor: pointer;
-  transition: border-color 0.18s ease, background 0.18s ease;
-
-  &--active {
+  &--drag-over .journal-structure__thumb {
     border-color: $text-primary;
-    background: $bg-primary;
+    box-shadow: 0 0 0 2px $state-hover-bg;
+  }
+
+  &--active .journal-structure__thumb {
+    border-color: $text-primary;
+    box-shadow: 0 0 0 2px $bg-primary;
   }
 }
 
-.journal-structure__drag {
-  color: $text-muted;
-  cursor: grab;
+.journal-structure__thumb {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1.4;
+  border-radius: $radius-md;
+  overflow: hidden;
+  background: $bg-muted;
+  border: 1px solid $border-light;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
-.journal-structure__index {
-  min-width: 24px;
-  height: 24px;
-  border-radius: 999px;
-  background: $bg-muted;
+.journal-structure__drag {
+  position: absolute;
+  top: $spacing-1;
+  left: $spacing-1;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: $font-size-caption;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.85);
   color: $text-secondary;
+  cursor: grab;
+  // Without this, a touch drag starting here is first interpreted as an attempt to scroll the
+  // spread list, fighting the pointer-based reorder drag (see handleDragHandlePointerDown).
+  touch-action: none;
+}
+
+.journal-structure__thumb-index {
+  position: absolute;
+  bottom: $spacing-1;
+  left: $spacing-1;
+  z-index: 1;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45);
+  color: $white;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  line-height: 1;
+}
+
+.journal-structure__complete {
+  position: absolute;
+  top: $spacing-1;
+  right: $spacing-1;
+  z-index: 1;
+  padding: 2px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.85);
+}
+
+.journal-structure__template-btn {
+  position: absolute !important;
+  bottom: $spacing-1;
+  right: $spacing-1;
+  z-index: 1;
+  background: rgba(255, 255, 255, 0.85) !important;
 }
 
 .journal-structure__meta {
@@ -384,18 +518,20 @@ async function onDrop(targetSpreadId: string): Promise<void> {
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+  padding: 0 2px;
 }
 
 .journal-structure__name {
-  font-size: $font-size-body-sm;
+  font-size: $font-size-caption;
   font-weight: $font-weight-medium;
+  color: $text-primary;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .journal-structure__type {
-  font-size: $font-size-caption;
+  font-size: 10px;
   color: $text-muted;
 }
 

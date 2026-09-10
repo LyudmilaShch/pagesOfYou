@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -14,23 +13,15 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { diskStorage } from 'multer';
-import type { FileFilterCallback } from 'multer';
-import { existsSync, mkdirSync } from 'fs';
-import { extname, join } from 'path';
-import { randomUUID } from 'crypto';
 import { FilesService, RequestUploadUrlDto } from './files.service';
+import { orderPhotoUploadInterceptor } from './order-photo-upload.interceptor';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
-import { MAX_IMAGE_UPLOAD_SIZE_BYTES } from '../../shared/constants/upload.constants';
 import { ClaimGuestPhotosDto, SetFavoriteDto, UploadImageDto } from './dto/gallery.dto';
-
-const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
 
 @ApiTags('Files')
 @ApiBearerAuth()
@@ -66,32 +57,7 @@ export class FilesController {
       required: ['file'],
     },
   })
-  @UseInterceptors(
-    FileInterceptor('file', {
-      storage: diskStorage({
-        destination: (
-          _req,
-          _file,
-          cb: (error: Error | null, destination: string) => void,
-        ) => {
-          const dest = join(process.cwd(), 'uploads', 'order-photos');
-          if (!existsSync(dest)) mkdirSync(dest, { recursive: true });
-          cb(null, dest);
-        },
-        filename: (_req, file, cb) => {
-          cb(null, `${randomUUID()}${extname(file.originalname)}`);
-        },
-      }),
-      limits: { fileSize: MAX_IMAGE_UPLOAD_SIZE_BYTES },
-      fileFilter: (_req, file, cb: FileFilterCallback) => {
-        if (!ALLOWED_MIME_TYPES.includes(file.mimetype)) {
-          cb(new BadRequestException('Unsupported file type'));
-          return;
-        }
-        cb(null, true);
-      },
-    }),
-  )
+  @UseInterceptors(orderPhotoUploadInterceptor())
   uploadImage(
     @CurrentUser() user: JwtPayload | undefined,
     @UploadedFile() file: Express.Multer.File,

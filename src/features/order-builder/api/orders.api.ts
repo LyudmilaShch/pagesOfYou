@@ -3,7 +3,7 @@ import { http } from '@/shared/api/http'
 import type { BackendResponse } from '@/types/api.types'
 import type { CanvasData } from '@/modules/editor/models/canvas-data.model'
 import type { OrderDetail, PlaceholderInput } from '../types/order.types'
-import type { JournalSpreadLayout } from '../constants/journal.constants'
+import type { JournalSlotType, JournalSpreadLayout } from '../constants/journal.constants'
 
 export interface SetJournalPageTemplatePayload {
   layoutMode?: JournalSpreadLayout
@@ -11,10 +11,25 @@ export interface SetJournalPageTemplatePayload {
   rightMagazinePageId?: string
 }
 
+/** A page as already assembled client-side (a guest's local draft) — sent to `createDraft` so
+ * the real order is created with exactly this content instead of fresh default pages. */
+export interface CreateOrderJournalPagePayload {
+  slotType: JournalSlotType
+  layoutMode?: JournalSpreadLayout | null
+  magazinePageId: string
+  rightMagazinePageId?: string | null
+  sortOrder: number
+  pageSnapshot: CanvasData
+}
+
 export const ordersApi = {
-  async createDraft(magazineTypeId: string): Promise<OrderDetail> {
+  async createDraft(
+    magazineTypeId: string,
+    journalPages?: CreateOrderJournalPagePayload[],
+  ): Promise<OrderDetail> {
     const { data } = await http.post<BackendResponse<OrderDetail>>('/orders', {
       magazineTypeId,
+      journalPages,
     })
     return data.data
   },

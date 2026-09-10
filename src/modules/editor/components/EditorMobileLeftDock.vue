@@ -14,14 +14,27 @@
 
     <div class="mobile-left-dock__expand" :class="{ 'mobile-left-dock__expand--open': expanded }">
       <div class="mobile-left-dock__scroll">
-        <EditorLayersPanel v-if="activeCategory === 'layers'" />
+        <component :is="activeExtraCategory.panel" v-if="activeExtraCategory" />
+        <EditorLayersPanel v-else-if="activeCategory === 'layers'" />
         <EditorMobilePageBackgroundPanel v-else-if="activeCategory === 'page'" />
         <EditorMobileCanvasSettingsPanel v-else-if="activeCategory === 'view'" />
-        <EditorLibraryPanel v-else :category="activeCategory" />
+        <EditorLibraryPanel v-else :category="(activeCategory as LibraryElementCategory)" />
       </div>
     </div>
 
     <div class="mobile-left-dock__chip-strip">
+
+      <button
+        v-for="category in editorLeftPanelExtraCategories"
+        :key="category.key"
+        type="button"
+        class="mobile-left-dock__chip"
+        :class="{ active: activeCategory === category.key && expanded }"
+        @click="onChipClick(category.key)"
+      >
+        <v-icon size="20">{{ category.icon }}</v-icon>
+        <span>{{ category.label }}</span>
+      </button>
 
       <button
         type="button"
@@ -92,20 +105,25 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { useEditorStore } from '../store/editor.store'
 import type { LibraryElementCategory } from '../factories/create-element.factory'
+import { editorLeftPanelExtraCategories } from '../services/editor-left-panel-extra-category'
 import EditorLayersPanel from './EditorLayersPanel.vue'
 import EditorLibraryPanel from './EditorLibraryPanel.vue'
 import EditorMobilePageBackgroundPanel from './EditorMobilePageBackgroundPanel.vue'
 import EditorMobileCanvasSettingsPanel from './EditorMobileCanvasSettingsPanel.vue'
 
-type RailKey = LibraryElementCategory | 'layers' | 'page' | 'view'
+type RailKey = LibraryElementCategory | 'layers' | 'page' | 'view' | string
 
 const store = useEditorStore()
 
 const activeCategory = ref<RailKey>('photo')
+
+const activeExtraCategory = computed(() =>
+  editorLeftPanelExtraCategories.value.find((category) => category.key === activeCategory.value),
+)
 const expanded = ref(false)
 const dockRootRef = ref<HTMLElement | null>(null)
 
@@ -156,6 +174,18 @@ function onChipClick(id: RailKey): void {
   activeCategory.value = id
   expanded.value = true
 }
+
+// Defensive: if the active extra category disappears while its dock is open (e.g. the entry page
+// unmounts and clears the list), close rather than leave the dock pointed at nothing — mirrors
+// EditorLeftPanel.vue's equivalent watcher.
+watch(editorLeftPanelExtraCategories, (categories, previousCategories) => {
+  const wasActiveExtra = previousCategories?.some((category) => category.key === activeCategory.value)
+  const stillPresent = categories.some((category) => category.key === activeCategory.value)
+
+  if (wasActiveExtra && !stillPresent) {
+    expanded.value = false
+  }
+})
 
 const CLOSE_DRAG_THRESHOLD = 90
 const CLOSE_DRAG_VELOCITY = 0.5

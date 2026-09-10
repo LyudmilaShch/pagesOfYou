@@ -20,6 +20,24 @@ export const routes: RouteRecordRaw[] = [
     ],
   },
   {
+    path: '/admin/orders/:orderId/journal-pages/:journalPageId/editor',
+    component: () => import('@/modules/editor/layouts/EditorLayout.vue'),
+    props: (route) => ({
+      backTo: { name: 'admin-order-detail', params: { id: route.params.orderId } },
+      backLabel: 'К заказу',
+      savedMessage: 'Сохранено',
+      saveErrorMessage: 'Не удалось сохранить',
+    }),
+    meta: { requiresAdmin: true },
+    children: [
+      {
+        path: '',
+        name: 'admin-order-journal-page-editor',
+        component: () => import('@/features/admin/pages/AdminOrderJournalPageEditorPage.vue'),
+      },
+    ],
+  },
+  {
     path: '/admin',
     component: () => import('@/features/admin/layouts/AdminLayout.vue'),
     meta: { requiresAdmin: true },
@@ -61,7 +79,12 @@ export const routes: RouteRecordRaw[] = [
       {
         path: 'orders',
         name: 'admin-orders',
-        component: () => import('@/features/admin/pages/AdminDashboardPage.vue'),
+        component: () => import('@/features/admin/pages/AdminOrdersPage.vue'),
+      },
+      {
+        path: 'orders/:id',
+        name: 'admin-order-detail',
+        component: () => import('@/features/admin/pages/AdminOrderDetailPage.vue'),
       },
     ],
   },

@@ -60,12 +60,13 @@ export function isPlaceholderFilled(
   element: CanvasElement,
   value: { textValue?: string | null; jsonValue?: unknown } | undefined,
 ): boolean {
-  if (!value) {
-    return false;
-  }
-
+  // No `!value` early return: once an element is edited via the advanced per-element editor, its
+  // content is baked directly into pageSnapshot (defaultText/defaultImageUrl) and there is no
+  // PlaceholderValue row for it at all — `value` is legitimately undefined for a *filled*
+  // element, not just an empty one. Must fall through to the element's own default below,
+  // mirroring the frontend's isPlaceholderFilled (order-builder/utils/placeholder.utils.ts).
   if (element.type === 'photo-placeholder') {
-    const json = value.jsonValue as { url?: string } | null | undefined;
+    const json = value?.jsonValue as { url?: string } | null | undefined;
     if (json?.url?.trim()) {
       return true;
     }

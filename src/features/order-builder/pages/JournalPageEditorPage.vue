@@ -22,6 +22,13 @@
     @select="handlePhotoPickerSelect"
     @close="handlePhotoPickerClose"
   />
+
+  <AuthModal
+    :open="authModalState.open"
+    message="Чтобы оформить заказ, войдите в аккаунт"
+    @success="handleAuthSuccess"
+    @close="handleAuthClose"
+  />
 </template>
 
 <script setup lang="ts">
@@ -37,6 +44,8 @@ import { provideEditorAssets } from '@/modules/editor/services/editor-assets'
 import { provideEditorLeftPanelExtraCategories } from '@/modules/editor/services/editor-left-panel-extra-category'
 import { provideEditorTopAction } from '@/modules/editor/services/editor-top-action'
 import { provideEditorPhotoPicker } from '@/modules/editor/services/editor-photo-picker'
+import { useAuthStore } from '@/stores/auth.store'
+import AuthModal from '@/components/auth/AuthModal.vue'
 import { userEditorAssetsProvider } from '../services/user-editor-assets'
 import { ordersApi } from '../api/orders.api'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
@@ -50,6 +59,7 @@ const route = useRoute()
 const router = useRouter()
 const store = useEditorStore()
 const orderBuilderStore = useOrderBuilderStore()
+const authStore = useAuthStore()
 const loadError = ref<string | null>(null)
 
 const submitSnackbar = reactive({
@@ -64,23 +74,86 @@ const submitSnackbar = reactive({
 const orderId = computed(() => route.params.orderId as string)
 const journalPageId = computed(() => route.params.journalPageId as string)
 
+// Promise-based bridge to <AuthModal> below — same pattern as the photo picker: `requireAuth()`
+// resolves `true` once the user has (or already had) a session, `false` if they closed the modal
+// without signing in.
+const authModalState = reactive<{
+  open: boolean
+  resolve: ((success: boolean) => void) | null
+}>({
+  open: false,
+  resolve: null,
+})
+
+function requireAuth(): Promise<boolean> {
+  if (authStore.isAuthenticated) {
+    return Promise.resolve(true)
+  }
+
+  return new Promise((resolve) => {
+    authModalState.resolve = resolve
+    authModalState.open = true
+  })
+}
+
+function handleAuthSuccess(): void {
+  authModalState.open = false
+  authModalState.resolve?.(true)
+  authModalState.resolve = null
+}
+
+function handleAuthClose(): void {
+  authModalState.open = false
+  authModalState.resolve?.(false)
+  authModalState.resolve = null
+}
+
 /** Top-bar "Оформить заказ" action (replaces the plain "Сохранить" button for this route) —
- * flushes the currently open page first, same as the old left-panel submit button did, then hands
- * off to order-builder.store's existing submit flow. */
+ * flushes the currently open page first, same as the old left-panel submit button did. A guest
+ * (local draft) must sign in before the order can actually be created on the server — see
+ * `requireAuth()` above and `convertLocalDraftToOrder()` in order-builder.store.ts. */
 async function handleSubmitOrder(): Promise<void> {
   try {
     if (store.isDirty) {
       await store.saveCanvas()
     }
 
-    await orderBuilderStore.submitOrder()
-
-    if (orderBuilderStore.isLocalDraft) {
-      submitSnackbar.text = 'Журнал заполнен. Оформление заказа будет доступно на следующем шаге.'
-      submitSnackbar.color = 'success'
+    const validationError = orderBuilderStore.getSubmitValidationError()
+    if (validationError) {
+      submitSnackbar.text = validationError
+      submitSnackbar.color = 'error'
       submitSnackbar.show = true
       return
     }
+
+    if (orderBuilderStore.isLocalDraft) {
+      const authenticated = await requireAuth()
+      if (!authenticated) {
+        // The user closed the modal without signing in — not an error, just stop quietly.
+        return
+      }
+    }
+
+    if (orderBuilderStore.isLocalDraft) {
+      // Route params still point at the local draft's synthetic ids — swap to the real ones
+      // *before* submitting, so the URL stays valid regardless of what submit() does next.
+      const previousJournalPages = orderBuilderStore.order?.journalPages ?? []
+      const previousIndex = previousJournalPages.findIndex((page) => page.id === journalPageId.value)
+
+      await orderBuilderStore.convertLocalDraftToOrder()
+
+      const newJournalPage =
+        previousIndex !== -1 ? orderBuilderStore.order?.journalPages[previousIndex] : undefined
+
+      if (orderBuilderStore.order && newJournalPage) {
+        await router.replace({
+          name: 'journal-page-editor',
+          params: { orderId: orderBuilderStore.order.id, journalPageId: newJournalPage.id },
+        })
+      }
+    }
+
+    await orderBuilderStore.submitOrder()
 
     submitSnackbar.text = 'Заказ отправлен!'
     submitSnackbar.color = 'success'

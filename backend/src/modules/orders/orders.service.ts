@@ -17,13 +17,14 @@ import {
   countSpreadSlots,
   groupTemplatesByPageType,
   pickDefaultSpreadTemplate,
+  type JournalSlotDraft,
 } from '../../shared/utils/journal-structure.util';
 import {
   isFillableElement,
   isPlaceholderFilled,
   resolvePlaceholderValueType,
 } from '../../shared/utils/placeholder.util';
-import type { CreateDraftOrderDto } from './dto/create-draft-order.dto';
+import type { CreateDraftOrderDto, CreateOrderJournalPageDto } from './dto/create-draft-order.dto';
 import type { ReorderJournalSpreadsDto } from './dto/reorder-journal-spreads.dto';
 import type { SaveJournalPageCanvasDto } from './dto/save-journal-page-canvas.dto';
 import type { SetJournalPageTemplateDto } from './dto/set-journal-page-template.dto';
@@ -104,9 +105,12 @@ export class OrdersService {
       );
     }
 
-    const journalSlots = buildInitialJournalSlots(templatePages, {
-      configuredSpreads: await this.loadConfiguredSpreads(dto.magazineTypeId),
-    });
+    const journalSlots: JournalSlotDraft[] =
+      dto.journalPages && dto.journalPages.length > 0
+        ? this.buildJournalSlotsFromDto(dto.journalPages, templatePages)
+        : buildInitialJournalSlots(templatePages, {
+            configuredSpreads: await this.loadConfiguredSpreads(dto.magazineTypeId),
+          });
 
     const styleLink = await this.prisma.magazineTypeStyle.findFirst({
       where: { magazineTypeId: dto.magazineTypeId },
@@ -148,6 +152,51 @@ export class OrdersService {
 
     this.logger.log(`Draft order created: ${order.id} for user ${userId}`);
     return this.findOne(order.id, userId);
+  }
+
+  /** Turns an already-assembled set of journal pages (a guest's local draft, built entirely
+   * client-side) into the slot shape `createDraft` persists — validated against this magazine
+   * type's own templates rather than trusted blindly, since the caller is an ordinary
+   * (non-admin) user. */
+  private buildJournalSlotsFromDto(
+    pages: CreateOrderJournalPageDto[],
+    templatePages: Array<{ id: string }>,
+  ): JournalSlotDraft[] {
+    const validTemplateIds = new Set(templatePages.map((page) => page.id));
+
+    for (const page of pages) {
+      if (!validTemplateIds.has(page.magazinePageId)) {
+        throw new BadRequestException(
+          `Unknown template "${page.magazinePageId}" for this magazine type.`,
+        );
+      }
+      if (page.rightMagazinePageId && !validTemplateIds.has(page.rightMagazinePageId)) {
+        throw new BadRequestException(
+          `Unknown template "${page.rightMagazinePageId}" for this magazine type.`,
+        );
+      }
+    }
+
+    const hasCover = pages.some((page) => page.slotType === PageType.COVER);
+    const hasBackCover = pages.some((page) => page.slotType === PageType.BACK_COVER);
+    if (!hasCover || !hasBackCover) {
+      throw new BadRequestException('Journal must include a cover and a back cover.');
+    }
+
+    if (countSpreadSlots(pages) < MIN_JOURNAL_SPREADS) {
+      throw new BadRequestException(
+        `Journal must contain at least ${MIN_JOURNAL_SPREADS} spreads.`,
+      );
+    }
+
+    return pages.map((page) => ({
+      slotType: page.slotType,
+      layoutMode: page.layoutMode ?? null,
+      magazinePageId: page.magazinePageId,
+      rightMagazinePageId: page.rightMagazinePageId ?? null,
+      sortOrder: page.sortOrder,
+      pageSnapshot: normalizeCanvasData(page.pageSnapshot),
+    }));
   }
 
   async findAllByUser(userId: string, page: number, limit: number) {

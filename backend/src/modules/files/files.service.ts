@@ -155,6 +155,49 @@ export class FilesService {
       throw new UnauthorizedException('Sign in to upload files.');
     }
 
+    return this.persistLocalFile(file, {
+      userId,
+      orderId,
+      guestId,
+      width: scope.width,
+      height: scope.height,
+    });
+  }
+
+  /** Admin counterpart of `registerLocalUpload` — an admin isn't the order's owner, so it bypasses
+   * `assertOwnsOrder` (only requires the order to exist), and attributes the file to the order's
+   * own customer so the record looks identical to one the customer uploaded themselves. */
+  async registerAdminUpload(
+    orderId: string,
+    file: Express.Multer.File | undefined,
+    dimensions: { width?: number; height?: number },
+  ) {
+    if (!file) {
+      throw new BadRequestException('File is required.');
+    }
+
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, deletedAt: null },
+      select: { userId: true },
+    });
+
+    if (!order) {
+      throw new NotFoundException('Order not found.');
+    }
+
+    return this.persistLocalFile(file, {
+      userId: order.userId,
+      orderId,
+      guestId: null,
+      width: dimensions.width,
+      height: dimensions.height,
+    });
+  }
+
+  private async persistLocalFile(
+    file: Express.Multer.File,
+    data: { userId: string | null; orderId: string | null; guestId: string | null; width?: number; height?: number },
+  ) {
     const backendUrl =
       this.config.get<string>('app.backendUrl') ??
       `http://localhost:${process.env.PORT ?? 3000}`;
@@ -170,16 +213,16 @@ export class FilesService {
     return this.prisma.uploadedFile
       .create({
         data: {
-          userId,
-          orderId,
-          guestId,
+          userId: data.userId,
+          orderId: data.orderId,
+          guestId: data.guestId,
           storageKey: storedPath,
           url: storedPath,
           originalName: file.originalname,
           mimeType: file.mimetype,
           size: file.size,
-          width: scope.width ?? null,
-          height: scope.height ?? null,
+          width: data.width ?? null,
+          height: data.height ?? null,
         },
       })
       .then((record) => ({
@@ -213,6 +256,46 @@ export class FilesService {
       where: { id: file.id },
       data: { isFavorite },
     });
+  }
+
+  /** Admin counterpart of `list({ orderId })` — no ownership check, just the order's photos. */
+  async listForAdmin(orderId: string) {
+    return this.prisma.uploadedFile.findMany({
+      where: { orderId, deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async setFavoriteForAdmin(orderId: string, fileId: string, isFavorite: boolean) {
+    const file = await this.getOrderScopedFileOrThrow(fileId, orderId);
+
+    return this.prisma.uploadedFile.update({
+      where: { id: file.id },
+      data: { isFavorite },
+    });
+  }
+
+  async deleteForAdmin(orderId: string, fileId: string): Promise<void> {
+    await this.getOrderScopedFileOrThrow(fileId, orderId);
+
+    await this.prisma.uploadedFile.update({
+      where: { id: fileId },
+      data: { deletedAt: new Date() },
+    });
+
+    this.logger.log(`File soft-deleted by admin: ${fileId}`);
+  }
+
+  private async getOrderScopedFileOrThrow(fileId: string, orderId: string) {
+    const file = await this.prisma.uploadedFile.findFirst({
+      where: { id: fileId, orderId, deletedAt: null },
+    });
+
+    if (!file) {
+      throw new NotFoundException('File not found');
+    }
+
+    return file;
   }
 
   /** Re-parents a guest's gallery photos onto a real order once one exists (e.g. at

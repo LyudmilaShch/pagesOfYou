@@ -2,7 +2,13 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
 import { catalogApi, type CatalogMagazinePage } from '../api/catalog.api'
-import { ordersApi, type SetJournalPageTemplatePayload } from '../api/orders.api'
+import {
+  ordersApi,
+  type CreateOrderJournalPagePayload,
+  type SetJournalPageTemplatePayload,
+} from '../api/orders.api'
+import { photoGalleryApi } from '../api/photo-gallery.api'
+import { getOrCreateGuestId } from '@/shared/utils/guest-id.util'
 import { MIN_JOURNAL_SPREADS } from '../constants/journal.constants'
 import { normalizeCanvasData, type CanvasData } from '@/modules/editor/models/canvas-data.model'
 import type { MagazineType } from '../types/magazine-type'
@@ -474,31 +480,70 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     return missing
   }
 
+  /** Client-side mirror of what the backend re-checks anyway on submit — run before either
+   * `convertLocalDraftToOrder()` (no point requiring sign-in for a journal that isn't ready) or
+   * `submitOrder()`. Returns a user-facing message, or `null` if the journal is submittable. */
+  function getSubmitValidationError(): string | null {
+    if (!order.value) {
+      return 'Заказ не загружен.'
+    }
+
+    const spreadCount = countSpreadSlots(order.value.journalPages)
+    if (spreadCount < MIN_JOURNAL_SPREADS) {
+      return `В журнале должно быть минимум ${MIN_JOURNAL_SPREADS} разворотов.`
+    }
+
+    if (collectMissingRequiredPlaceholders().length > 0) {
+      return 'Заполните все обязательные поля перед продолжением.'
+    }
+
+    return null
+  }
+
+  /** Turns a guest's in-memory draft into a real order — persists exactly the pages/content
+   * already assembled locally (spreads, templates, placed photos/text) instead of seeding fresh
+   * default pages. Best-effort re-parents the guest's gallery photos onto the new order; a
+   * failure there doesn't block the order itself (see `claimGuestPhotos`'s own doc comment). */
+  async function convertLocalDraftToOrder(): Promise<OrderDetail> {
+    if (!order.value || !selectedMagazineType.value) {
+      throw new Error('Order is not loaded')
+    }
+
+    const journalPages: CreateOrderJournalPagePayload[] = order.value.journalPages.map((page) => ({
+      slotType: page.slotType,
+      layoutMode: page.layoutMode,
+      magazinePageId: page.magazinePage.id,
+      rightMagazinePageId: page.rightMagazinePage?.id ?? null,
+      sortOrder: page.sortOrder,
+      pageSnapshot: page.pageSnapshot,
+    }))
+
+    order.value = await ordersApi.createDraft(selectedMagazineType.value.id, journalPages)
+    isLocalDraft.value = false
+
+    try {
+      await photoGalleryApi.claimGuestPhotos(getOrCreateGuestId(), order.value.id)
+    } catch {
+      // Best-effort — the order itself is already created; the guest's gallery photos just stay
+      // under the old guestId and won't show up in this order's gallery. Not fatal.
+    }
+
+    return order.value
+  }
+
   async function submitOrder(): Promise<OrderDetail> {
     if (!order.value) {
       throw new Error('Order is not loaded')
+    }
+
+    if (isLocalDraft.value) {
+      throw new Error('Order must be created on the server before it can be submitted.')
     }
 
     isSubmitting.value = true
     orderError.value = null
 
     try {
-      const spreadCount = countSpreadSlots(order.value.journalPages)
-      if (spreadCount < MIN_JOURNAL_SPREADS) {
-        orderError.value = `В журнале должно быть минимум ${MIN_JOURNAL_SPREADS} разворотов.`
-        throw new Error(orderError.value)
-      }
-
-      if (isLocalDraft.value) {
-        const missing = collectMissingRequiredPlaceholders()
-        if (missing.length > 0) {
-          orderError.value = 'Заполните все обязательные поля перед продолжением.'
-          throw new Error(orderError.value)
-        }
-
-        return order.value
-      }
-
       order.value = await ordersApi.submit(order.value.id)
       return order.value
     } catch (err: unknown) {
@@ -552,6 +597,8 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     setJournalPageTemplate,
     addJournalSpread,
     reorderJournalSpreads,
+    getSubmitValidationError,
+    convertLocalDraftToOrder,
     submitOrder,
     resetOrderFlow,
   }
