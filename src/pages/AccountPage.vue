@@ -1,233 +1,588 @@
 <template>
   <div class="account-page">
-    <div class="account-page__inner">
-      <!-- Header -->
-      <div class="account-page__header">
-        <router-link to="/" class="account-page__back">
-          <v-icon size="18">mdi-arrow-left</v-icon>
-          На главную
-        </router-link>
+    <!-- ── Top navigation bar ─────────────────────────────────────────────── -->
+    <header class="account-page__topbar">
+      <div class="account-page__topbar-inner">
+        <router-link to="/" class="account-page__brand">Фолио</router-link>
+        <span class="account-page__topbar-title">Личный кабинет</span>
       </div>
+    </header>
 
-      <!-- Profile card -->
-      <v-card class="account-card" variant="outlined">
-        <div class="account-card__avatar">
-          <span class="account-card__avatar-letter">{{ avatarLetter }}</span>
-        </div>
-
-        <div class="account-card__info">
-          <h1 class="account-card__title">Личный кабинет</h1>
-
-          <div class="account-card__field">
-            <span class="account-card__field-label">Телефон</span>
-            <span class="account-card__field-value">{{ authStore.userPhone ?? '—' }}</span>
+    <!-- ── Main content ───────────────────────────────────────────────────── -->
+    <main class="account-page__main">
+      <div class="account-page__container">
+        <!-- Profile card -->
+        <section class="profile-card">
+          <div class="profile-card__avatar">
+            <span class="profile-card__avatar-letter">{{ avatarLetter }}</span>
           </div>
-
-          <div class="account-card__field">
-            <span class="account-card__field-label">ID пользователя</span>
-            <span class="account-card__field-value account-card__field-value--mono">
-              {{ authStore.user?.id ?? '—' }}
-            </span>
+          <div class="profile-card__info">
+            <span class="profile-card__name">{{ authStore.user?.name || 'Без имени' }}</span>
+            <span class="profile-card__phone">{{ authStore.userPhone ?? '—' }}</span>
           </div>
-
-          <div class="account-card__field">
-            <span class="account-card__field-label">Роль</span>
-            <v-chip size="small" variant="tonal" color="primary" label>
-              {{ authStore.user?.role ?? '—' }}
-            </v-chip>
-          </div>
-        </div>
-
-        <v-divider class="account-card__divider" />
-
-        <div class="account-card__actions">
           <v-btn
             variant="outlined"
             color="error"
-            size="large"
-            :loading="loading"
+            size="small"
+            class="profile-card__logout"
+            :loading="loggingOut"
             prepend-icon="mdi-logout"
             @click="handleLogout"
           >
             Выйти
           </v-btn>
-        </div>
-      </v-card>
-    </div>
+        </section>
 
-    <v-snackbar
-      v-model="snackbar.show"
-      :color="snackbar.color"
-      location="bottom center"
-      :timeout="3000"
-      rounded="lg"
-    >
+        <v-alert v-if="loadError" type="error" variant="tonal" rounded="lg" class="account-page__alert">
+          {{ loadError }}
+          <template #append>
+            <v-btn variant="text" size="small" :loading="loading" @click="loadOrders">Повторить</v-btn>
+          </template>
+        </v-alert>
+
+        <!-- Loading skeleton -->
+        <div v-if="loading" class="account-page__skeleton-grid" aria-busy="true">
+          <div v-for="n in 3" :key="n" class="account-page__skeleton" role="presentation" />
+        </div>
+
+        <template v-else>
+          <!-- ── Мои журналы (drafts) ──────────────────────────────────────── -->
+          <section class="account-section">
+            <div class="account-section__header">
+              <h2 class="account-section__title">Мои журналы</h2>
+              <span v-if="drafts.length" class="account-section__count">{{ drafts.length }}</span>
+            </div>
+
+            <div v-if="drafts.length" class="account-page__grid">
+              <article v-for="order in drafts" :key="order.id" class="journal-card">
+                <div class="journal-card__cover">
+                  <JournalSpreadThumbnail
+                    v-if="coverCanvas(order)"
+                    :canvas-data="coverCanvas(order)!"
+                    :container-ratio="0.75"
+                  />
+                  <div v-else class="journal-card__image journal-card__image--placeholder" />
+                </div>
+                <div class="journal-card__body">
+                  <h3 class="journal-card__name">{{ order.magazineType.name }}</h3>
+                  <p class="journal-card__meta">Изменено {{ formatDate(order.updatedAt) }}</p>
+                  <div class="journal-card__actions">
+                    <v-btn
+                      color="primary"
+                      size="small"
+                      class="journal-card__continue"
+                      :loading="continuingId === order.id"
+                      @click="continueEditing(order)"
+                    >
+                      Продолжить редактирование
+                    </v-btn>
+                    <v-btn
+                      icon="mdi-trash-can-outline"
+                      size="small"
+                      variant="text"
+                      aria-label="Удалить черновик"
+                      :loading="deletingId === order.id"
+                      @click="deleteDraft(order)"
+                    />
+                  </div>
+                </div>
+              </article>
+            </div>
+
+            <div v-else class="account-page__empty">
+              <v-icon size="32" color="textDisabled">mdi-book-outline</v-icon>
+              <p>Нет черновиков</p>
+              <v-btn color="primary" variant="outlined" size="small" :to="{ name: 'create-order' }">
+                Создать журнал
+              </v-btn>
+            </div>
+          </section>
+
+          <!-- ── Мои заказы (placed orders) ────────────────────────────────── -->
+          <section class="account-section">
+            <div class="account-section__header">
+              <h2 class="account-section__title">Мои заказы</h2>
+              <span v-if="placedOrders.length" class="account-section__count">{{ placedOrders.length }}</span>
+            </div>
+
+            <div v-if="placedOrders.length" class="account-page__grid">
+              <article v-for="order in placedOrders" :key="order.id" class="order-card">
+                <div class="order-card__cover">
+                  <JournalSpreadThumbnail
+                    v-if="coverCanvas(order)"
+                    :canvas-data="coverCanvas(order)!"
+                    :container-ratio="0.75"
+                  />
+                  <div v-else class="order-card__image order-card__image--placeholder" />
+                </div>
+                <div class="order-card__body">
+                  <div class="order-card__top-row">
+                    <h3 class="order-card__name">{{ order.magazineType.name }}</h3>
+                    <v-chip size="small" variant="tonal" :color="ORDER_STATUS_COLORS[order.status]" label>
+                      {{ ORDER_STATUS_LABELS[order.status] }}
+                    </v-chip>
+                  </div>
+                  <p class="order-card__meta">
+                    Оформлен {{ formatDate(order.submittedAt ?? order.createdAt) }}
+                  </p>
+                  <p class="order-card__price">{{ formatPrice(order.totalPrice) }}</p>
+                </div>
+              </article>
+            </div>
+
+            <div v-else class="account-page__empty">
+              <v-icon size="32" color="textDisabled">mdi-package-variant-closed</v-icon>
+              <p>Заказов пока нет</p>
+            </div>
+          </section>
+        </template>
+      </div>
+    </main>
+
+    <v-snackbar v-model="snackbar.show" :color="snackbar.color" location="bottom center" :timeout="3000">
       {{ snackbar.text }}
     </v-snackbar>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { useAuthStore } from '@/stores/auth.store'
+import { ordersApi } from '@/features/order-builder/api/orders.api'
+import type { OrderSummary } from '@/features/order-builder/types/order.types'
+import { ORDER_STATUS_COLORS, ORDER_STATUS_LABELS } from '@/features/order-builder/constants/order-status.constants'
+import type { CanvasData } from '@/modules/editor/models/canvas-data.model'
+import { normalizeCanvasData } from '@/modules/editor/models/canvas-data.model'
+import { materializeCanvasData } from '@/features/order-builder/utils/merge-placeholder-element.util'
+import JournalSpreadThumbnail from '@/modules/editor/components/JournalSpreadThumbnail.vue'
 
 const authStore = useAuthStore()
 const router = useRouter()
 
+const orders = ref<OrderSummary[]>([])
 const loading = ref(false)
+const loadError = ref<string | null>(null)
+const loggingOut = ref(false)
+const continuingId = ref<string | null>(null)
+const deletingId = ref<string | null>(null)
+
 const snackbar = reactive({ show: false, text: '', color: 'success' as string })
 
+const drafts = computed(() => orders.value.filter((order) => order.status === 'DRAFT'))
+const placedOrders = computed(() => orders.value.filter((order) => order.status !== 'DRAFT'))
+
+/** Bakes saved placeholder-value diffs into the cover page's own document — same materialization
+ * the advanced editor uses — so the card thumbnail reflects the customer's actual cover, not just
+ * the bare template. `null` when the order has no cover slot at all (shouldn't normally happen). */
+function coverCanvas(order: OrderSummary): CanvasData | null {
+  const coverPage = order.journalPages[0]
+  if (!coverPage) {
+    return null
+  }
+  return materializeCanvasData(normalizeCanvasData(coverPage.pageSnapshot), coverPage.placeholderValues)
+}
+
 const avatarLetter = computed(() => {
+  const name = authStore.user?.name
+  if (name) return name.slice(0, 1).toUpperCase()
   const phone = authStore.userPhone ?? ''
   return phone ? phone.slice(-2, -1) : '?'
 })
 
-async function handleLogout(): Promise<void> {
+async function loadOrders(): Promise<void> {
   loading.value = true
+  loadError.value = null
   try {
-    await authStore.logout()
-    await router.push('/auth')
+    const result = await ordersApi.list()
+    orders.value = result.items
   } catch {
-    snackbar.text = 'Произошла ошибка при выходе'
-    snackbar.color = 'error'
-    snackbar.show = true
-    await router.push('/auth')
+    loadError.value = 'Не удалось загрузить список журналов и заказов'
   } finally {
     loading.value = false
   }
 }
+
+async function continueEditing(order: OrderSummary): Promise<void> {
+  continuingId.value = order.id
+  try {
+    const detail = await ordersApi.getOne(order.id)
+    const firstPage = detail.journalPages[0]
+    if (!firstPage) {
+      snackbar.text = 'В этом журнале ещё нет ни одного разворота'
+      snackbar.color = 'error'
+      snackbar.show = true
+      return
+    }
+    await router.push({
+      name: 'journal-page-editor',
+      params: { orderId: order.id, journalPageId: firstPage.id },
+    })
+  } catch {
+    snackbar.text = 'Не удалось открыть журнал'
+    snackbar.color = 'error'
+    snackbar.show = true
+  } finally {
+    continuingId.value = null
+  }
+}
+
+async function deleteDraft(order: OrderSummary): Promise<void> {
+  if (!window.confirm('Удалить черновик журнала? Это действие нельзя отменить.')) {
+    return
+  }
+
+  deletingId.value = order.id
+  try {
+    await ordersApi.remove(order.id)
+    orders.value = orders.value.filter((item) => item.id !== order.id)
+  } catch {
+    snackbar.text = 'Не удалось удалить черновик'
+    snackbar.color = 'error'
+    snackbar.show = true
+  } finally {
+    deletingId.value = null
+  }
+}
+
+async function handleLogout(): Promise<void> {
+  loggingOut.value = true
+  try {
+    await authStore.logout()
+  } catch {
+    // ignore — local state is cleared regardless, see auth.store.ts
+  } finally {
+    loggingOut.value = false
+    await router.push('/auth')
+  }
+}
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  })
+}
+
+const priceFormatter = new Intl.NumberFormat('ru-RU', {
+  style: 'decimal',
+  maximumFractionDigits: 0,
+})
+
+function formatPrice(value: string | null): string {
+  if (value == null || value === '') return '—'
+  const num = parseFloat(value)
+  if (isNaN(num)) return '—'
+  return `${priceFormatter.format(num)} ₽`
+}
+
+onMounted(loadOrders)
 </script>
 
 <style scoped lang="scss">
+// ── Page layout ──────────────────────────────────────────────────────────────
 .account-page {
   min-height: 100vh;
-  background-color: #f8f7f4;
+  display: flex;
+  flex-direction: column;
+  background-color: $bg-primary;
+}
+
+// ── Top bar ───────────────────────────────────────────────────────────────────
+.account-page__topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  height: 64px;
+  background: rgba($bg-primary, 0.92);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid $border-light;
+}
+
+.account-page__topbar-inner {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: $spacing-4;
+  @include page-container;
+}
+
+.account-page__brand {
+  font-family: $font-family-display;
+  font-size: $font-size-body;
+  font-weight: $font-weight-medium;
+  letter-spacing: $letter-spacing-subheading;
+  color: $text-primary;
+  text-decoration: none;
+  transition: opacity 200ms;
+
+  &:hover {
+    opacity: 0.65;
+  }
+}
+
+.account-page__topbar-title {
+  font-family: $font-family-body;
+  font-size: $font-size-body-sm;
+  color: $text-muted;
+  padding-left: $spacing-4;
+  border-left: 1px solid $border-light;
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────────
+.account-page__main {
+  flex: 1;
+  padding-block: $spacing-8 $spacing-16;
+}
+
+.account-page__container {
+  @include page-container;
+  max-width: 1200px;
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-12;
+}
+
+.account-page__alert {
+  margin-top: -#{$spacing-6};
+}
+
+// ── Profile card ──────────────────────────────────────────────────────────────
+.profile-card {
+  display: flex;
+  align-items: center;
+  gap: $spacing-4;
+  padding: $spacing-4 $spacing-6;
+  background: $bg-elevated;
+  border: 1px solid $border-light;
+  border-radius: $radius-md;
+  box-shadow: $shadow-sm;
+
+  @include mobile-only {
+    flex-wrap: wrap;
+  }
+}
+
+.profile-card__avatar {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px 16px;
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: $bg-tertiary;
 }
 
-.account-page__inner {
-  width: 100%;
-  max-width: 480px;
+.profile-card__avatar-letter {
+  font-family: $font-family-display;
+  font-size: $font-size-body-lg;
+  color: $text-primary;
+}
+
+.profile-card__info {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
 }
 
-.account-page__header {
+.profile-card__name {
+  font-family: $font-family-body;
+  font-size: $font-size-body;
+  font-weight: $font-weight-medium;
+  color: $text-primary;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.profile-card__phone {
+  font-size: $font-size-body-sm;
+  color: $text-muted;
+}
+
+.profile-card__logout {
+  flex-shrink: 0;
+  text-transform: none;
+}
+
+// ── Sections ──────────────────────────────────────────────────────────────────
+.account-section {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  gap: $spacing-4;
 }
 
-.account-page__back {
+.account-section__header {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: #666666;
-  text-decoration: none;
-  font-family: Inter, -apple-system, sans-serif;
-  transition: color 0.2s;
+  align-items: baseline;
+  gap: $spacing-2;
+}
 
-  &:hover {
-    color: #111111;
+.account-section__title {
+  font-family: $font-family-display;
+  font-size: $font-size-h4;
+  font-weight: $font-weight-regular;
+  letter-spacing: $letter-spacing-heading;
+  color: $text-primary;
+  margin: 0;
+}
+
+.account-section__count {
+  font-size: $font-size-body-sm;
+  color: $text-muted;
+}
+
+// ── Grid ──────────────────────────────────────────────────────────────────────
+.account-page__grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: $spacing-4;
+
+  @include tablet-up {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  @include desktop-up {
+    grid-template-columns: repeat(3, 1fr);
   }
 }
 
-.account-card {
-  border-color: #d7d0c7 !important;
-  background: #ffffff;
-  padding: 0;
+.account-page__skeleton-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: $spacing-4;
 
-  &__avatar {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 64px;
-    height: 64px;
-    border-radius: 50%;
-    background: #e3ddd5;
-    margin: 32px auto 0;
+  @include tablet-up {
+    grid-template-columns: repeat(3, 1fr);
   }
+}
 
-  &__avatar-letter {
-    font-family: 'Playfair Display', Georgia, serif;
-    font-size: 28px;
-    font-weight: 700;
-    color: #111111;
-  }
+.account-page__skeleton {
+  border-radius: $radius-md;
+  background: $bg-tertiary;
+  aspect-ratio: 3 / 2;
+  animation: account-skeleton-pulse 1.4s ease-in-out infinite;
+}
 
-  &__info {
-    padding: 24px 32px;
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-  }
+@keyframes account-skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
 
-  &__title {
-    font-family: 'Playfair Display', Georgia, serif;
-    font-size: 24px;
-    font-weight: 700;
-    color: #111111;
-    text-align: center;
+.account-page__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: $spacing-2;
+  padding: $spacing-12 $spacing-4;
+  border: 1px dashed $border-default;
+  border-radius: $radius-md;
+  color: $text-muted;
+  text-align: center;
+
+  p {
+    font-family: $font-family-body;
+    font-size: $font-size-body-sm;
     margin: 0;
   }
+}
 
-  &__field {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
+// ── Journal / order cards ─────────────────────────────────────────────────────
+.journal-card,
+.order-card {
+  display: flex;
+  gap: $spacing-4;
+  padding: $spacing-3;
+  background: $bg-elevated;
+  border: 1px solid $border-light;
+  border-radius: $radius-md;
+  box-shadow: $shadow-sm;
+}
 
-  &__field-label {
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: #8a8580;
-    font-family: Inter, -apple-system, sans-serif;
-  }
+.journal-card__cover,
+.order-card__cover {
+  position: relative;
+  width: 88px;
+  aspect-ratio: 3 / 4;
+  flex-shrink: 0;
+  border-radius: $radius-sm;
+  overflow: hidden;
+  background: $bg-tertiary;
+}
 
-  &__field-value {
-    font-size: 15px;
-    color: #111111;
-    font-family: Inter, -apple-system, sans-serif;
+.journal-card__image,
+.order-card__image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 
-    &--mono {
-      font-family: 'Courier New', monospace;
-      font-size: 13px;
-      color: #666666;
-      word-break: break-all;
-    }
-  }
-
-  &__divider {
-    margin: 0 32px;
-    border-color: #e8e3dc;
-  }
-
-  &__actions {
-    padding: 24px 32px 32px;
-    display: flex;
-    justify-content: flex-end;
+  &--placeholder {
+    background: $bg-tertiary;
   }
 }
 
-@media (max-width: 480px) {
-  .account-card__info {
-    padding: 20px;
-  }
+.journal-card__body,
+.order-card__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-1;
+}
 
-  .account-card__divider {
-    margin: 0 20px;
-  }
+.journal-card__name,
+.order-card__name {
+  font-family: $font-family-display;
+  font-size: $font-size-body;
+  font-weight: $font-weight-medium;
+  color: $text-primary;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
-  .account-card__actions {
-    padding: 20px;
-  }
+.journal-card__meta,
+.order-card__meta {
+  font-size: $font-size-caption;
+  color: $text-muted;
+  margin: 0;
+}
+
+.journal-card__actions {
+  margin-top: auto;
+  padding-top: $spacing-2;
+  display: flex;
+  align-items: center;
+  gap: $spacing-1;
+}
+
+.journal-card__continue {
+  text-transform: none;
+  flex: 1;
+}
+
+.order-card__top-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: $spacing-2;
+}
+
+.order-card__price {
+  margin-top: auto;
+  padding-top: $spacing-2;
+  font-size: $font-size-body-sm;
+  font-weight: $font-weight-semibold;
+  font-variant-numeric: tabular-nums;
+  color: $text-primary;
 }
 </style>

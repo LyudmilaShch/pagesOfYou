@@ -34,6 +34,27 @@
             Создать журнал
           </v-btn>
 
+          <v-btn
+            v-if="!authStore.isAuthenticated"
+            variant="outlined"
+            color="primary"
+            class="header__account text-button"
+            size="default"
+            :to="{ name: 'auth' }"
+          >
+            Войти
+          </v-btn>
+          <v-btn
+            v-else
+            icon
+            variant="text"
+            class="header__account-icon"
+            :to="{ name: 'account' }"
+            aria-label="Личный кабинет"
+          >
+            <v-icon icon="mdi-account-circle-outline" size="28" color="primary" />
+          </v-btn>
+
           <button
             type="button"
             class="header__burger"
@@ -68,15 +89,41 @@
           </button>
         </nav>
 
-        <v-btn
-          color="primary"
-          size="large"
-          class="header__drawer-cta text-button"
-          :to="{ name: 'create-order' }"
-          @click="closeMenu"
-        >
-          Создать журнал
-        </v-btn>
+        <div class="header__drawer-actions">
+          <v-btn
+            color="primary"
+            size="large"
+            class="header__drawer-cta text-button"
+            :to="{ name: 'create-order' }"
+            @click="closeMenu"
+          >
+            Создать журнал
+          </v-btn>
+
+          <v-btn
+            v-if="!authStore.isAuthenticated"
+            variant="outlined"
+            color="primary"
+            size="large"
+            class="header__drawer-cta text-button"
+            :to="{ name: 'auth' }"
+            @click="closeMenu"
+          >
+            Войти
+          </v-btn>
+          <v-btn
+            v-else
+            variant="outlined"
+            color="primary"
+            size="large"
+            class="header__drawer-cta text-button"
+            prepend-icon="mdi-account-circle-outline"
+            :to="{ name: 'account' }"
+            @click="closeMenu"
+          >
+            Личный кабинет
+          </v-btn>
+        </div>
       </div>
     </v-navigation-drawer>
   </Teleport>
@@ -87,6 +134,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 import { scrollToSection } from '@/utils/scroll'
+import { useAuthStore } from '@/stores/auth.store'
 
 interface NavLink {
   label: string
@@ -102,6 +150,7 @@ const navLinks: NavLink[] = [
 
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
 const isMenuOpen = ref(false)
 const isScrolled = ref(false)
 const isHomePage = computed(() => route.path === '/')
@@ -243,6 +292,23 @@ onUnmounted(() => {
     }
   }
 
+  &__account {
+    display: none;
+    letter-spacing: $letter-spacing-button;
+
+    @include desktop-up {
+      display: inline-flex;
+    }
+  }
+
+  &__account-icon {
+    display: none;
+
+    @include desktop-up {
+      display: inline-flex;
+    }
+  }
+
   &__burger {
     display: flex;
     align-items: center;
@@ -273,6 +339,12 @@ onUnmounted(() => {
     display: flex;
     flex-direction: column;
     gap: $spacing-8;
+  }
+
+  &__drawer-actions {
+    display: flex;
+    flex-direction: column;
+    gap: $spacing-3;
   }
 
   &__drawer-cta {

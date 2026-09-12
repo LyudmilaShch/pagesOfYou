@@ -2,7 +2,7 @@ import { resolveAssetUrl } from '@/shared/config/assets'
 import { http } from '@/shared/api/http'
 import type { BackendResponse } from '@/types/api.types'
 import type { CanvasData } from '@/modules/editor/models/canvas-data.model'
-import type { OrderDetail, PlaceholderInput } from '../types/order.types'
+import type { OrderDetail, PaginatedOrders, PlaceholderInput } from '../types/order.types'
 import type { JournalSlotType, JournalSpreadLayout } from '../constants/journal.constants'
 
 export interface SetJournalPageTemplatePayload {
@@ -23,6 +23,21 @@ export interface CreateOrderJournalPagePayload {
 }
 
 export const ordersApi = {
+  /** The account page's journal/order lists — `magazineType.coverImage` comes back already
+   * resolved to an absolute URL server-side (see `OrdersService.withResolvedAssets`), no extra
+   * client-side resolve needed here. */
+  async list(page = 1, limit = 50): Promise<PaginatedOrders> {
+    const { data } = await http.get<BackendResponse<PaginatedOrders>>('/orders', {
+      params: { page, limit },
+    })
+    return data.data
+  },
+
+  /** Soft-deletes a draft journal — the backend rejects this for anything past `DRAFT`. */
+  async remove(orderId: string): Promise<void> {
+    await http.delete(`/orders/${orderId}`)
+  },
+
   async createDraft(
     magazineTypeId: string,
     journalPages?: CreateOrderJournalPagePayload[],

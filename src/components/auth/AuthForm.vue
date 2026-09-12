@@ -9,15 +9,20 @@
 
       <div class="auth-card__body">
         <v-text-field
-          v-model="phone"
+          :model-value="formattedPhoneDigits"
           label="Номер телефона"
-          placeholder="+7 900 000 00 00"
+          placeholder="(999) 123-45-67"
+          prefix="+7"
           type="tel"
+          inputmode="numeric"
+          autocomplete="tel"
           variant="outlined"
           color="primary"
+          maxlength="15"
           :error-messages="phoneError"
           :disabled="loadingSendCode"
           hide-details="auto"
+          @update:model-value="onPhoneInput"
           @keyup.enter="handleSendCode"
         />
 
@@ -26,7 +31,7 @@
           color="primary"
           size="large"
           :loading="loadingSendCode"
-          :disabled="!phone"
+          :disabled="!isPhoneComplete"
           block
           @click="handleSendCode"
         >
@@ -40,7 +45,7 @@
       <div class="auth-card__header">
         <h1 class="auth-card__title">Код подтверждения</h1>
         <p class="auth-card__subtitle">
-          Код отправлен на <strong>{{ phone }}</strong>
+          Код отправлен на <strong>{{ displayFullPhone }}</strong>
         </p>
       </div>
 
@@ -133,7 +138,7 @@
 </template>
 
 <script setup lang="ts">
-import { onUnmounted, reactive, ref } from 'vue'
+import { computed, onUnmounted, reactive, ref } from 'vue'
 
 import { useAuthStore } from '@/stores/auth.store'
 
@@ -145,7 +150,10 @@ const emit = defineEmits<{
 
 // UI State
 const step = ref<1 | 2>(1)
-const phone = ref('')
+// Source of truth is just the 10 significant digits after "+7" — the "+7" itself is a fixed,
+// uneditable `prefix` on the field (see template), never part of this value or what the user types
+// into. Formatting for display is derived from this on every render (see `formatPhoneDigits`).
+const phoneDigits = ref('')
 const code = ref('')
 const loadingSendCode = ref(false)
 const loadingVerify = ref(false)
@@ -197,23 +205,70 @@ function startResendCooldown(): void {
   }, 1000)
 }
 
-function validatePhone(value: string): boolean {
-  const normalized = value.replace(/\s/g, '')
-  return /^\+?[78]\d{10}$/.test(normalized)
+// ── Phone mask ──────────────────────────────────────────────────────────────
+// Fixed "+7" prefix + 10 digits, formatted as "(XXX) XXX-XX-XX" while typing. Pasting a full
+// number with a leading 7/8 country-code digit (e.g. "89161234567" or "+79161234567") is
+// normalized down to just the 10 significant digits automatically.
+
+const isPhoneComplete = computed(() => phoneDigits.value.length === 10)
+const normalizedPhone = computed(() => `+7${phoneDigits.value}`)
+const formattedPhoneDigits = computed(() => formatPhoneDigits(phoneDigits.value))
+const displayFullPhone = computed(() => `+7 ${formatPhoneDigits(phoneDigits.value)}`)
+
+function formatPhoneDigits(digits: string): string {
+  if (!digits) return ''
+  let result = `(${digits.slice(0, 3)}`
+  if (digits.length >= 3) result += ')'
+  if (digits.length > 3) result += ` ${digits.slice(3, 6)}`
+  if (digits.length > 6) result += `-${digits.slice(6, 8)}`
+  if (digits.length > 8) result += `-${digits.slice(8, 10)}`
+  return result
+}
+
+/** Strips everything but digits, and drops a leading 7/8 country-code digit if the total is
+ * longer than 10 — i.e. only when it looks like the user pasted/typed the country code along
+ * with the number (a genuine 10-digit mobile number never itself starts with 7 or 8). */
+function extractDigits(raw: string): string {
+  let digits = raw.replace(/\D/g, '')
+  if (digits.length > 10 && (digits.startsWith('7') || digits.startsWith('8'))) {
+    digits = digits.slice(1)
+  }
+  return digits.slice(0, 10)
+}
+
+function onPhoneInput(value: string | null): void {
+  const raw = value ?? ''
+  const previousDisplay = formatPhoneDigits(phoneDigits.value)
+  const previousDigitCount = phoneDigits.value.length
+
+  let digits = extractDigits(raw)
+
+  // A single backspace that happened to delete a mask-inserted character (a paren/space/hyphen
+  // the formatter itself added, not something the user typed) removes a character from the raw
+  // string without reducing the digit count — reformatting would just re-insert it right back,
+  // making backspace look like it does nothing. Detected as: exactly one character shorter, but
+  // the same digit count as before — in that case drop one more digit, the one actually meant.
+  if (previousDisplay.length - raw.length === 1 && digits.length === previousDigitCount && digits.length > 0) {
+    digits = digits.slice(0, -1)
+  }
+
+  phoneDigits.value = digits
+  if (phoneError.value) {
+    phoneError.value = ''
+  }
 }
 
 async function handleSendCode(): Promise<void> {
   phoneError.value = ''
 
-  const trimmed = phone.value.trim()
-  if (!validatePhone(trimmed)) {
-    phoneError.value = 'Введите корректный номер в формате +7XXXXXXXXXX'
+  if (!isPhoneComplete.value) {
+    phoneError.value = 'Введите корректный номер телефона'
     return
   }
 
   loadingSendCode.value = true
   try {
-    const { expiresIn } = await authStore.sendCode(trimmed)
+    const { expiresIn } = await authStore.sendCode(normalizedPhone.value)
     step.value = 2
     code.value = ''
     codeError.value = ''
@@ -238,7 +293,7 @@ async function handleVerifyCode(): Promise<void> {
 
   loadingVerify.value = true
   try {
-    await authStore.verifyCode(phone.value.trim(), code.value)
+    await authStore.verifyCode(normalizedPhone.value, code.value)
     emit('success')
   } catch (err: unknown) {
     const message = extractErrorMessage(err) ?? 'Неверный или просроченный код'
@@ -253,7 +308,7 @@ async function handleResend(): Promise<void> {
   if (resendCooldown.value > 0) return
   loadingSendCode.value = true
   try {
-    const { expiresIn } = await authStore.sendCode(phone.value.trim())
+    const { expiresIn } = await authStore.sendCode(normalizedPhone.value)
     code.value = ''
     codeError.value = ''
     startCountdown(expiresIn)

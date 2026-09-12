@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { OrdersService } from './orders.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -102,5 +102,11 @@ export class OrdersController {
   @ApiOperation({ summary: 'Cancel order' })
   cancel(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
     return this.ordersService.cancel(id, user.sub);
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: 'Delete a draft order (soft delete) — only DRAFT orders can be deleted' })
+  remove(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.ordersService.remove(id, user.sub);
   }
 }

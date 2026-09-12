@@ -13,6 +13,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { SendCodeDto } from './dto/send-code.dto';
 import { VerifyCodeDto } from './dto/verify-code.dto';
@@ -39,6 +40,7 @@ export class AuthController {
    * MVP: code is logged to the server console instead of sending SMS.
    */
   @Public()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('send-code')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -73,6 +75,7 @@ export class AuthController {
    * Returns isNew=true for first-time users.
    */
   @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('verify-code')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({

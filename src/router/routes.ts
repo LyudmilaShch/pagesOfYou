@@ -102,6 +102,12 @@ export const routes: RouteRecordRaw[] = [
         name: 'catalog',
         component: () => import('@/pages/CatalogPage.vue'),
       },
+      {
+        path: 'auth',
+        name: 'auth',
+        component: () => import('@/pages/AuthPage.vue'),
+        meta: { requiresGuest: true },
+      },
     ],
   },
   {
@@ -113,8 +119,8 @@ export const routes: RouteRecordRaw[] = [
     path: '/order/:orderId/journal-pages/:journalPageId/editor',
     component: () => import('@/modules/editor/layouts/EditorLayout.vue'),
     props: {
-      backTo: { name: 'catalog' },
-      backLabel: 'В каталог',
+      backUseHistory: true,
+      backLabel: 'Назад',
       savedMessage: 'Сохранено',
       saveErrorMessage: 'Не удалось сохранить',
     },
@@ -129,12 +135,6 @@ export const routes: RouteRecordRaw[] = [
         component: () => import('@/features/order-builder/pages/JournalPageEditorPage.vue'),
       },
     ],
-  },
-  {
-    path: '/auth',
-    name: 'auth',
-    component: () => import('@/pages/AuthPage.vue'),
-    meta: { requiresGuest: true },
   },
   {
     path: '/account',

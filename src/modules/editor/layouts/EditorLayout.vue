@@ -2,7 +2,16 @@
   <div class="editor-layout">
     <header class="editor-layout__header">
       <div class="editor-layout__header-left">
-        <router-link :to="resolvedBackTo" class="editor-layout__back">
+        <button
+          v-if="backUseHistory"
+          type="button"
+          class="editor-layout__back"
+          @click="router.back()"
+        >
+          <v-icon size="18">mdi-arrow-left</v-icon>
+          <span class="editor-layout__back-label">{{ backLabel }}</span>
+        </button>
+        <router-link v-else :to="resolvedBackTo" class="editor-layout__back">
           <v-icon size="18">mdi-arrow-left</v-icon>
           <span class="editor-layout__back-label">{{ backLabel }}</span>
         </router-link>
@@ -184,7 +193,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import type { RouteLocationRaw } from 'vue-router'
 
 import { useEditorStore } from '../store/editor.store'
@@ -197,16 +206,22 @@ const props = withDefaults(
     backLabel?: string
     savedMessage?: string
     saveErrorMessage?: string
+    /** When true, ignores `backTo` and just navigates back in browser history — used where
+     * there's no single fixed "parent" page (the customer editor can be entered from order
+     * creation, the account page's drafts list, etc). */
+    backUseHistory?: boolean
   }>(),
   {
     backTo: undefined,
     backLabel: 'Страницы',
     savedMessage: 'Шаблон сохранён',
     saveErrorMessage: 'Не удалось сохранить шаблон',
+    backUseHistory: false,
   },
 )
 
 const route = useRoute()
+const router = useRouter()
 const store = useEditorStore()
 const topAction = editorTopAction
 
@@ -414,6 +429,11 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   gap: $spacing-2;
+  border: none;
+  background: none;
+  padding: 0;
+  font-family: inherit;
+  cursor: pointer;
   color: $text-secondary;
   text-decoration: none;
   font-size: $font-size-body-sm;

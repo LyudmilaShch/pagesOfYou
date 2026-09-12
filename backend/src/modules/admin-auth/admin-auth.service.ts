@@ -1,4 +1,5 @@
 import {
+  ForbiddenException,
   Injectable,
   Logger,
   UnauthorizedException,
@@ -21,6 +22,11 @@ export interface AdminTokenResponse {
   };
 }
 
+/** After this many consecutive failed password attempts, the account is locked out. */
+const MAX_FAILED_ATTEMPTS = 5;
+/** Lockout duration once MAX_FAILED_ATTEMPTS is reached. */
+const LOCKOUT_DURATION_MS = 15 * 60 * 1000;
+
 @Injectable()
 export class AdminAuthService {
   private readonly logger = new Logger(AdminAuthService.name);
@@ -41,6 +47,8 @@ export class AdminAuthService {
         role: true,
         passwordHash: true,
         isBlocked: true,
+        failedLoginAttempts: true,
+        lockedUntil: true,
       },
     });
 
@@ -56,10 +64,24 @@ export class AdminAuthService {
       throw new UnauthorizedException('Account is blocked.');
     }
 
+    if (user.lockedUntil && user.lockedUntil > new Date()) {
+      const minutesLeft = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60_000);
+      throw new ForbiddenException(
+        `Too many failed attempts. Try again in ${minutesLeft} minute(s).`,
+      );
+    }
+
     const isValid = await bcrypt.compare(dto.password, user.passwordHash);
     if (!isValid) {
-      this.logger.warn(`Failed admin login attempt for ${dto.email}`);
+      await this.registerFailedAttempt(user.id, user.failedLoginAttempts, dto.email);
       throw new UnauthorizedException('Invalid credentials.');
+    }
+
+    if (user.failedLoginAttempts > 0 || user.lockedUntil) {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { failedLoginAttempts: 0, lockedUntil: null },
+      });
     }
 
     const accessToken = this.signToken({
@@ -97,6 +119,27 @@ export class AdminAuthService {
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
+
+  private async registerFailedAttempt(
+    userId: string,
+    previousAttempts: number,
+    email: string,
+  ): Promise<void> {
+    const attempts = previousAttempts + 1;
+    const lockedUntil =
+      attempts >= MAX_FAILED_ATTEMPTS ? new Date(Date.now() + LOCKOUT_DURATION_MS) : null;
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { failedLoginAttempts: attempts, lockedUntil },
+    });
+
+    if (lockedUntil) {
+      this.logger.warn(`Admin account locked after ${attempts} failed attempts: ${email}`);
+    } else {
+      this.logger.warn(`Failed admin login attempt (${attempts}/${MAX_FAILED_ATTEMPTS}) for ${email}`);
+    }
+  }
 
   private signToken(payload: AdminJwtPayload): string {
     const expiresIn = (this.config.get<string>('adminJwt.expiresIn') ??

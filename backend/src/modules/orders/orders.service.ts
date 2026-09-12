@@ -212,6 +212,15 @@ export class OrdersService {
           magazineType: {
             select: { id: true, name: true, coverImage: true },
           },
+          // The account page renders each journal's actual cover (via `JournalSpreadThumbnail`,
+          // same as the "Структура" panel/admin order review) instead of the magazine *type*'s
+          // static marketing image — a customer's own cover almost always looks different from
+          // the type's generic catalog photo once they've personalized it.
+          journalPages: {
+            where: { slotType: PageType.COVER },
+            take: 1,
+            select: { id: true, pageSnapshot: true, placeholderValues: true },
+          },
         },
       }),
       this.prisma.order.count({ where: { userId, deletedAt: null } }),
@@ -626,6 +635,21 @@ export class OrdersService {
     });
 
     return this.withResolvedAssets(cancelled);
+  }
+
+  /** Deletes a draft journal the user no longer wants — deliberately restricted to `DRAFT`:
+   * anything past that may already be paid/in production, and has `cancel()` for that instead. */
+  async remove(orderId: string, userId: string): Promise<void> {
+    const order = await this.getOwnedOrderOrThrow(orderId, userId);
+
+    if (order.status !== OrderStatus.DRAFT) {
+      throw new BadRequestException('Only draft journals can be deleted.');
+    }
+
+    await this.prisma.order.update({
+      where: { id: orderId },
+      data: { deletedAt: new Date() },
+    });
   }
 
   async updateDraft(_orderId: string, _userId: string, _data: unknown) {

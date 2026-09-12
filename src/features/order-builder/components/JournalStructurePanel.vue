@@ -53,7 +53,7 @@
                   icon="mdi-view-grid-outline"
                   size="small"
                   variant="text"
-                  color="white"
+                  color="primary"
                   class="journal-structure__template-btn"
                   aria-label="Выбрать шаблон"
                   @click.stop="openTemplatePicker(entry.page.id)"

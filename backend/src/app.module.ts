@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import {
   adminJwtConfig,
   appConfig,
@@ -44,6 +46,14 @@ import { HealthModule } from './modules/health/health.module';
     PrismaModule,
 
     // -------------------------------------------------------------------------
+    // Global IP-based rate limiting — a generous ceiling meant to catch scripted
+    // abuse, not normal SPA traffic (the editor/admin can legitimately burst many
+    // requests per second). Sensitive endpoints (send-code, verify-code, admin
+    // login) tighten this further with their own @Throttle() override.
+    // -------------------------------------------------------------------------
+    ThrottlerModule.forRoot([{ ttl: 10_000, limit: 100 }]),
+
+    // -------------------------------------------------------------------------
     // Feature modules
     // -------------------------------------------------------------------------
     AuthModule,
@@ -61,6 +71,12 @@ import { HealthModule } from './modules/health/health.module';
     FilesModule,
     PaymentsModule,
     HealthModule,
+  ],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
   ],
 })
 export class AppModule {}

@@ -1,11 +1,6 @@
 <template>
   <div class="auth-page">
     <div class="auth-page__inner">
-      <!-- Logo / Brand -->
-      <div class="auth-page__brand">
-        <span class="auth-page__brand-name">Фолио</span>
-      </div>
-
       <AuthForm @success="handleSuccess" />
     </div>
   </div>
@@ -27,31 +22,16 @@ async function handleSuccess(): Promise<void> {
 
 <style scoped lang="scss">
 .auth-page {
-  min-height: 100vh;
-  background-color: var(--color-bg-primary, #f8f7f4);
+  min-height: calc(100vh - $header-height);
+  background-color: $bg-primary;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px 16px;
+  padding: $spacing-6 $spacing-4;
 }
 
 .auth-page__inner {
   width: 100%;
   max-width: 440px;
-  display: flex;
-  flex-direction: column;
-  gap: 32px;
-}
-
-.auth-page__brand {
-  text-align: center;
-}
-
-.auth-page__brand-name {
-  font-family: 'Playfair Display', Georgia, 'Times New Roman', serif;
-  font-size: 24px;
-  font-weight: 700;
-  color: #111111;
-  letter-spacing: 0.02em;
 }
 </style>

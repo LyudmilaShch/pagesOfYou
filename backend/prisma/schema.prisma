@@ -167,6 +167,11 @@ model User {
   blockedAt     DateTime?
   blockedReason String?
 
+  /// Consecutive failed admin login attempts (password auth only). Reset to 0 on success.
+  failedLoginAttempts Int       @default(0)
+  /// Set once failedLoginAttempts hits the threshold; login is refused until this passes.
+  lockedUntil         DateTime?
+
   /// bcrypt hash of the current refresh token.
   /// Set on login/refresh, cleared on logout.
   /// One active session per user (single-device MVP).

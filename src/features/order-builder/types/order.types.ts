@@ -1,5 +1,6 @@
 import type { CanvasData } from '@/modules/editor/models/canvas-data.model'
 import type { JournalSpreadLayout, JournalSlotType } from '../constants/journal.constants'
+import type { OrderStatus } from '../constants/order-status.constants'
 
 export type PlaceholderValueType = 'TEXT' | 'PHOTO' | 'DATE'
 
@@ -85,4 +86,38 @@ export interface PlaceholderInput {
   valueType: PlaceholderValueType
   textValue?: string
   jsonValue?: PlaceholderJsonValue
+}
+
+/** One row of the account page's journal/order lists — a lighter shape than `OrderDetail`
+ * (only the cover `journalPage`, not the full list), matching what `GET /orders`
+ * (`OrdersService.findAllByUser`) actually returns. `status === 'DRAFT'` means this is still an
+ * in-progress journal, not a placed order. */
+export interface OrderSummary {
+  id: string
+  status: OrderStatus
+  totalPrice: string | null
+  createdAt: string
+  submittedAt: string | null
+  updatedAt: string
+  magazineType: {
+    id: string
+    name: string
+    coverImage: string | null
+  }
+  /** The journal's own COVER page (at most one item — the backend query already filters to
+   * `slotType: COVER, take: 1`) — rendered via `JournalSpreadThumbnail` for a real thumbnail (the
+   * customer's actual cover design), instead of `magazineType.coverImage`'s generic catalog photo
+   * for the magazine *type*. Empty only for a malformed order with no cover slot at all. */
+  journalPages: Array<{
+    id: string
+    pageSnapshot: CanvasData
+    placeholderValues: PlaceholderValue[]
+  }>
+}
+
+export interface PaginatedOrders {
+  items: OrderSummary[]
+  total: number
+  page: number
+  limit: number
 }

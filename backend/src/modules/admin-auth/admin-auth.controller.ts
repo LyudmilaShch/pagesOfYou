@@ -13,6 +13,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { AdminAuthService } from './admin-auth.service';
 import { AdminLoginDto } from './dto/admin-login.dto';
 import { AdminJwtGuard } from './guards/admin-jwt.guard';
@@ -31,6 +32,7 @@ export class AdminAuthController {
   // POST /admin/auth/login
   // ---------------------------------------------------------------------------
 
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Admin login with email + password' })
