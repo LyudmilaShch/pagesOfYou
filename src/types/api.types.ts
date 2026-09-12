@@ -37,6 +37,8 @@ export interface VerifyCodeResponse {
     id: string
     phone: string
     name: string | null
+    userNumber: number
+    avatarUrl: string | null
     role: string
     isNew: boolean
   }

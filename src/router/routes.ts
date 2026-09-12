@@ -86,6 +86,11 @@ export const routes: RouteRecordRaw[] = [
         name: 'admin-order-detail',
         component: () => import('@/features/admin/pages/AdminOrderDetailPage.vue'),
       },
+      {
+        path: 'promo-codes',
+        name: 'admin-promo-codes',
+        component: () => import('@/features/admin/pages/AdminPromoCodesPage.vue'),
+      },
     ],
   },
   {
@@ -135,6 +140,12 @@ export const routes: RouteRecordRaw[] = [
         component: () => import('@/features/order-builder/pages/JournalPageEditorPage.vue'),
       },
     ],
+  },
+  {
+    path: '/order/:orderId/checkout',
+    name: 'order-checkout',
+    component: () => import('@/features/order-builder/pages/CheckoutPage.vue'),
+    meta: { requiresAuth: true },
   },
   {
     path: '/account',

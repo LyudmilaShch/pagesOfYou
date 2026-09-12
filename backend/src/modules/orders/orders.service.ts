@@ -5,12 +5,20 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { JournalSpreadLayout, OrderStatus, PageType, PlaceholderValueType, Prisma } from '@prisma/client';
+import {
+  DeliveryMethod,
+  JournalSpreadLayout,
+  OrderStatus,
+  PageType,
+  PlaceholderValueType,
+  Prisma,
+} from '@prisma/client';
 import { PrismaService } from '../../database';
 import { resolveAssetUrl } from '../../common/utils/asset-url.util';
 import { MIN_JOURNAL_SPREADS } from '../../shared/constants/journal.constants';
 import { normalizeCanvasData } from '../../shared/types/canvas-data.types';
 import { flattenTree } from '../../shared/utils/element-tree.util';
+import { calculateJournalPrice } from '../../shared/utils/pricing.util';
 import {
   buildInitialJournalSlots,
   buildJournalPageSnapshot,
@@ -24,6 +32,8 @@ import {
   isPlaceholderFilled,
   resolvePlaceholderValueType,
 } from '../../shared/utils/placeholder.util';
+import type { ApplyPromoCodeDto } from './dto/apply-promo-code.dto';
+import type { CalculateDeliveryDto } from './dto/calculate-delivery.dto';
 import type { CreateDraftOrderDto, CreateOrderJournalPageDto } from './dto/create-draft-order.dto';
 import type { ReorderJournalSpreadsDto } from './dto/reorder-journal-spreads.dto';
 import type { SaveJournalPageCanvasDto } from './dto/save-journal-page-canvas.dto';
@@ -47,7 +57,12 @@ const ORDER_INCLUDE = {
       coverImage: true,
       basePrice: true,
       oldPrice: true,
+      includedSpreads: true,
+      pricePerExtraFourPages: true,
     },
+  },
+  promoCode: {
+    select: { code: true },
   },
   journalPages: {
     orderBy: { sortOrder: 'asc' as const },
@@ -118,6 +133,8 @@ export class OrdersService {
       select: { magazineStyleId: true },
     });
 
+    const totalPrice = calculateJournalPrice(magazineType, countSpreadSlots(journalSlots));
+
     const order = await this.prisma.$transaction(async (tx) => {
       const created = await tx.order.create({
         data: {
@@ -125,7 +142,7 @@ export class OrdersService {
           magazineTypeId: dto.magazineTypeId,
           magazineStyleId: styleLink?.magazineStyleId ?? null,
           status: OrderStatus.DRAFT,
-          totalPrice: magazineType.basePrice,
+          totalPrice,
           magazineTypeSnapshot: {
             id: magazineType.id,
             name: magazineType.name,
@@ -385,6 +402,10 @@ export class OrdersService {
       });
     }
 
+    if (!order.deliveryMethod) {
+      throw new BadRequestException('Укажите способ и адрес доставки.');
+    }
+
     const submitted = await this.prisma.order.update({
       where: { id: orderId },
       data: {
@@ -407,6 +428,8 @@ export class OrdersService {
     return this.withResolvedAssets(submitted);
   }
 
+  /** Adds 2 spreads (= 4 pages) at once, never 1 — printing requires page counts in multiples of
+   * 4 (signature/tetrad binding), so the journal's page count must stay even in spreads too. */
   async addJournalSpread(orderId: string, userId: string) {
     const order = await this.getOwnedOrderOrThrow(orderId, userId, ORDER_INCLUDE);
 
@@ -435,6 +458,10 @@ export class OrdersService {
         ? order.journalPages.length
         : order.journalPages[backCoverIndex].sortOrder;
 
+    const SPREADS_PER_ADD = 2;
+    const newSpreadCount = countSpreadSlots(order.journalPages) + SPREADS_PER_ADD;
+    const totalPrice = calculateJournalPrice(order.magazineType, newSpreadCount);
+
     await this.prisma.$transaction(async (tx) => {
       await tx.journalPage.updateMany({
         where: {
@@ -442,7 +469,7 @@ export class OrdersService {
           sortOrder: { gte: insertSortOrder },
         },
         data: {
-          sortOrder: { increment: 1 },
+          sortOrder: { increment: SPREADS_PER_ADD },
         },
       });
 
@@ -453,21 +480,28 @@ export class OrdersService {
         ? templatePages.find((page) => page.id === spreadDefault.rightMagazinePageId)
         : null;
 
-      await tx.journalPage.create({
-        data: {
+      const pageSnapshot = buildJournalPageSnapshot(
+        PageType.SPREAD,
+        spreadDefault.layoutMode,
+        primaryTemplate ?? null,
+        rightTemplate ?? null,
+      ) as unknown as Prisma.InputJsonValue;
+
+      await tx.journalPage.createMany({
+        data: Array.from({ length: SPREADS_PER_ADD }, (_, i) => ({
           orderId,
           slotType: PageType.SPREAD,
           layoutMode: spreadDefault.layoutMode,
           magazinePageId: spreadDefault.magazinePageId,
           rightMagazinePageId: spreadDefault.rightMagazinePageId,
-          sortOrder: insertSortOrder,
-          pageSnapshot: buildJournalPageSnapshot(
-            PageType.SPREAD,
-            spreadDefault.layoutMode,
-            primaryTemplate ?? null,
-            rightTemplate ?? null,
-          ) as unknown as Prisma.InputJsonValue,
-        },
+          sortOrder: insertSortOrder + i,
+          pageSnapshot,
+        })),
+      });
+
+      await tx.order.update({
+        where: { id: orderId },
+        data: { totalPrice },
       });
     });
 
@@ -635,6 +669,120 @@ export class OrdersService {
     });
 
     return this.withResolvedAssets(cancelled);
+  }
+
+  /** Checkout step — stubbed CDEK: a fixed price/eta per delivery method, no real carrier API
+   * call. Saves the delivery details onto the order immediately (there's no separate "confirm
+   * address" step) so `submit()` can require them to be present. */
+  async calculateDelivery(orderId: string, userId: string, dto: CalculateDeliveryDto) {
+    const order = await this.getOwnedOrderOrThrow(orderId, userId);
+
+    if (order.status !== OrderStatus.DRAFT) {
+      throw new BadRequestException('Delivery can only be set for draft orders.');
+    }
+
+    // TODO: real CDEK integration (tariff calculation by address/dimensions/weight).
+    const { price, etaDays } =
+      dto.method === DeliveryMethod.COURIER
+        ? { price: 350, etaDays: 5 }
+        : { price: 250, etaDays: 4 };
+
+    const updated = await this.prisma.order.update({
+      where: { id: orderId },
+      data: {
+        deliveryMethod: dto.method,
+        deliveryCity: dto.city,
+        deliveryAddress: dto.address,
+        deliveryPostalCode: dto.postalCode,
+        recipientName: dto.recipientName,
+        recipientPhone: dto.recipientPhone,
+        deliveryPrice: price,
+        deliveryEtaDays: etaDays,
+      },
+      include: ORDER_INCLUDE,
+    });
+
+    return this.withResolvedAssets(updated);
+  }
+
+  async applyPromoCode(orderId: string, userId: string, dto: ApplyPromoCodeDto) {
+    const order = await this.getOwnedOrderOrThrow(orderId, userId);
+
+    if (order.status !== OrderStatus.DRAFT) {
+      throw new BadRequestException('Promo codes can only be applied to draft orders.');
+    }
+
+    const promoCode = await this.prisma.promoCode.findFirst({
+      where: { code: { equals: dto.code.trim(), mode: 'insensitive' } },
+    });
+
+    if (!promoCode || !promoCode.isActive) {
+      throw new BadRequestException('Промокод не найден.');
+    }
+
+    if (promoCode.expiresAt && promoCode.expiresAt < new Date()) {
+      throw new BadRequestException('Промокод больше не действует.');
+    }
+
+    if (promoCode.usageLimit != null && promoCode.usageCount >= promoCode.usageLimit) {
+      throw new BadRequestException('Промокод больше не действует.');
+    }
+
+    const itemPrice = Number(order.totalPrice ?? 0);
+    const discountAmount = promoCode.discountPercent != null
+      ? Math.round((itemPrice * promoCode.discountPercent) / 100)
+      : Number(promoCode.discountAmount ?? 0);
+
+    const previousPromoCodeId = order.promoCodeId;
+
+    const [updated] = await this.prisma.$transaction([
+      this.prisma.order.update({
+        where: { id: orderId },
+        data: { promoCodeId: promoCode.id, discountAmount },
+        include: ORDER_INCLUDE,
+      }),
+      this.prisma.promoCode.update({
+        where: { id: promoCode.id },
+        data: { usageCount: { increment: 1 } },
+      }),
+      // Switching from one code to another shouldn't leave the old code's usage count inflated.
+      ...(previousPromoCodeId && previousPromoCodeId !== promoCode.id
+        ? [
+            this.prisma.promoCode.update({
+              where: { id: previousPromoCodeId },
+              data: { usageCount: { decrement: 1 } },
+            }),
+          ]
+        : []),
+    ]);
+
+    return this.withResolvedAssets(updated);
+  }
+
+  async removePromoCode(orderId: string, userId: string) {
+    const order = await this.getOwnedOrderOrThrow(orderId, userId);
+
+    if (order.status !== OrderStatus.DRAFT) {
+      throw new BadRequestException('Promo codes can only be changed on draft orders.');
+    }
+
+    const [updated] = await this.prisma.$transaction([
+      this.prisma.order.update({
+        where: { id: orderId },
+        data: { promoCodeId: null, discountAmount: null },
+        include: ORDER_INCLUDE,
+      }),
+      ...(order.promoCodeId
+        ? [
+            this.prisma.promoCode.update({
+              where: { id: order.promoCodeId },
+              data: { usageCount: { decrement: 1 } },
+            }),
+          ]
+        : []),
+    ]);
+
+    return this.withResolvedAssets(updated);
   }
 
   /** Deletes a draft journal the user no longer wants — deliberately restricted to `DRAFT`:

@@ -34,10 +34,20 @@ async function normalizeCoverImages(): Promise<void> {
   }
 }
 
+async function seedPromoCode(): Promise<void> {
+  await prisma.promoCode.upsert({
+    where: { code: 'PAGES10' },
+    update: {},
+    create: { code: 'PAGES10', discountPercent: 10 },
+  });
+  console.log('✅ Demo promo code ready: PAGES10 (10%)');
+}
+
 async function main() {
   console.log('🌱 Seeding database...');
 
   await normalizeCoverImages();
+  await seedPromoCode();
 
   const existing = await prisma.user.findUnique({ where: { email: ADMIN_EMAIL } });
 

@@ -24,6 +24,7 @@ import { UsersModule } from './modules/users/users.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { AdminOrdersModule } from './modules/admin-orders/admin-orders.module';
+import { AdminPromoCodesModule } from './modules/admin-promo-codes/admin-promo-codes.module';
 import { FilesModule } from './modules/files/files.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { HealthModule } from './modules/health/health.module';
@@ -68,6 +69,7 @@ import { HealthModule } from './modules/health/health.module';
     CatalogModule,
     OrdersModule,
     AdminOrdersModule,
+    AdminPromoCodesModule,
     FilesModule,
     PaymentsModule,
     HealthModule,

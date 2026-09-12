@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../../database';
 import { resolveAssetUrl } from '../../../common/utils/asset-url.util';
+import { hasCoverAndBackCoverTemplates } from '../../../shared/utils/magazine-type-availability.util';
 
 /** Fields exposed on the public catalog endpoint */
 const PUBLIC_SELECT = {
@@ -12,6 +13,8 @@ const PUBLIC_SELECT = {
   coverImage: true,
   basePrice: true,
   oldPrice: true,
+  includedSpreads: true,
+  pricePerExtraFourPages: true,
   badgeType: true,
   badgeText: true,
   sortOrder: true,
@@ -28,26 +31,52 @@ export class MagazineTypesService {
     private readonly config: ConfigService,
   ) {}
 
-  /** Public: return only active, non-deleted types sorted by sortOrder */
+  /** Public: return only active, non-deleted types sorted by sortOrder — and only ones that can
+   * actually be ordered. `OrdersService.createDraft` requires at least one COVER and one
+   * BACK_COVER template to exist; a type missing either would let a customer pick it here and
+   * then hit a 400 the moment they try to start, so it's filtered out at the source instead. */
   async findAll() {
     const items = await this.prisma.magazineType.findMany({
       where: { isActive: true, deletedAt: null },
-      select: PUBLIC_SELECT,
+      select: {
+        ...PUBLIC_SELECT,
+        pages: {
+          where: { deletedAt: null },
+          select: { pageType: true },
+        },
+      },
       orderBy: { sortOrder: 'asc' },
     });
 
-    return items.map((item) => this.withResolvedCoverImage(item));
+    return items
+      .filter((item) => hasCoverAndBackCoverTemplates(item.pages))
+      .map((item) => {
+        const { pages, ...rest } = item;
+        void pages;
+        return this.withResolvedCoverImage(rest);
+      });
   }
 
   /** Public: single type by slug */
   async findBySlug(slug: string) {
     const item = await this.prisma.magazineType.findUnique({
       where: { slug, deletedAt: null, isActive: true },
-      select: PUBLIC_SELECT,
+      select: {
+        ...PUBLIC_SELECT,
+        pages: {
+          where: { deletedAt: null },
+          select: { pageType: true },
+        },
+      },
     });
 
-    if (!item) throw new NotFoundException(`Magazine type "${slug}" not found.`);
-    return this.withResolvedCoverImage(item);
+    if (!item || !hasCoverAndBackCoverTemplates(item.pages)) {
+      throw new NotFoundException(`Magazine type "${slug}" not found.`);
+    }
+
+    const { pages, ...rest } = item;
+    void pages;
+    return this.withResolvedCoverImage(rest);
   }
 
   private backendUrl(): string {

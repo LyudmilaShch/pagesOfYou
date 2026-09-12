@@ -65,6 +65,8 @@ export interface JournalPage {
   placeholderValues: PlaceholderValue[]
 }
 
+export type DeliveryMethod = 'PICKUP_POINT' | 'COURIER'
+
 export interface OrderDetail {
   id: string
   status: string
@@ -77,8 +79,20 @@ export interface OrderDetail {
     coverImage: string | null
     basePrice: string | null
     oldPrice: string | null
+    includedSpreads: number
+    pricePerExtraFourPages: string | null
   }
   journalPages: JournalPage[]
+  deliveryMethod: DeliveryMethod | null
+  deliveryCity: string | null
+  deliveryAddress: string | null
+  deliveryPostalCode: string | null
+  recipientName: string | null
+  recipientPhone: string | null
+  deliveryPrice: string | null
+  deliveryEtaDays: number | null
+  promoCode: { code: string } | null
+  discountAmount: string | null
 }
 
 export interface PlaceholderInput {

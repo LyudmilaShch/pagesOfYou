@@ -105,7 +105,7 @@
           color="primary"
           size="large"
           class="create-order__btn-next"
-          :disabled="!store.selectedMagazineType || store.isLoadingOrder"
+          :disabled="!store.selectedMagazineType || store.isLoadingOrder || checkingDrafts"
           :loading="store.isLoadingOrder"
           @click="handleNext"
         >
@@ -114,23 +114,121 @@
         </v-btn>
       </div>
     </footer>
+
+    <ResumeDraftModal
+      :open="resumeModal.open"
+      :mode="resumeModal.mode"
+      :drafts="resumeModal.drafts"
+      :guest-draft="resumeModal.guestDraft"
+      @continue="onResumeContinue"
+      @start-new="onResumeStartNew"
+      @close="resumeModal.open = false"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
+import { useAuthStore } from '@/stores/auth.store'
+import { ordersApi } from '../api/orders.api'
+import type { OrderSummary } from '../types/order.types'
+import { clearLocalDraft, readLocalDraft, type StoredLocalDraft } from '../utils/local-draft-storage.util'
+import { resumeOrder } from '../utils/resume-order.util'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
 import MagazineTypeCard from '../components/MagazineTypeCard.vue'
+import ResumeDraftModal from '../components/ResumeDraftModal.vue'
 
 const store = useOrderBuilderStore()
+const authStore = useAuthStore()
 const router = useRouter()
 
-onMounted(() => {
+const checkingDrafts = ref(true)
+const resumeModal = reactive<{
+  open: boolean
+  mode: 'authenticated' | 'guest'
+  drafts: OrderSummary[]
+  guestDraft: StoredLocalDraft | null
+}>({
+  open: false,
+  mode: 'authenticated',
+  drafts: [],
+  guestDraft: null,
+})
+
+onMounted(async () => {
   store.orderError = null
   store.fetchMagazineTypes()
+  await checkForDrafts()
 })
+
+/** Runs once on mount — offers to resume an in-progress journal instead of always starting fresh.
+ * Also adopts a guest's leftover localStorage draft into a real order if the user is already
+ * signed in (e.g. they logged in via the header in another tab) — otherwise that draft would keep
+ * silently existing without ever surfacing as one of their real "Мои журналы" drafts. */
+async function checkForDrafts(): Promise<void> {
+  checkingDrafts.value = true
+
+  try {
+    const guestDraft = readLocalDraft()
+
+    if (authStore.isAuthenticated) {
+      if (guestDraft) {
+        try {
+          await store.restoreLocalDraft(guestDraft)
+          await store.convertLocalDraftToOrder()
+        } catch {
+          // Best-effort adoption — if it fails, fall through to the normal drafts check below;
+          // the guest draft stays in localStorage and nothing is lost.
+        }
+      }
+
+      const result = await ordersApi.list()
+      const drafts = result.items.filter((order) => order.status === 'DRAFT')
+      if (drafts.length > 0) {
+        resumeModal.mode = 'authenticated'
+        resumeModal.drafts = drafts
+        resumeModal.open = true
+      }
+    } else if (guestDraft) {
+      resumeModal.mode = 'guest'
+      resumeModal.guestDraft = guestDraft
+      resumeModal.open = true
+    }
+  } finally {
+    checkingDrafts.value = false
+  }
+}
+
+async function onResumeContinue(orderId?: string): Promise<void> {
+  resumeModal.open = false
+  store.orderError = null
+
+  try {
+    if (resumeModal.mode === 'authenticated' && orderId) {
+      await resumeOrder(router, orderId)
+    } else if (resumeModal.mode === 'guest' && resumeModal.guestDraft) {
+      await store.restoreLocalDraft(resumeModal.guestDraft)
+      const firstPage = store.order?.journalPages[0]
+      if (store.order && firstPage) {
+        await router.push({
+          name: 'journal-page-editor',
+          params: { orderId: store.order.id, journalPageId: firstPage.id },
+        })
+      }
+    }
+  } catch {
+    store.orderError = 'Не удалось открыть черновик.'
+  }
+}
+
+function onResumeStartNew(): void {
+  resumeModal.open = false
+  if (resumeModal.mode === 'guest') {
+    clearLocalDraft()
+  }
+}
 
 async function handleNext(): Promise<void> {
   if (!store.selectedMagazineType) {
@@ -140,7 +238,7 @@ async function handleNext(): Promise<void> {
   store.orderError = null
 
   try {
-    await store.loadLocalDraft(store.selectedMagazineType.id)
+    await store.startDraft(store.selectedMagazineType.id)
 
     const firstPage = store.order?.journalPages[0]
     if (!store.order || !firstPage) {

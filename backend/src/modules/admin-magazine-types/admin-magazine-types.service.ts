@@ -1,12 +1,15 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { PageType } from '@prisma/client';
 import { PrismaService } from '../../database';
 import { resolveAssetUrl, toStoredAssetPath } from '../../common/utils/asset-url.util';
+import { hasCoverAndBackCoverTemplates } from '../../shared/utils/magazine-type-availability.util';
 import type { CreateMagazineTypeDto } from './dto/create-magazine-type.dto';
 import type { UpdateMagazineTypeDto } from './dto/update-magazine-type.dto';
 import type { GetMagazineTypesQueryDto } from './dto/get-magazine-types-query.dto';
@@ -45,12 +48,18 @@ export class AdminMagazineTypesService {
     const orderBy = { [query.sortBy ?? 'sortOrder']: query.sortOrder ?? 'asc' };
 
     const [items, total] = await this.prisma.$transaction([
-      this.prisma.magazineType.findMany({ where, orderBy, skip, take: limit }),
+      this.prisma.magazineType.findMany({
+        where,
+        orderBy,
+        skip,
+        take: limit,
+        include: { pages: { where: { deletedAt: null }, select: { pageType: true } } },
+      }),
       this.prisma.magazineType.count({ where }),
     ]);
 
     return {
-      items: items.map((item) => this.withResolvedCoverImage(item)),
+      items: items.map((item) => this.withResolvedCoverImage(this.withAvailability(item))),
       total,
       page,
       limit,
@@ -63,19 +72,21 @@ export class AdminMagazineTypesService {
   async findOne(id: string) {
     const item = await this.prisma.magazineType.findUnique({
       where: { id, deletedAt: null },
+      include: { pages: { where: { deletedAt: null }, select: { pageType: true } } },
     });
 
     if (!item) {
       throw new NotFoundException(`Magazine type with id "${id}" not found.`);
     }
 
-    return this.withResolvedCoverImage(item);
+    return this.withResolvedCoverImage(this.withAvailability(item));
   }
 
   // ── Create ──────────────────────────────────────────────────────────────────
 
   async create(dto: CreateMagazineTypeDto) {
     await this.assertSlugUnique(dto.slug);
+    this.assertEvenIncludedSpreads(dto.includedSpreads);
 
     const item = await this.prisma.magazineType.create({
       data: {
@@ -85,6 +96,8 @@ export class AdminMagazineTypesService {
         coverImage: toStoredAssetPath(dto.coverImage),
         basePrice: dto.basePrice ?? null,
         oldPrice: dto.oldPrice ?? null,
+        includedSpreads: dto.includedSpreads ?? 8,
+        pricePerExtraFourPages: dto.pricePerExtraFourPages ?? null,
         badgeType: dto.badgeType ?? null,
         badgeText: dto.badgeText ?? null,
         isActive: dto.isActive ?? true,
@@ -95,7 +108,10 @@ export class AdminMagazineTypesService {
     });
 
     this.logger.log(`Magazine type created: ${item.id} (${item.slug})`);
-    return this.withResolvedCoverImage(item);
+    // Re-fetch through `findOne` rather than resolving `item` directly, so the response carries
+    // `isAvailableToCustomers` too (always false right after creation — no pages yet — but this
+    // keeps every response shape from this service consistent instead of a one-off omission here).
+    return this.findOne(item.id);
   }
 
   // ── Update ──────────────────────────────────────────────────────────────────
@@ -106,6 +122,7 @@ export class AdminMagazineTypesService {
     if (dto.slug) {
       await this.assertSlugUnique(dto.slug, id);
     }
+    this.assertEvenIncludedSpreads(dto.includedSpreads);
 
     const item = await this.prisma.magazineType.update({
       where: { id },
@@ -118,6 +135,10 @@ export class AdminMagazineTypesService {
         }),
         ...(dto.basePrice !== undefined && { basePrice: dto.basePrice }),
         ...(dto.oldPrice !== undefined && { oldPrice: dto.oldPrice ?? null }),
+        ...(dto.includedSpreads !== undefined && { includedSpreads: dto.includedSpreads }),
+        ...(dto.pricePerExtraFourPages !== undefined && {
+          pricePerExtraFourPages: dto.pricePerExtraFourPages ?? null,
+        }),
         ...(dto.badgeType !== undefined && { badgeType: dto.badgeType ?? null }),
         ...(dto.badgeText !== undefined && { badgeText: dto.badgeText ?? null }),
         ...(dto.isActive !== undefined && { isActive: dto.isActive }),
@@ -128,7 +149,8 @@ export class AdminMagazineTypesService {
     });
 
     this.logger.log(`Magazine type updated: ${item.id}`);
-    return this.withResolvedCoverImage(item);
+    // See the matching comment in `create()` — keeps `isAvailableToCustomers` accurate.
+    return this.findOne(item.id);
   }
 
   // ── Soft Delete ─────────────────────────────────────────────────────────────
@@ -166,6 +188,17 @@ export class AdminMagazineTypesService {
     };
   }
 
+  /** Whether this type has at least one COVER and one BACK_COVER template — the minimum
+   * `OrdersService.createDraft` requires, and what the public catalog (`MagazineTypesService`)
+   * uses to decide whether to show this type to customers at all. Surfaced here so admins can see
+   * *why* a type is invisible on the site instead of it silently never appearing. */
+  private withAvailability<T extends { pages: Array<{ pageType: PageType }> }>(
+    item: T,
+  ): Omit<T, 'pages'> & { isAvailableToCustomers: boolean } {
+    const { pages, ...rest } = item;
+    return { ...rest, isAvailableToCustomers: hasCoverAndBackCoverTemplates(pages) };
+  }
+
   private async assertSlugUnique(slug: string, excludeId?: string): Promise<void> {
     const existing = await this.prisma.magazineType.findUnique({
       where: { slug },
@@ -174,6 +207,16 @@ export class AdminMagazineTypesService {
 
     if (existing && existing.id !== excludeId) {
       throw new ConflictException(`Slug "${slug}" is already in use.`);
+    }
+  }
+
+  /** Printing requires page counts in multiples of 4 — spreads are always added/counted in pairs
+   * (`OrdersService.addJournalSpread`, `MIN_JOURNAL_SPREADS`), so the number of spreads a type's
+   * base price covers must be even too, or the pricing math (`calculateJournalPriceBreakdown`)
+   * would never land on a whole extra-4-pages unit. */
+  private assertEvenIncludedSpreads(includedSpreads: number | undefined): void {
+    if (includedSpreads !== undefined && includedSpreads % 2 !== 0) {
+      throw new BadRequestException('includedSpreads must be even (page counts are multiples of 4).');
     }
   }
 }

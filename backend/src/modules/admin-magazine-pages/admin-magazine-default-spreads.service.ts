@@ -57,6 +57,18 @@ export class AdminMagazineDefaultSpreadsService {
   ) {
     await this.ensureMagazineTypeExists(magazineTypeId);
 
+    // This count becomes every new journal's *starting interior* spread count
+    // (`resolveInitialSpreadCount` in journal-structure.util.ts). Total physical pages = this
+    // count * 2 + 2 (front + back cover, 1 page each) — for that to land on a multiple of 4
+    // (printing requires it), the interior count itself must be ODD: e.g. 9 interior spreads + 1
+    // cover-equivalent spread = 10 "spreads" = 20 pages. An even interior count would instead
+    // produce a total 2 pages short of the next multiple of 4.
+    if (dto.spreads.length % 2 !== 1) {
+      throw new BadRequestException(
+        `Количество разворотов по умолчанию должно быть нечётным (сейчас ${dto.spreads.length}) — вместе с обложкой (1 разворот) страницы должны быть кратны 4.`,
+      );
+    }
+
     const templatePages = await this.prisma.magazinePage.findMany({
       where: { magazineTypeId, deletedAt: null },
     });

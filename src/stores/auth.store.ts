@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
 import { authApi } from '@/shared/api/auth.api'
+import { usersApi, type UpdateMePayload } from '@/shared/api/users.api'
 import type { AuthUser } from '@/types/user.types'
 
 const STORAGE_KEYS = {
@@ -70,6 +71,8 @@ export const useAuthStore = defineStore('auth', () => {
       id: result.user.id,
       phone: result.user.phone,
       name: result.user.name,
+      userNumber: result.user.userNumber,
+      avatarUrl: result.user.avatarUrl,
       role: result.user.role,
       isNew: result.user.isNew,
     }
@@ -77,6 +80,26 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = authUser
     setTokens(result.accessToken, result.refreshToken)
     localStorage.setItem('authUser', JSON.stringify(authUser))
+  }
+
+  async function applyProfileUpdate(payload: UpdateMePayload): Promise<void> {
+    const result = await usersApi.updateMe(payload)
+    if (!user.value) {
+      return
+    }
+
+    user.value = { ...user.value, name: result.name, avatarUrl: result.avatarUrl }
+    localStorage.setItem('authUser', JSON.stringify(user.value))
+  }
+
+  /** Empty string clears the name back to the "Пользователь #{userNumber}" fallback. */
+  function updateName(name: string): Promise<void> {
+    return applyProfileUpdate({ name })
+  }
+
+  /** Empty string removes the current avatar. */
+  function updateAvatar(avatarUrl: string): Promise<void> {
+    return applyProfileUpdate({ avatarUrl })
   }
 
   async function refresh(): Promise<boolean> {
@@ -116,6 +139,8 @@ export const useAuthStore = defineStore('auth', () => {
     initFromStorage,
     sendCode,
     verifyCode,
+    updateName,
+    updateAvatar,
     refresh,
     logout,
   }

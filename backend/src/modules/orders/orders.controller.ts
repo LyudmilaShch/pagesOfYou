@@ -4,6 +4,8 @@ import { OrdersService } from './orders.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
+import { ApplyPromoCodeDto } from './dto/apply-promo-code.dto';
+import { CalculateDeliveryDto } from './dto/calculate-delivery.dto';
 import { CreateDraftOrderDto } from './dto/create-draft-order.dto';
 import { ReorderJournalSpreadsDto } from './dto/reorder-journal-spreads.dto';
 import { SaveJournalPageCanvasDto } from './dto/save-journal-page-canvas.dto';
@@ -90,6 +92,34 @@ export class OrdersController {
     @Body() body: ReorderJournalSpreadsDto,
   ) {
     return this.ordersService.reorderJournalSpreads(orderId, user.sub, body);
+  }
+
+  @Post(':id/delivery/calculate')
+  @ApiOperation({
+    summary: 'Calculate (stubbed CDEK) and save delivery details for a draft order',
+  })
+  calculateDelivery(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() body: CalculateDeliveryDto,
+  ) {
+    return this.ordersService.calculateDelivery(id, user.sub, body);
+  }
+
+  @Post(':id/promo-code')
+  @ApiOperation({ summary: 'Validate and apply a promo code to a draft order' })
+  applyPromoCode(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() body: ApplyPromoCodeDto,
+  ) {
+    return this.ordersService.applyPromoCode(id, user.sub, body);
+  }
+
+  @Delete(':id/promo-code')
+  @ApiOperation({ summary: 'Remove the promo code applied to a draft order' })
+  removePromoCode(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.ordersService.removePromoCode(id, user.sub);
   }
 
   @Post(':id/submit')

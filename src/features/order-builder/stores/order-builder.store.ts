@@ -9,6 +9,9 @@ import {
 } from '../api/orders.api'
 import { photoGalleryApi } from '../api/photo-gallery.api'
 import { getOrCreateGuestId } from '@/shared/utils/guest-id.util'
+import { clearLocalDraft, saveLocalDraft, type StoredLocalDraft } from '../utils/local-draft-storage.util'
+import { calculateJournalPrice } from '../utils/pricing.util'
+import { useAuthStore } from '@/stores/auth.store'
 import { MIN_JOURNAL_SPREADS } from '../constants/journal.constants'
 import { normalizeCanvasData, type CanvasData } from '@/modules/editor/models/canvas-data.model'
 import type { MagazineType } from '../types/magazine-type'
@@ -18,6 +21,7 @@ import {
   buildJournalPageSnapshot,
   countSpreadSlots,
   findTemplateById,
+  getJournalPageDisplayName,
   groupTemplatesByPageType,
   pickDefaultSpreadTemplate,
   toMagazinePageSummary,
@@ -104,39 +108,51 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     })
   }
 
+  /** Shared by `loadLocalDraft` (fresh journal) and `restoreLocalDraft` (resuming a stored guest
+   * draft) — fetches this magazine type's templates/default spreads and populates
+   * `templateCatalog`/`configuredDefaultSpreads`, which both need regardless of where the journal
+   * pages themselves come from. */
+  async function loadTemplatesForMagazineType(
+    magazineTypeId: string,
+  ): Promise<{ magazineType: MagazineType; pages: CatalogMagazinePage[] }> {
+    if (magazineTypes.value.length === 0) {
+      await fetchMagazineTypes()
+    }
+
+    const magazineType =
+      magazineTypes.value.find((type) => type.id === magazineTypeId) ??
+      selectedMagazineType.value
+
+    if (!magazineType || magazineType.id !== magazineTypeId) {
+      orderError.value = 'Тип журнала не найден.'
+      throw new Error(orderError.value)
+    }
+
+    const pages = await catalogApi.getMagazinePages(magazineTypeId)
+    templateCatalog.value = pages
+
+    const defaultSpreads = await catalogApi.getDefaultSpreads(magazineTypeId)
+    configuredDefaultSpreads.value = defaultSpreads.map((spread) => ({
+      layoutMode: spread.layoutMode as DefaultSpreadTemplate['layoutMode'],
+      magazinePageId: spread.magazinePageId,
+      rightMagazinePageId: spread.rightMagazinePageId,
+    }))
+
+    if (pages.length === 0) {
+      orderError.value = 'У этого журнала пока нет шаблонов страниц.'
+      throw new Error(orderError.value)
+    }
+
+    return { magazineType, pages }
+  }
+
   async function loadLocalDraft(magazineTypeId: string): Promise<void> {
     isLoadingOrder.value = true
     orderError.value = null
     isLocalDraft.value = true
 
     try {
-      if (magazineTypes.value.length === 0) {
-        await fetchMagazineTypes()
-      }
-
-      const magazineType =
-        magazineTypes.value.find((type) => type.id === magazineTypeId) ??
-        selectedMagazineType.value
-
-      if (!magazineType || magazineType.id !== magazineTypeId) {
-        orderError.value = 'Тип журнала не найден.'
-        throw new Error(orderError.value)
-      }
-
-      const pages = await catalogApi.getMagazinePages(magazineTypeId)
-      templateCatalog.value = pages
-
-      const defaultSpreads = await catalogApi.getDefaultSpreads(magazineTypeId)
-      configuredDefaultSpreads.value = defaultSpreads.map((spread) => ({
-        layoutMode: spread.layoutMode as DefaultSpreadTemplate['layoutMode'],
-        magazinePageId: spread.magazinePageId,
-        rightMagazinePageId: spread.rightMagazinePageId,
-      }))
-
-      if (pages.length === 0) {
-        orderError.value = 'У этого журнала пока нет шаблонов страниц.'
-        throw new Error(orderError.value)
-      }
+      const { magazineType, pages } = await loadTemplatesForMagazineType(magazineTypeId)
 
       const catalog = groupTemplatesByPageType(pages)
       if (catalog.cover.length === 0) {
@@ -146,11 +162,20 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
 
       selectedMagazineType.value = magazineType
 
+      const journalPages = buildLocalJournalPages(
+        pages,
+        magazineTypeId,
+        configuredDefaultSpreads.value.length > 0
+          ? configuredDefaultSpreads.value
+          : undefined,
+      )
+      const totalPrice = calculateJournalPrice(magazineType, countSpreadSlots(journalPages))
+
       order.value = {
         id: `local-${magazineTypeId}`,
         status: 'DRAFT',
         magazineTypeId,
-        totalPrice: magazineType.basePrice != null ? String(magazineType.basePrice) : null,
+        totalPrice: String(totalPrice),
         magazineType: {
           id: magazineType.id,
           name: magazineType.name,
@@ -158,15 +183,26 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
           coverImage: magazineType.image || null,
           basePrice: magazineType.basePrice != null ? String(magazineType.basePrice) : null,
           oldPrice: magazineType.oldPrice != null ? String(magazineType.oldPrice) : null,
+          includedSpreads: magazineType.includedSpreads,
+          pricePerExtraFourPages:
+            magazineType.pricePerExtraFourPages != null ? String(magazineType.pricePerExtraFourPages) : null,
         },
-        journalPages: buildLocalJournalPages(
-          pages,
-          magazineTypeId,
-          configuredDefaultSpreads.value.length > 0
-            ? configuredDefaultSpreads.value
-            : undefined,
-        ),
+        journalPages,
+        // Delivery/promo only ever get set on a real backend order, from the checkout page —
+        // a local draft never reaches checkout directly (it's converted to a real order first).
+        deliveryMethod: null,
+        deliveryCity: null,
+        deliveryAddress: null,
+        deliveryPostalCode: null,
+        recipientName: null,
+        recipientPhone: null,
+        deliveryPrice: null,
+        deliveryEtaDays: null,
+        promoCode: null,
+        discountAmount: null,
       }
+
+      saveLocalDraft(magazineTypeId, order.value)
     } catch (err: unknown) {
       if (!orderError.value) {
         orderError.value =
@@ -177,6 +213,40 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
       throw new Error(orderError.value)
     } finally {
       isLoadingOrder.value = false
+    }
+  }
+
+  /** Resumes a guest's journal from its localStorage snapshot (see `local-draft-storage.util.ts`)
+   * — re-fetches templates live (they're derivable and could go stale) but reuses the stored
+   * `journalPages` as-is, exactly as the guest left them. */
+  async function restoreLocalDraft(stored: StoredLocalDraft): Promise<void> {
+    isLoadingOrder.value = true
+    orderError.value = null
+    isLocalDraft.value = true
+
+    try {
+      const { magazineType } = await loadTemplatesForMagazineType(stored.magazineTypeId)
+      selectedMagazineType.value = magazineType
+      order.value = stored.order
+    } catch {
+      if (!orderError.value) {
+        orderError.value = 'Не удалось восстановить черновик.'
+      }
+      throw new Error(orderError.value)
+    } finally {
+      isLoadingOrder.value = false
+    }
+  }
+
+  /** Entry point for "Продолжить" on the magazine-type picker — an authenticated user gets a real
+   * backend draft order immediately (so it's never lost and autosaves like any other order, see
+   * `JournalPageEditorPage.vue`'s `saveDocument`); a guest keeps today's in-memory local draft,
+   * mirrored to localStorage as they edit (see `loadLocalDraft`/local-mutation functions below). */
+  async function startDraft(magazineTypeId: string): Promise<void> {
+    if (useAuthStore().isAuthenticated) {
+      await createDraftOrder(magazineTypeId)
+    } else {
+      await loadLocalDraft(magazineTypeId)
     }
   }
 
@@ -243,6 +313,10 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
       pageSnapshot: canvasData,
       placeholderValues: [],
     }
+
+    if (isLocalDraft.value) {
+      saveLocalDraft(order.value.magazineTypeId, order.value)
+    }
   }
 
   function applyLocalJournalPageTemplate(
@@ -287,6 +361,10 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
       ),
       placeholderValues: [],
     }
+
+    if (isLocalDraft.value) {
+      saveLocalDraft(order.value.magazineTypeId, order.value)
+    }
   }
 
   async function setJournalPageTemplate(
@@ -319,6 +397,8 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     }
   }
 
+  /** Adds 2 spreads (= 4 pages) at once, never 1 — printing requires page counts in multiples of
+   * 4 (signature/tetrad binding), mirrors `OrdersService.addJournalSpread` on the backend. */
   function applyLocalAddSpread(): void {
     if (!order.value) {
       return
@@ -339,28 +419,36 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
       ? findTemplateById(templateCatalog.value, spreadDefault.rightMagazinePageId)
       : null
 
-    const newPage: JournalPage = {
-      id: `local-spread-${Date.now()}`,
-      sortOrder: insertAt,
+    const pageSnapshot = buildJournalPageSnapshot('SPREAD', spreadDefault.layoutMode, primary, right ?? null)
+
+    const SPREADS_PER_ADD = 2
+    const newPages: JournalPage[] = Array.from({ length: SPREADS_PER_ADD }, (_, i) => ({
+      id: `local-spread-${Date.now()}-${i}`,
+      sortOrder: insertAt + i,
       slotType: 'SPREAD',
       layoutMode: spreadDefault.layoutMode,
-      pageSnapshot: buildJournalPageSnapshot(
-        'SPREAD',
-        spreadDefault.layoutMode,
-        primary,
-        right ?? null,
-      ),
+      pageSnapshot,
       magazinePage: toMagazinePageSummary(primary),
       rightMagazinePage: right ? toMagazinePageSummary(right) : null,
       placeholderValues: [],
-    }
+    }))
 
     const nextPages = [...order.value.journalPages]
-    nextPages.splice(insertAt, 0, newPage)
+    nextPages.splice(insertAt, 0, ...newPages)
     order.value.journalPages = nextPages.map((page, index) => ({
       ...page,
       sortOrder: index,
     }))
+
+    if (selectedMagazineType.value) {
+      order.value.totalPrice = String(
+        calculateJournalPrice(selectedMagazineType.value, countSpreadSlots(order.value.journalPages)),
+      )
+    }
+
+    if (isLocalDraft.value) {
+      saveLocalDraft(order.value.magazineTypeId, order.value)
+    }
   }
 
   async function addJournalSpread(): Promise<void> {
@@ -404,6 +492,10 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
       ...page,
       sortOrder: index,
     }))
+
+    if (isLocalDraft.value) {
+      saveLocalDraft(order.value.magazineTypeId, order.value)
+    }
   }
 
   async function reorderJournalSpreads(spreadIds: string[]): Promise<void> {
@@ -480,6 +572,49 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     return missing
   }
 
+  /** Groups `collectMissingRequiredPlaceholders()` by page, in journal order, with a human page
+   * label ("Обложка" / "Разворот 2" / "Задняя обложка") — feeds the "what exactly is missing"
+   * modal shown when submit validation fails, so the user gets a page-by-page checklist instead
+   * of a single generic error line. */
+  function collectIncompletePages(): Array<{
+    journalPageId: string
+    pageLabel: string
+    missingLabels: string[]
+  }> {
+    if (!order.value) {
+      return []
+    }
+
+    const missing = collectMissingRequiredPlaceholders()
+    if (missing.length === 0) {
+      return []
+    }
+
+    let spreadIndex = 0
+    const spreadIndexByPageId = new Map<string, number>()
+    for (const page of order.value.journalPages) {
+      if (page.slotType === 'SPREAD') {
+        spreadIndex += 1
+        spreadIndexByPageId.set(page.id, spreadIndex)
+      }
+    }
+
+    const missingLabelsByPageId = new Map<string, string[]>()
+    for (const item of missing) {
+      const labels = missingLabelsByPageId.get(item.journalPageId) ?? []
+      labels.push(item.label)
+      missingLabelsByPageId.set(item.journalPageId, labels)
+    }
+
+    return order.value.journalPages
+      .filter((page) => missingLabelsByPageId.has(page.id))
+      .map((page) => ({
+        journalPageId: page.id,
+        pageLabel: getJournalPageDisplayName(page, spreadIndexByPageId.get(page.id)),
+        missingLabels: missingLabelsByPageId.get(page.id)!,
+      }))
+  }
+
   /** Client-side mirror of what the backend re-checks anyway on submit — run before either
    * `convertLocalDraftToOrder()` (no point requiring sign-in for a journal that isn't ready) or
    * `submitOrder()`. Returns a user-facing message, or `null` if the journal is submittable. */
@@ -520,6 +655,9 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
 
     order.value = await ordersApi.createDraft(selectedMagazineType.value.id, journalPages)
     isLocalDraft.value = false
+    // This local draft is now a real backend order — its localStorage mirror (if any) would
+    // otherwise wrongly resurface as "continue your draft?" on a later visit to /order/create.
+    clearLocalDraft()
 
     try {
       await photoGalleryApi.claimGuestPhotos(getOrCreateGuestId(), order.value.id)
@@ -591,6 +729,8 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     isSubmitting,
     orderError,
     loadLocalDraft,
+    restoreLocalDraft,
+    startDraft,
     createDraftOrder,
     loadOrder,
     applyJournalPageCanvasEdit,
@@ -598,6 +738,7 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     addJournalSpread,
     reorderJournalSpreads,
     getSubmitValidationError,
+    collectIncompletePages,
     convertLocalDraftToOrder,
     submitOrder,
     resetOrderFlow,

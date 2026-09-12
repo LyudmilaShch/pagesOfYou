@@ -36,6 +36,15 @@
           <div class="journal-structure__thumb">
             <JournalSpreadThumbnail :canvas-data="materializedCanvas(entry.page)" :container-ratio="1.19" />
 
+            <v-tooltip v-if="!isPageComplete(entry.page)" location="top" content-class="editor-tooltip--arrow-top">
+              <template #activator="{ props: tooltipProps }">
+                <span v-bind="tooltipProps" class="journal-structure__incomplete-badge" aria-label="Не заполнены обязательные поля">
+                  <v-icon size="14" color="white">mdi-exclamation</v-icon>
+                </span>
+              </template>
+              Не заполнены обязательные поля
+            </v-tooltip>
+
             <span
               v-if="entry.draggable"
               class="journal-structure__drag"
@@ -87,7 +96,7 @@
         :disabled="store.isSaving"
         @click="handleAddSpread"
       >
-        Добавить разворот
+        Добавить 4 страницы
       </v-btn>
     </div>
 
@@ -274,12 +283,13 @@ async function handleApplyTemplate(payload: SetJournalPageTemplatePayload): Prom
 
 async function handleAddSpread(): Promise<void> {
   try {
+    // Adds 2 spreads (4 pages) at once — see order-builder.store.ts's addJournalSpread doc comment.
     await store.addJournalSpread()
-    snackbar.text = 'Разворот добавлен'
+    snackbar.text = '4 страницы добавлены'
     snackbar.color = 'success'
     snackbar.show = true
   } catch {
-    snackbar.text = store.orderError ?? 'Не удалось добавить разворот'
+    snackbar.text = store.orderError ?? 'Не удалось добавить страницы'
     snackbar.color = 'error'
     snackbar.show = true
   }
@@ -588,6 +598,27 @@ onBeforeUnmount(() => {
     background: $accent;
     color: $white;
   }
+}
+
+// Top-right corner of the thumbnail, not tucked into the meta row below — a missing-content
+// warning needs to be noticeable at a glance, not something you find only after reading the name
+// row. Always visible (unlike the hover-gated drag/template controls): this is information, not
+// an action affordance the user only needs on demand. A genuinely red warning, not the theme's
+// `error`/`warning` Vuetify colors — those map to muted brown tones (see theme.ts), not the
+// unambiguous red this needs against the pink "done" status elsewhere.
+.journal-structure__incomplete-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: #e5484d;
+  box-shadow: 0 1px 4px rgba(#e5484d, 0.5);
 }
 
 .journal-structure__type {

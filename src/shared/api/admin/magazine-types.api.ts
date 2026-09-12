@@ -15,6 +15,8 @@ export interface AdminMagazineType {
   /** Prisma Decimal serialises as string over JSON */
   basePrice: string | null
   oldPrice: string | null
+  includedSpreads: number
+  pricePerExtraFourPages: string | null
   badgeType: BadgeType | null
   badgeText: string | null
   isActive: boolean
@@ -24,6 +26,10 @@ export interface AdminMagazineType {
   createdAt: string
   updatedAt: string
   deletedAt: string | null
+  /** False when this type has no COVER and/or BACK_COVER template yet — it's then hidden from
+   * the public catalog entirely (see backend `MagazineTypesService.findAll`), even though it
+   * still exists and is editable here in the admin. */
+  isAvailableToCustomers: boolean
 }
 
 export interface PaginatedMagazineTypes {
@@ -49,6 +55,8 @@ export interface CreateMagazineTypePayload {
   coverImage?: string
   basePrice?: number
   oldPrice?: number
+  includedSpreads?: number
+  pricePerExtraFourPages?: number
   badgeType?: BadgeType
   badgeText?: string
   isActive?: boolean

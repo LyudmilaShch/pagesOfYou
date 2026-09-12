@@ -13,11 +13,38 @@
       <div class="account-page__container">
         <!-- Profile card -->
         <section class="profile-card">
-          <div class="profile-card__avatar">
-            <span class="profile-card__avatar-letter">{{ avatarLetter }}</span>
-          </div>
+          <label class="profile-card__avatar" aria-label="Изменить аватар">
+            <img
+              v-if="authStore.user?.avatarUrl"
+              :src="authStore.user.avatarUrl"
+              alt=""
+              class="profile-card__avatar-img"
+            />
+            <span v-else class="profile-card__avatar-letter">{{ avatarLetter }}</span>
+            <span class="profile-card__avatar-overlay">
+              <v-progress-circular v-if="avatarUploading" size="16" width="2" indeterminate color="white" />
+              <v-icon v-else size="16" color="white">mdi-camera-outline</v-icon>
+            </span>
+            <input
+              type="file"
+              accept="image/*"
+              class="profile-card__avatar-input"
+              :disabled="avatarUploading"
+              @change="handleAvatarChange"
+            />
+          </label>
           <div class="profile-card__info">
-            <span class="profile-card__name">{{ authStore.user?.name || 'Без имени' }}</span>
+            <div class="profile-card__name-row">
+              <span class="profile-card__name">{{ displayName }}</span>
+              <button
+                type="button"
+                class="profile-card__edit-name"
+                aria-label="Изменить имя"
+                @click="openEditName"
+              >
+                <v-icon size="16">mdi-pencil-outline</v-icon>
+              </button>
+            </div>
             <span class="profile-card__phone">{{ authStore.userPhone ?? '—' }}</span>
           </div>
           <v-btn
@@ -82,7 +109,7 @@
                       variant="text"
                       aria-label="Удалить черновик"
                       :loading="deletingId === order.id"
-                      @click="deleteDraft(order)"
+                      @click="openDeleteDialog(order)"
                     />
                   </div>
                 </div>
@@ -142,6 +169,54 @@
     <v-snackbar v-model="snackbar.show" :color="snackbar.color" location="bottom center" :timeout="3000">
       {{ snackbar.text }}
     </v-snackbar>
+
+    <ConfirmModal
+      v-model="deleteDialog.open"
+      title="Удалить черновик?"
+      :message="`Черновик «${deleteDialog.order?.magazineType.name ?? ''}» будет удалён без возможности восстановления.`"
+      confirm-label="Удалить"
+      :loading="deletingId !== null"
+      @confirm="confirmDeleteDraft"
+    />
+
+    <BaseModal v-model="editNameDialog.open" labelledby="edit-name-title">
+      <div class="edit-name-modal">
+        <h2 id="edit-name-title" class="edit-name-modal__title">Изменить имя</h2>
+        <v-text-field
+          v-model="editNameDialog.value"
+          label="Имя"
+          placeholder="Как к вам обращаться?"
+          variant="outlined"
+          autofocus
+          maxlength="50"
+          counter="50"
+          hide-details="auto"
+          :error-messages="editNameDialog.error"
+          :disabled="editNameDialog.saving"
+          @keyup.enter="saveName"
+        />
+        <div class="edit-name-modal__actions">
+          <v-btn
+            variant="outlined"
+            color="secondary"
+            class="edit-name-modal__cancel"
+            :disabled="editNameDialog.saving"
+            @click="editNameDialog.open = false"
+          >
+            Отмена
+          </v-btn>
+          <v-btn
+            color="primary"
+            variant="flat"
+            class="edit-name-modal__save"
+            :loading="editNameDialog.saving"
+            @click="saveName"
+          >
+            Сохранить
+          </v-btn>
+        </div>
+      </div>
+    </BaseModal>
   </div>
 </template>
 
@@ -150,13 +225,16 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { useAuthStore } from '@/stores/auth.store'
-import { ordersApi } from '@/features/order-builder/api/orders.api'
+import { ordersApi, filesApi } from '@/features/order-builder/api/orders.api'
 import type { OrderSummary } from '@/features/order-builder/types/order.types'
 import { ORDER_STATUS_COLORS, ORDER_STATUS_LABELS } from '@/features/order-builder/constants/order-status.constants'
 import type { CanvasData } from '@/modules/editor/models/canvas-data.model'
 import { normalizeCanvasData } from '@/modules/editor/models/canvas-data.model'
 import { materializeCanvasData } from '@/features/order-builder/utils/merge-placeholder-element.util'
+import { resumeOrder } from '@/features/order-builder/utils/resume-order.util'
 import JournalSpreadThumbnail from '@/modules/editor/components/JournalSpreadThumbnail.vue'
+import ConfirmModal from '@/components/ui/ConfirmModal.vue'
+import BaseModal from '@/components/ui/BaseModal.vue'
 
 const authStore = useAuthStore()
 const router = useRouter()
@@ -167,8 +245,18 @@ const loadError = ref<string | null>(null)
 const loggingOut = ref(false)
 const continuingId = ref<string | null>(null)
 const deletingId = ref<string | null>(null)
+const deleteDialog = reactive<{ open: boolean; order: OrderSummary | null }>({
+  open: false,
+  order: null,
+})
+const editNameDialog = reactive({ open: false, value: '', saving: false, error: '' })
+const avatarUploading = ref(false)
 
 const snackbar = reactive({ show: false, text: '', color: 'success' as string })
+
+const displayName = computed(
+  () => authStore.user?.name || `Пользователь #${authStore.user?.userNumber ?? ''}`,
+)
 
 const drafts = computed(() => orders.value.filter((order) => order.status === 'DRAFT'))
 const placedOrders = computed(() => orders.value.filter((order) => order.status !== 'DRAFT'))
@@ -207,20 +295,9 @@ async function loadOrders(): Promise<void> {
 async function continueEditing(order: OrderSummary): Promise<void> {
   continuingId.value = order.id
   try {
-    const detail = await ordersApi.getOne(order.id)
-    const firstPage = detail.journalPages[0]
-    if (!firstPage) {
-      snackbar.text = 'В этом журнале ещё нет ни одного разворота'
-      snackbar.color = 'error'
-      snackbar.show = true
-      return
-    }
-    await router.push({
-      name: 'journal-page-editor',
-      params: { orderId: order.id, journalPageId: firstPage.id },
-    })
-  } catch {
-    snackbar.text = 'Не удалось открыть журнал'
+    await resumeOrder(router, order.id)
+  } catch (err: unknown) {
+    snackbar.text = err instanceof Error ? err.message : 'Не удалось открыть журнал'
     snackbar.color = 'error'
     snackbar.show = true
   } finally {
@@ -228,8 +305,54 @@ async function continueEditing(order: OrderSummary): Promise<void> {
   }
 }
 
-async function deleteDraft(order: OrderSummary): Promise<void> {
-  if (!window.confirm('Удалить черновик журнала? Это действие нельзя отменить.')) {
+function openEditName(): void {
+  editNameDialog.value = authStore.user?.name ?? ''
+  editNameDialog.error = ''
+  editNameDialog.open = true
+}
+
+async function saveName(): Promise<void> {
+  editNameDialog.saving = true
+  editNameDialog.error = ''
+  try {
+    await authStore.updateName(editNameDialog.value.trim())
+    editNameDialog.open = false
+  } catch {
+    editNameDialog.error = 'Не удалось сохранить имя'
+  } finally {
+    editNameDialog.saving = false
+  }
+}
+
+async function handleAvatarChange(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0] ?? null
+  input.value = ''
+  if (!file) {
+    return
+  }
+
+  avatarUploading.value = true
+  try {
+    const uploaded = await filesApi.uploadImage(file)
+    await authStore.updateAvatar(uploaded.url)
+  } catch {
+    snackbar.text = 'Не удалось загрузить фото'
+    snackbar.color = 'error'
+    snackbar.show = true
+  } finally {
+    avatarUploading.value = false
+  }
+}
+
+function openDeleteDialog(order: OrderSummary): void {
+  deleteDialog.order = order
+  deleteDialog.open = true
+}
+
+async function confirmDeleteDraft(): Promise<void> {
+  const order = deleteDialog.order
+  if (!order) {
     return
   }
 
@@ -237,6 +360,7 @@ async function deleteDraft(order: OrderSummary): Promise<void> {
   try {
     await ordersApi.remove(order.id)
     orders.value = orders.value.filter((item) => item.id !== order.id)
+    deleteDialog.open = false
   } catch {
     snackbar.text = 'Не удалось удалить черновик'
     snackbar.color = 'error'
@@ -263,6 +387,8 @@ function formatDate(iso: string): string {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
   })
 }
 
@@ -367,6 +493,7 @@ onMounted(loadOrders)
 }
 
 .profile-card__avatar {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -375,6 +502,17 @@ onMounted(loadOrders)
   flex-shrink: 0;
   border-radius: 50%;
   background: $bg-tertiary;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.profile-card__avatar-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .profile-card__avatar-letter {
@@ -383,12 +521,50 @@ onMounted(loadOrders)
   color: $text-primary;
 }
 
+.profile-card__avatar-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba($black, 0.45);
+  transition: opacity 150ms ease;
+
+  @media (hover: hover) and (pointer: fine) {
+    opacity: 0;
+  }
+}
+
+.profile-card__avatar:hover .profile-card__avatar-overlay,
+.profile-card__avatar:focus-within .profile-card__avatar-overlay {
+  opacity: 1;
+}
+
+.profile-card__avatar-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .profile-card__info {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
   flex: 1;
+}
+
+.profile-card__name-row {
+  display: flex;
+  align-items: center;
+  gap: $spacing-2;
+  min-width: 0;
 }
 
 .profile-card__name {
@@ -401,6 +577,27 @@ onMounted(loadOrders)
   text-overflow: ellipsis;
 }
 
+.profile-card__edit-name {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: $radius-xs;
+  background: none;
+  color: $text-muted;
+  cursor: pointer;
+  transition: color 150ms ease, background-color 150ms ease;
+
+  &:hover {
+    color: $accent;
+    background: $accent-tint;
+  }
+}
+
 .profile-card__phone {
   font-size: $font-size-body-sm;
   color: $text-muted;
@@ -408,6 +605,35 @@ onMounted(loadOrders)
 
 .profile-card__logout {
   flex-shrink: 0;
+  text-transform: none;
+}
+
+// ── Edit name modal ───────────────────────────────────────────────────────────
+.edit-name-modal {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-4;
+  width: min(100%, 380px);
+  margin-inline: auto;
+}
+
+.edit-name-modal__title {
+  margin: 0;
+  font-family: $font-family-display;
+  font-size: $font-size-h4;
+  font-weight: $font-weight-regular;
+  color: $text-primary;
+  text-align: center;
+}
+
+.edit-name-modal__actions {
+  display: flex;
+  gap: $spacing-3;
+}
+
+.edit-name-modal__cancel,
+.edit-name-modal__save {
+  flex: 1;
   text-transform: none;
 }
 

@@ -1,7 +1,9 @@
 import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../database';
 import { OtpService } from './services/otp.service';
 import { TokenService } from './services/token.service';
+import { resolveAssetUrl } from '../../common/utils/asset-url.util';
 import type { SendCodeDto } from './dto/send-code.dto';
 import type { VerifyCodeDto } from './dto/verify-code.dto';
 import type { AuthTokens } from './interfaces/auth-tokens.interface';
@@ -17,6 +19,10 @@ export interface VerifyCodeResult extends AuthTokens {
     id: string;
     phone: string;
     name: string | null;
+    /** Stable fallback display number (see `User.userNumber` in schema.prisma) — the frontend
+     * shows "Пользователь #{userNumber}" wherever `name` is null. */
+    userNumber: number;
+    avatarUrl: string | null;
     role: string;
     /** true = user was created during this request (first login) */
     isNew: boolean;
@@ -31,6 +37,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly otpService: OtpService,
     private readonly tokenService: TokenService,
+    private readonly config: ConfigService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -79,6 +86,8 @@ export class AuthService {
         id: true,
         phone: true,
         name: true,
+        userNumber: true,
+        avatarUrl: true,
         role: true,
         isBlocked: true,
         blockedReason: true,
@@ -104,10 +113,19 @@ export class AuthService {
         // OTP flow always requires a phone number — non-null assertion is safe here
         phone: user.phone!,
         name: user.name,
+        userNumber: user.userNumber,
+        avatarUrl: resolveAssetUrl(user.avatarUrl, this.backendUrl()),
         role: user.role,
         isNew,
       },
     };
+  }
+
+  private backendUrl(): string {
+    return (
+      this.config.get<string>('app.backendUrl') ??
+      `http://localhost:${process.env.PORT ?? 3000}`
+    );
   }
 
   // ---------------------------------------------------------------------------

@@ -14,6 +14,17 @@
 
     <v-progress-linear v-if="loading" indeterminate color="primary" class="mb-4" />
 
+    <v-alert
+      v-if="!loading && !isAvailableToCustomers"
+      type="warning"
+      variant="tonal"
+      density="comfortable"
+      class="mb-4"
+    >
+      Журнал сейчас недоступен пользователям на сайте — не хватает
+      {{ missingTemplatesLabel }}.
+    </v-alert>
+
     <div v-if="!loading && pages.length === 0" class="magazine-pages-tab__empty">
       <v-icon size="40" color="textDisabled">mdi-book-open-page-variant-outline</v-icon>
       <p>Страниц пока нет</p>
@@ -151,7 +162,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import {
@@ -176,6 +187,15 @@ const pageTypeItems = Object.entries(PAGE_TYPE_LABELS).map(([value, label]) => (
   value: value as PageType,
   label,
 }))
+
+const hasCover = computed(() => pages.value.some((page) => page.pageType === 'COVER'))
+const hasBackCover = computed(() => pages.value.some((page) => page.pageType === 'BACK_COVER'))
+const isAvailableToCustomers = computed(() => hasCover.value && hasBackCover.value)
+const missingTemplatesLabel = computed(() => {
+  if (!hasCover.value && !hasBackCover.value) return 'шаблонов обложки и задней обложки'
+  if (!hasCover.value) return 'шаблона обложки'
+  return 'шаблона задней обложки'
+})
 
 const formDialog = reactive({ open: false, editId: null as string | null, submitting: false })
 const deleteDialog = reactive({ open: false, id: null as string | null, name: '', loading: false })

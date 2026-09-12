@@ -112,6 +112,7 @@
 
     <v-rect v-if="photoCropBorderConfig" :config="photoCropBorderConfig" />
 
+    <v-rect v-if="requiredEmptyOutlineConfig" :config="requiredEmptyOutlineConfig" />
     <v-rect v-if="selectionOutlineConfig" :config="selectionOutlineConfig" />
     </v-group>
   </v-group>
@@ -131,6 +132,7 @@ import {
   ORDER_CANVAS_CONTEXT_KEY,
   type OrderCanvasContext,
 } from '@/features/order-builder/canvas/order-canvas.types'
+import { isFillableElement, isPlaceholderFilled } from '@/features/order-builder/utils/placeholder.utils'
 
 import {
   getElementHitAreaConfig,
@@ -765,6 +767,42 @@ const showSelectionOutline = computed(
     !store.previewMode &&
     (store.isMultiSelection || props.element.locked),
 )
+
+// Same "required + not filled" rule the structure-panel badge and submit validation already use
+// (`isPlaceholderFilled`, called here with no separate order-context value since the advanced
+// editor bakes the current value straight into the element's own `defaultText`/`defaultImageUrl`
+// — there's no other value source to pass) — so a page that reads "incomplete" there always shows
+// exactly which element is the reason right here on the canvas.
+const isRequiredAndUnfilled = computed(() => {
+  const element = props.element
+  if (!isFillableElement(element)) {
+    return false
+  }
+
+  const isRequired = Boolean((element as { required?: boolean }).required)
+  if (!isRequired) {
+    return false
+  }
+
+  return !isPlaceholderFilled(element, undefined)
+})
+
+const requiredEmptyOutlineConfig = computed(() => {
+  if (store.previewMode || !isRequiredAndUnfilled.value) {
+    return null
+  }
+
+  return {
+    x: 0,
+    y: 0,
+    width: Math.max(props.element.size.width, 1),
+    height: Math.max(props.element.size.height, 1),
+    stroke: '#e5484d',
+    strokeWidth: 2,
+    dash: [6, 4],
+    listening: false,
+  }
+})
 
 const selectionOutlineConfig = computed(() => {
   const bounds =

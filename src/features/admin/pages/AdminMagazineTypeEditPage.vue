@@ -9,7 +9,12 @@
           </router-link>
           <h1 class="mt-edit-page__title">{{ form.name || 'Редактирование типа' }}</h1>
         </div>
-        <v-chip v-if="form.isActive" color="success" size="small" variant="tonal" label>Активен</v-chip>
+        <div class="mt-edit-page__status-chips">
+          <v-chip v-if="form.isActive" color="success" size="small" variant="tonal" label>Активен</v-chip>
+          <v-chip v-if="!form.isAvailableToCustomers" color="warning" size="small" variant="tonal" label>
+            Недоступен пользователям
+          </v-chip>
+        </div>
       </header>
 
       <v-tabs v-model="activeTab" color="primary" class="mt-edit-page__tabs">
@@ -41,6 +46,26 @@
             <v-card-text class="mt-edit-page__form">
               <v-text-field v-model.number="form.basePrice" label="Цена, ₽" type="number" variant="outlined" />
               <v-text-field v-model.number="form.oldPrice" label="Старая цена, ₽" type="number" variant="outlined" />
+              <v-text-field
+                v-model.number="form.includedSpreads"
+                label="Разворотов включено в базовую цену"
+                type="number"
+                min="2"
+                step="2"
+                :hint="form.includedSpreads ? `= ${form.includedSpreads * 2} страниц (включая обложку)` : 'Печать требует кратности 4 страницам'"
+                persistent-hint
+                :rules="[evenNum]"
+                variant="outlined"
+              />
+              <v-text-field
+                v-model.number="form.pricePerExtraFourPages"
+                label="Цена за доп. 4 страницы, ₽"
+                type="number"
+                min="0"
+                hint="Оставьте пустым, если доплаты за страницы сверх лимита нет"
+                persistent-hint
+                variant="outlined"
+              />
               <v-btn color="primary" :loading="saving" @click="savePrice">Сохранить</v-btn>
             </v-card-text>
           </v-card>
@@ -115,6 +140,8 @@ const magazineTypeId = route.params.id as string
 const activeTab = ref((route.query.tab as string) || 'general')
 const saving = ref(false)
 
+const evenNum = (v: number) => v % 2 === 0 || 'Должно быть чётным (печать кратна 4 страницам)'
+
 const badgeOptions = [
   { value: 'TOP' as BadgeType, title: 'Топ продаж' },
   { value: 'NEW' as BadgeType, title: 'Новинка' },
@@ -130,12 +157,15 @@ const form = reactive({
   coverImage: null as string | null,
   basePrice: null as number | null,
   oldPrice: null as number | null,
+  includedSpreads: 8 as number | null,
+  pricePerExtraFourPages: null as number | null,
   badgeType: null as BadgeType | null,
   badgeText: '',
   isActive: true,
   sortOrder: 0,
   seoTitle: '',
   seoDescription: '',
+  isAvailableToCustomers: true,
 })
 
 const snackbar = reactive({
@@ -153,6 +183,24 @@ watch(
   },
 )
 
+// Leaving "Страницы" is the only time page templates (cover/back-cover) could have changed —
+// refresh just the availability chip, without re-filling the whole form and losing unsaved edits
+// on other tabs.
+watch(activeTab, (tab, previousTab) => {
+  if (previousTab === 'pages' && tab !== 'pages') {
+    void refreshAvailability()
+  }
+})
+
+async function refreshAvailability(): Promise<void> {
+  try {
+    const item = await adminMagazineTypesApi.getOne(magazineTypeId)
+    form.isAvailableToCustomers = item.isAvailableToCustomers
+  } catch {
+    // Non-critical — the chip just keeps showing its last known state.
+  }
+}
+
 function notify(text: string, color: 'success' | 'error'): void {
   snackbar.text = text
   snackbar.color = color
@@ -166,12 +214,15 @@ function fillForm(item: Awaited<ReturnType<typeof adminMagazineTypesApi.getOne>>
   form.coverImage = item.coverImage ?? null
   form.basePrice = item.basePrice != null ? Number(item.basePrice) : null
   form.oldPrice = item.oldPrice != null ? Number(item.oldPrice) : null
+  form.includedSpreads = item.includedSpreads
+  form.pricePerExtraFourPages = item.pricePerExtraFourPages != null ? Number(item.pricePerExtraFourPages) : null
   form.badgeType = item.badgeType ?? null
   form.badgeText = item.badgeText ?? ''
   form.isActive = item.isActive
   form.sortOrder = item.sortOrder
   form.seoTitle = item.seoTitle ?? ''
   form.seoDescription = item.seoDescription ?? ''
+  form.isAvailableToCustomers = item.isAvailableToCustomers
 }
 
 async function loadType(): Promise<void> {
@@ -205,6 +256,8 @@ function savePrice(): Promise<void> {
   return savePatch({
     basePrice: form.basePrice ?? undefined,
     oldPrice: form.oldPrice ?? undefined,
+    includedSpreads: form.includedSpreads ?? undefined,
+    pricePerExtraFourPages: form.pricePerExtraFourPages ?? undefined,
   })
 }
 
@@ -262,6 +315,14 @@ onMounted(() => {
   margin: 0;
   font-family: $font-family-display;
   font-size: $font-size-h3;
+}
+
+.mt-edit-page__status-chips {
+  display: flex;
+  align-items: center;
+  gap: $spacing-2;
+  flex-wrap: wrap;
+  flex-shrink: 0;
 }
 
 .mt-edit-page__tabs {

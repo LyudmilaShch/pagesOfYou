@@ -2,13 +2,22 @@ import { resolveAssetUrl } from '@/shared/config/assets'
 import { http } from '@/shared/api/http'
 import type { BackendResponse } from '@/types/api.types'
 import type { CanvasData } from '@/modules/editor/models/canvas-data.model'
-import type { OrderDetail, PaginatedOrders, PlaceholderInput } from '../types/order.types'
+import type { DeliveryMethod, OrderDetail, PaginatedOrders, PlaceholderInput } from '../types/order.types'
 import type { JournalSlotType, JournalSpreadLayout } from '../constants/journal.constants'
 
 export interface SetJournalPageTemplatePayload {
   layoutMode?: JournalSpreadLayout
   magazinePageId: string
   rightMagazinePageId?: string
+}
+
+export interface CalculateDeliveryPayload {
+  method: DeliveryMethod
+  city: string
+  address: string
+  postalCode?: string
+  recipientName: string
+  recipientPhone: string
 }
 
 /** A page as already assembled client-side (a guest's local draft) — sent to `createDraft` so
@@ -68,6 +77,29 @@ export const ordersApi = {
 
   async submit(orderId: string): Promise<OrderDetail> {
     const { data } = await http.post<BackendResponse<OrderDetail>>(`/orders/${orderId}/submit`)
+    return data.data
+  },
+
+  /** Stubbed CDEK calculation — saves the delivery details on the order alongside the (fixed,
+   * placeholder) price/eta the backend returns. See `CalculateDeliveryDto`. */
+  async calculateDelivery(orderId: string, payload: CalculateDeliveryPayload): Promise<OrderDetail> {
+    const { data } = await http.post<BackendResponse<OrderDetail>>(
+      `/orders/${orderId}/delivery/calculate`,
+      payload,
+    )
+    return data.data
+  },
+
+  async applyPromoCode(orderId: string, code: string): Promise<OrderDetail> {
+    const { data } = await http.post<BackendResponse<OrderDetail>>(
+      `/orders/${orderId}/promo-code`,
+      { code },
+    )
+    return data.data
+  },
+
+  async removePromoCode(orderId: string): Promise<OrderDetail> {
+    const { data } = await http.delete<BackendResponse<OrderDetail>>(`/orders/${orderId}/promo-code`)
     return data.data
   },
 

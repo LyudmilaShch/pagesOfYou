@@ -116,6 +116,19 @@
             </v-chip>
           </template>
 
+          <!-- isAvailableToCustomers -->
+          <template #[`item.isAvailableToCustomers`]="{ item }">
+            <v-tooltip v-if="!item.isAvailableToCustomers" location="top">
+              <template #activator="{ props: tooltipProps }">
+                <v-chip v-bind="tooltipProps" color="warning" size="small" variant="tonal" label>
+                  Недоступен пользователям
+                </v-chip>
+              </template>
+              Не хватает шаблона обложки и/или задней обложки — журнал скрыт из каталога на сайте
+            </v-tooltip>
+            <span v-else class="mt-table__price--empty">—</span>
+          </template>
+
           <!-- sortOrder -->
           <template #[`item.sortOrder`]="{ item }">
             <span class="mt-table__order">{{ item.sortOrder }}</span>
@@ -241,6 +254,38 @@
                 prepend-inner-icon="mdi-currency-rub"
                 hide-details="auto"
               />
+
+              <!-- Dynamic per-4-pages pricing -->
+              <div class="mt-form__row">
+                <v-text-field
+                  v-model.number="form.includedSpreads"
+                  label="Разворотов включено в базовую цену"
+                  variant="outlined"
+                  density="comfortable"
+                  type="number"
+                  min="2"
+                  step="2"
+                  :hint="form.includedSpreads ? `= ${form.includedSpreads * 2} страниц (включая обложку)` : 'Печать требует кратности 4 страницам'"
+                  persistent-hint
+                  :rules="[minNum(2), evenNum]"
+                  class="mt-form__price-field"
+                />
+                <v-text-field
+                  v-model.number="form.pricePerExtraFourPages"
+                  label="Цена за доп. 4 страницы, ₽"
+                  variant="outlined"
+                  density="comfortable"
+                  type="number"
+                  min="0"
+                  step="50"
+                  placeholder="0"
+                  hint="Оставьте пустым, если доплаты за страницы сверх лимита нет"
+                  persistent-hint
+                  :rules="[minNum(0)]"
+                  prepend-inner-icon="mdi-currency-rub"
+                  class="mt-form__price-field"
+                />
+              </div>
 
               <!-- Old price + badge type row -->
               <div class="mt-form__row mt-form__row--prices">
@@ -425,6 +470,7 @@ const headers = [
   { title: 'Старая цена', key: 'oldPrice', sortable: false, width: 110 },
   { title: 'Бейдж', key: 'badgeType', sortable: false, width: 130 },
   { title: 'Активен', key: 'isActive', sortable: false, width: 110 },
+  { title: 'Доступность', key: 'isAvailableToCustomers', sortable: false, width: 160 },
   { title: 'Порядок', key: 'sortOrder', sortable: true, width: 90 },
   { title: 'Создан', key: 'createdAt', sortable: true, width: 120 },
   { title: '', key: 'actions', sortable: false, width: 96, align: 'end' as const },
@@ -499,6 +545,8 @@ const emptyForm = () => ({
   coverImage: null as string | null,
   basePrice: null as number | null,
   oldPrice: null as number | null,
+  includedSpreads: 8 as number | null,
+  pricePerExtraFourPages: null as number | null,
   badgeType: null as BadgeType | null,
   badgeText: '',
   isActive: true,
@@ -549,6 +597,8 @@ async function submitForm() {
       coverImage: form.coverImage || undefined,
       basePrice: validNum(form.basePrice),
       oldPrice: validNum(form.oldPrice),
+      includedSpreads: validNum(form.includedSpreads),
+      pricePerExtraFourPages: validNum(form.pricePerExtraFourPages),
       badgeType: form.badgeType ?? undefined,
       badgeText: form.badgeText.trim() || undefined,
       isActive: form.isActive,
@@ -625,6 +675,7 @@ function notify(text: string, color = 'success') {
 const required = (v: string) => !!v?.trim() || 'Обязательное поле'
 const minLen = (n: number) => (v: string) => v?.length >= n || `Минимум ${n} символа`
 const minNum = (n: number) => (v: number) => v >= n || `Минимальное значение ${n}`
+const evenNum = (v: number) => v % 2 === 0 || 'Должно быть чётным (печать кратна 4 страницам)'
 const slugRule = (v: string) =>
   /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(v) || 'Только строчные буквы, цифры и дефисы'
 

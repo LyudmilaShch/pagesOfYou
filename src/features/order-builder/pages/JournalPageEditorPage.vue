@@ -29,6 +29,13 @@
     @success="handleAuthSuccess"
     @close="handleAuthClose"
   />
+
+  <MissingContentModal
+    :open="missingContentModal.open"
+    :pages="missingContentModal.pages"
+    @close="missingContentModal.open = false"
+    @go-to-page="goToIncompletePage"
+  />
 </template>
 
 <script setup lang="ts">
@@ -54,6 +61,7 @@ import { getGalleryScope } from '../utils/photo-gallery-scope.util'
 import JournalStructurePanel from '../components/JournalStructurePanel.vue'
 import PhotoGalleryPanel from '../components/PhotoGalleryPanel.vue'
 import PhotoGalleryPickerDialog from '../components/PhotoGalleryPickerDialog.vue'
+import MissingContentModal from '../components/MissingContentModal.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -102,6 +110,24 @@ function handleAuthSuccess(): void {
   authModalState.resolve = null
 }
 
+const missingContentModal = reactive<{
+  open: boolean
+  pages: Array<{ journalPageId: string; pageLabel: string; missingLabels: string[] }>
+}>({
+  open: false,
+  pages: [],
+})
+
+/** The submit flow already flushes the current page's unsaved edits before validating (see
+ * `handleSubmitOrder`), so no explicit save is needed before jumping to a different page here. */
+function goToIncompletePage(targetJournalPageId: string): void {
+  missingContentModal.open = false
+  void router.push({
+    name: 'journal-page-editor',
+    params: { orderId: orderId.value, journalPageId: targetJournalPageId },
+  })
+}
+
 function handleAuthClose(): void {
   authModalState.open = false
   authModalState.resolve?.(false)
@@ -111,7 +137,9 @@ function handleAuthClose(): void {
 /** Top-bar "Оформить заказ" action (replaces the plain "Сохранить" button for this route) —
  * flushes the currently open page first, same as the old left-panel submit button did. A guest
  * (local draft) must sign in before the order can actually be created on the server — see
- * `requireAuth()` above and `convertLocalDraftToOrder()` in order-builder.store.ts. */
+ * `requireAuth()` above and `convertLocalDraftToOrder()` in order-builder.store.ts. Once a real
+ * order exists, this hands off to the checkout page (`CheckoutPage.vue`) — the actual
+ * DRAFT → SUBMITTED transition happens there, after delivery/promo-code details are filled in. */
 async function handleSubmitOrder(): Promise<void> {
   try {
     if (store.isDirty) {
@@ -120,9 +148,16 @@ async function handleSubmitOrder(): Promise<void> {
 
     const validationError = orderBuilderStore.getSubmitValidationError()
     if (validationError) {
-      submitSnackbar.text = validationError
-      submitSnackbar.color = 'error'
-      submitSnackbar.show = true
+      const incompletePages = orderBuilderStore.collectIncompletePages()
+      if (incompletePages.length > 0) {
+        missingContentModal.pages = incompletePages
+        missingContentModal.open = true
+      } else {
+        // Not a per-page content issue (e.g. too few spreads) — a plain message is enough.
+        submitSnackbar.text = validationError
+        submitSnackbar.color = 'error'
+        submitSnackbar.show = true
+      }
       return
     }
 
@@ -135,30 +170,16 @@ async function handleSubmitOrder(): Promise<void> {
     }
 
     if (orderBuilderStore.isLocalDraft) {
-      // Route params still point at the local draft's synthetic ids — swap to the real ones
-      // *before* submitting, so the URL stays valid regardless of what submit() does next.
-      const previousJournalPages = orderBuilderStore.order?.journalPages ?? []
-      const previousIndex = previousJournalPages.findIndex((page) => page.id === journalPageId.value)
-
       await orderBuilderStore.convertLocalDraftToOrder()
-
-      const newJournalPage =
-        previousIndex !== -1 ? orderBuilderStore.order?.journalPages[previousIndex] : undefined
-
-      if (orderBuilderStore.order && newJournalPage) {
-        await router.replace({
-          name: 'journal-page-editor',
-          params: { orderId: orderBuilderStore.order.id, journalPageId: newJournalPage.id },
-        })
-      }
     }
 
-    await orderBuilderStore.submitOrder()
+    if (!orderBuilderStore.order) {
+      return
+    }
 
-    submitSnackbar.text = 'Заказ отправлен!'
-    submitSnackbar.color = 'success'
-    submitSnackbar.show = true
-    await router.push({ name: 'account' })
+    // Final submission (DRAFT → SUBMITTED) now happens at the end of the checkout page, after
+    // delivery details and an optional promo code are in — see CheckoutPage.vue.
+    await router.push({ name: 'order-checkout', params: { orderId: orderBuilderStore.order.id } })
   } catch {
     submitSnackbar.text = orderBuilderStore.orderError ?? 'Проверьте обязательные поля'
     submitSnackbar.color = 'error'

@@ -158,6 +158,15 @@ model User {
   name  String?
   email String? @unique
 
+  /// Relative /uploads/... path (see `toStoredAssetPath`/`resolveAssetUrl`), same storage
+  /// convention as `MagazineType.coverImage`.
+  avatarUrl String?
+
+  /// Stable, human-friendly number shown in the UI (e.g. "Пользователь #142") until the user sets
+  /// a real name — `id` is a cuid and unsuitable to show directly. Assigned automatically by the
+  /// database on insert, sequential across all users regardless of role.
+  userNumber Int @unique @default(autoincrement())
+
   /// bcrypt hash of the admin password (only set for ADMIN role accounts)
   passwordHash String?
 
@@ -240,6 +249,16 @@ model MagazineType {
 
   /// Старая цена — если задана, отображается перечеркнутой рядом с basePrice.
   oldPrice Decimal? @db.Decimal(10, 2)
+
+  /// Сколько разворотов (= includedSpreads * 2 страниц) уже включено в basePrice — по умолчанию
+  /// равно минимально допустимому количеству разворотов в журнале (см. `MIN_JOURNAL_SPREADS`).
+  /// Печать требует кратности 4 страницам (сигнатуры/тетради), поэтому ДОЛЖНО быть чётным —
+  /// проверяется в admin-magazine-types.
+  includedSpreads Int @default(8)
+
+  /// Цена за каждые дополнительные 4 страницы (= 2 разворота) сверх includedSpreads. `null`/0 —
+  /// доплаты за доп. страницы нет.
+  pricePerExtraFourPages Decimal? @db.Decimal(10, 2)
 
   /// Тип маркетингового бейджа (TOP / NEW / SALE / POPULAR / LIMITED).
   badgeType BadgeType?
@@ -639,6 +658,23 @@ model Order {
   paidAt      DateTime?
   completedAt DateTime?
 
+  /// Filled in on the checkout page (`POST /orders/:id/delivery/calculate`) — a stub today
+  /// (fixed price/eta per method), meant to be replaced by a real CDEK integration later.
+  deliveryMethod     DeliveryMethod?
+  deliveryCity       String?
+  /// Address of the pickup point (PICKUP_POINT) or the recipient's street address (COURIER) —
+  /// meaning depends on `deliveryMethod`.
+  deliveryAddress    String?
+  deliveryPostalCode String?
+  recipientName      String?
+  recipientPhone     String?
+  deliveryPrice      Decimal? @db.Decimal(10, 2)
+  deliveryEtaDays    Int?
+
+  promoCodeId    String?
+  promoCode      PromoCode? @relation(fields: [promoCodeId], references: [id])
+  discountAmount Decimal?   @db.Decimal(10, 2)
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
@@ -658,6 +694,34 @@ model Order {
   @@index([userId, deletedAt])
   @@index([deletedAt])
   @@map("orders")
+}
+
+enum DeliveryMethod {
+  PICKUP_POINT
+  COURIER
+}
+
+/// Validated server-side at checkout (`POST /orders/:id/promo-code`) — no admin CRUD yet, codes
+/// are seeded/inserted directly for now.
+model PromoCode {
+  id     String @id @default(cuid())
+  code   String @unique
+
+  /// Exactly one of these two is expected to be set — percent takes precedence if both are.
+  discountPercent Int?
+  discountAmount  Decimal? @db.Decimal(10, 2)
+
+  isActive   Boolean   @default(true)
+  expiresAt  DateTime?
+  usageLimit Int?
+  usageCount Int       @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orders Order[]
+
+  @@map("promo_codes")
 }
 
 /// Выбранный разворот внутри заказа (шаг 2)

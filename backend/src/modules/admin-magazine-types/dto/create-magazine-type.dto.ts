@@ -58,6 +58,30 @@ export class CreateMagazineTypeDto {
   @Type(() => Number)
   oldPrice?: number;
 
+  @ApiPropertyOptional({
+    example: 8,
+    description:
+      'How many spreads (= includedSpreads * 2 pages) basePrice already covers. Must be even — ' +
+      'printing requires page counts in multiples of 4.',
+    minimum: 2,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(2)
+  @Type(() => Number)
+  includedSpreads?: number;
+
+  @ApiPropertyOptional({
+    example: 300,
+    description: 'Price per extra 4 pages (= 2 spreads) beyond includedSpreads — omit/0 for no extra charge',
+    minimum: 0,
+  })
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Type(() => Number)
+  pricePerExtraFourPages?: number;
+
   @ApiPropertyOptional({ enum: BadgeType, example: BadgeType.TOP })
   @IsOptional()
   @IsEnum(BadgeType)

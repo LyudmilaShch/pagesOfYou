@@ -21,6 +21,8 @@ interface CatalogMagazineType {
   /** Prisma Decimal serialises as string over JSON */
   basePrice: string | null
   oldPrice: string | null
+  includedSpreads: number
+  pricePerExtraFourPages: string | null
   badgeType: string | null
   badgeText: string | null
   sortOrder: number
@@ -40,6 +42,8 @@ function toDomain(item: CatalogMagazineType): MagazineType {
     image: resolveAssetUrl(item.coverImage) ?? '',
     basePrice: toNum(item.basePrice),
     oldPrice: toNum(item.oldPrice),
+    includedSpreads: item.includedSpreads,
+    pricePerExtraFourPages: toNum(item.pricePerExtraFourPages),
     badgeType: item.badgeType as MagazineType['badgeType'],
     badgeText: item.badgeText,
     sortOrder: item.sortOrder,

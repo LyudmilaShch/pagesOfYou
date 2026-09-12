@@ -5,7 +5,14 @@
         <h2 class="default-spreads-tab__title">Развороты по умолчанию</h2>
         <p class="default-spreads-tab__subtitle">
           Эти шаблоны будут автоматически подставлены при создании журнала пользователем.
-          Минимум {{ MIN_JOURNAL_SPREADS }} разворотов.
+          Минимум {{ MIN_JOURNAL_SPREADS }} разворотов внутри журнала — вместе с обложкой
+          (передняя + задняя страницы вместе = 1 разворот) это {{ MIN_JOURNAL_SPREADS + 1 }}
+          {{ pluralizeSpreads(MIN_JOURNAL_SPREADS + 1) }}, {{ (MIN_JOURNAL_SPREADS + 1) * 2 }} страниц.
+        </p>
+        <p class="default-spreads-tab__total">
+          Сейчас настроено: {{ spreads.length }} внутри + обложка =
+          {{ spreads.length + 1 }} {{ pluralizeSpreads(spreads.length + 1) }}
+          ({{ (spreads.length + 1) * 2 }} страниц)
         </p>
       </div>
       <div class="default-spreads-tab__header-actions">
@@ -290,6 +297,16 @@ function onDrop(targetKey: string): void {
 
 async function save(): Promise<void> {
   if (spreads.value.length < MIN_JOURNAL_SPREADS) {
+    notify(`Нужно минимум ${MIN_JOURNAL_SPREADS} разворотов`, 'error')
+    return
+  }
+
+  // This count becomes every new journal's starting *interior* spread count. Total pages = this
+  // count * 2 + 2 (front + back cover) — for that to land on a multiple of 4, the interior count
+  // itself must be ODD (9 interior + 1 cover-equivalent spread = 10 spreads = 20 pages). See the
+  // matching backend check in AdminMagazineDefaultSpreadsService.replaceForMagazineType.
+  if (spreads.value.length % 2 !== 1) {
+    notify('Количество разворотов должно быть нечётным (вместе с обложкой — кратно 4 страницам)', 'error')
     return
   }
 
@@ -363,6 +380,15 @@ async function confirmDuplicateToType(targetTypeId: string): Promise<void> {
 onMounted(() => {
   void load()
 })
+
+function pluralizeSpreads(n: number): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod100 >= 11 && mod100 <= 19) return 'разворотов'
+  if (mod10 === 1) return 'разворот'
+  if (mod10 >= 2 && mod10 <= 4) return 'разворота'
+  return 'разворотов'
+}
 </script>
 
 <style scoped lang="scss">
@@ -389,6 +415,12 @@ onMounted(() => {
   margin: 0;
   color: $text-secondary;
   max-width: 640px;
+}
+
+.default-spreads-tab__total {
+  margin: $spacing-1 0 0;
+  font-size: $font-size-caption;
+  color: $text-muted;
 }
 
 .default-spreads-tab__list {
