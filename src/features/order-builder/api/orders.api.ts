@@ -18,6 +18,11 @@ export interface CalculateDeliveryPayload {
   postalCode?: string
   recipientName: string
   recipientPhone: string
+  /** Real values from the CDEK widget's onChoose callback — omit to use the backend's stub
+   * formula (e.g. the widget isn't configured yet). */
+  price?: number
+  etaDays?: number
+  pickupPointCode?: string
 }
 
 /** A page as already assembled client-side (a guest's local draft) — sent to `createDraft` so

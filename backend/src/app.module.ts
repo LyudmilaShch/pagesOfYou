@@ -5,6 +5,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import {
   adminJwtConfig,
   appConfig,
+  cdekConfig,
   databaseConfig,
   jwtConfig,
   otpConfig,
@@ -25,6 +26,8 @@ import { CatalogModule } from './modules/catalog/catalog.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { AdminOrdersModule } from './modules/admin-orders/admin-orders.module';
 import { AdminPromoCodesModule } from './modules/admin-promo-codes/admin-promo-codes.module';
+import { AdminSettingsModule } from './modules/admin-settings/admin-settings.module';
+import { DeliveryCdekModule } from './modules/delivery-cdek/delivery-cdek.module';
 import { FilesModule } from './modules/files/files.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { HealthModule } from './modules/health/health.module';
@@ -37,7 +40,16 @@ import { HealthModule } from './modules/health/health.module';
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
-      load: [appConfig, databaseConfig, jwtConfig, adminJwtConfig, otpConfig, r2Config, yandexStorageConfig],
+      load: [
+        appConfig,
+        databaseConfig,
+        jwtConfig,
+        adminJwtConfig,
+        otpConfig,
+        r2Config,
+        yandexStorageConfig,
+        cdekConfig,
+      ],
       cache: true,
     }),
 
@@ -70,6 +82,8 @@ import { HealthModule } from './modules/health/health.module';
     OrdersModule,
     AdminOrdersModule,
     AdminPromoCodesModule,
+    AdminSettingsModule,
+    DeliveryCdekModule,
     FilesModule,
     PaymentsModule,
     HealthModule,

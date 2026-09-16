@@ -878,3 +878,23 @@ model OrderEvent {
   @@index([type])
   @@map("order_events")
 }
+
+// =============================================================================
+// DOMAIN: PLATFORM SETTINGS (singleton)
+// =============================================================================
+
+/// Единственная строка с общими настройками платформы (id всегда "default"). Читается публично
+/// (например, страницей оформления заказа), редактируется только в админке.
+model PlatformSettings {
+  id String @id @default("default")
+
+  /// Срок изготовления журнала в рабочих днях — нижняя и верхняя граница диапазона,
+  /// показываемого пользователю на странице оформления заказа ("Изготовление занимает N–M
+  /// рабочих дней"). productionDaysMax >= productionDaysMin проверяется в admin-settings.
+  productionDaysMin Int @default(5)
+  productionDaysMax Int @default(7)
+
+  updatedAt DateTime @updatedAt
+
+  @@map("platform_settings")
+}

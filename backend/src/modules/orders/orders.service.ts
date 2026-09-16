@@ -681,11 +681,11 @@ export class OrdersService {
       throw new BadRequestException('Delivery can only be set for draft orders.');
     }
 
-    // TODO: real CDEK integration (tariff calculation by address/dimensions/weight).
-    const { price, etaDays } =
-      dto.method === DeliveryMethod.COURIER
-        ? { price: 350, etaDays: 5 }
-        : { price: 250, etaDays: 4 };
+    // Real values come from the CDEK widget's onCalculate/onChoose callback (CheckoutPage.vue) —
+    // fall back to a flat stub only when they're absent (widget not configured yet, or a direct
+    // API call bypassing it).
+    const price = dto.price ?? (dto.method === DeliveryMethod.COURIER ? 350 : 250);
+    const etaDays = dto.etaDays ?? (dto.method === DeliveryMethod.COURIER ? 5 : 4);
 
     const updated = await this.prisma.order.update({
       where: { id: orderId },

@@ -43,21 +43,31 @@
               </button>
             </div>
 
+            <template v-if="widgetConfigured">
+              <div id="cdek-widget-root" class="checkout-cdek-widget"></div>
+              <p v-if="widgetLoadError" class="checkout-card__error">{{ widgetLoadError }}</p>
+            </template>
+            <v-alert v-else type="info" variant="tonal" density="comfortable" class="mb-4">
+              Виджет СДЭК ещё не настроен (нет ключа Яндекс.Карт) — используется тестовый расчёт.
+            </v-alert>
+
             <div class="checkout-card__form">
-              <v-text-field
-                v-model="deliveryForm.city"
-                label="Город"
-                variant="outlined"
-                density="comfortable"
-                hide-details="auto"
-              />
-              <v-text-field
-                v-model="deliveryForm.address"
-                :label="addressLabel"
-                variant="outlined"
-                density="comfortable"
-                hide-details="auto"
-              />
+              <template v-if="!widgetConfigured">
+                <v-text-field
+                  v-model="deliveryForm.city"
+                  label="Город"
+                  variant="outlined"
+                  density="comfortable"
+                  hide-details="auto"
+                />
+                <v-text-field
+                  v-model="deliveryForm.address"
+                  :label="addressLabel"
+                  variant="outlined"
+                  density="comfortable"
+                  hide-details="auto"
+                />
+              </template>
               <div class="checkout-card__row">
                 <v-text-field
                   v-model="deliveryForm.postalCode"
@@ -88,6 +98,7 @@
             <p v-if="deliveryError" class="checkout-card__error">{{ deliveryError }}</p>
 
             <v-btn
+              v-if="!widgetConfigured"
               color="primary"
               variant="outlined"
               class="checkout-card__calc-btn"
@@ -95,6 +106,17 @@
               @click="handleCalculateDelivery"
             >
               Рассчитать доставку
+            </v-btn>
+            <v-btn
+              v-else-if="widgetChoice"
+              color="primary"
+              variant="outlined"
+              class="checkout-card__calc-btn"
+              :loading="calculatingDelivery"
+              :disabled="!deliveryForm.recipientName.trim() || !deliveryForm.recipientPhone.trim()"
+              @click="handleCalculateDelivery"
+            >
+              Подтвердить доставку
             </v-btn>
 
             <p v-if="order.deliveryPrice != null" class="checkout-card__result">
@@ -106,7 +128,7 @@
           <!-- Сроки изготовления -->
           <section class="checkout-card checkout-card--info">
             <v-icon size="22" color="primary">mdi-clock-outline</v-icon>
-            <p>Изготовление журнала занимает 5–7 рабочих дней после подтверждения заказа.</p>
+            <p>Изготовление журнала занимает {{ productionDaysLabel }} после подтверждения заказа.</p>
           </section>
 
           <!-- Промокод -->
@@ -197,11 +219,20 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { normalizeCanvasData, type CanvasData } from '@/modules/editor/models/canvas-data.model'
 import JournalSpreadThumbnail from '@/modules/editor/components/JournalSpreadThumbnail.vue'
+import { loadScript } from '@/shared/utils/load-script.util'
+import {
+  CDEK_WIDGET_SCRIPT_URL,
+  getCdekFromCity,
+  getCdekServicePath,
+  getYandexMapsApiKey,
+  isCdekWidgetConfigured,
+} from '@/shared/config/cdek'
+import { settingsApi } from '@/shared/api/settings.api'
 import { ordersApi } from '../api/orders.api'
 import { materializeCanvasData } from '../utils/merge-placeholder-element.util'
 import { countSpreadSlots } from '../utils/journal-structure.util'
@@ -227,6 +258,13 @@ const deliveryForm = reactive({
 const calculatingDelivery = ref(false)
 const deliveryError = ref('')
 
+const widgetConfigured = isCdekWidgetConfigured()
+const widgetLoadError = ref('')
+/** Set once the widget's onChoose callback fires — holds the real price/eta/pickup-point until
+ * the user confirms (clicks "Подтвердить доставку"), so we don't send the order to the backend
+ * before ФИО/телефон are actually filled in. */
+const widgetChoice = ref<{ price: number; etaDays: number; pickupPointCode?: string } | null>(null)
+
 const promoInput = ref('')
 const applyingPromo = ref(false)
 const promoError = ref('')
@@ -234,6 +272,13 @@ const promoError = ref('')
 const submitting = ref(false)
 
 const snackbar = reactive({ show: false, text: '', color: 'success' as string })
+
+/** Admin-configured production lead time — defaults match `PlatformSettings`' schema defaults,
+ * shown until the real value loads. */
+const productionDays = reactive({ min: 5, max: 7 })
+const productionDaysLabel = computed(
+  () => `${productionDays.min}–${productionDays.max} рабочих ${pluralizeDays(productionDays.max)}`,
+)
 
 const addressLabel = computed(() =>
   deliveryForm.method === 'COURIER' ? 'Адрес (улица, дом, квартира)' : 'Адрес пункта выдачи',
@@ -303,7 +348,64 @@ async function loadOrder(): Promise<void> {
   }
 }
 
-onMounted(loadOrder)
+/** `from`/`servicePath` don't depend on order data, so the widget can mount as soon as the DOM
+ * node exists — no need to wait for `loadOrder()`. */
+async function initCdekWidget(): Promise<void> {
+  if (!widgetConfigured) {
+    return
+  }
+
+  try {
+    await loadScript(CDEK_WIDGET_SCRIPT_URL)
+    await nextTick()
+
+    if (!window.CDEKWidget) {
+      widgetLoadError.value = 'Не удалось загрузить виджет доставки'
+      return
+    }
+
+    new window.CDEKWidget({
+      from: getCdekFromCity(),
+      defaultLocation: getCdekFromCity(),
+      root: 'cdek-widget-root',
+      apiKey: getYandexMapsApiKey(),
+      servicePath: getCdekServicePath(),
+      canChoose: true,
+      lang: 'rus',
+      currency: 'RUB',
+      onChoose: (mode, tariff, address) => {
+        deliveryForm.method = mode === 'door' ? 'COURIER' : 'PICKUP_POINT'
+        deliveryForm.city = address.city ?? deliveryForm.city
+        deliveryForm.address = address.address ?? address.name ?? deliveryForm.address
+        deliveryForm.postalCode = address.postal_code ?? deliveryForm.postalCode
+        widgetChoice.value = {
+          price: tariff.delivery_sum,
+          etaDays: tariff.period_max,
+          pickupPointCode: address.code,
+        }
+        deliveryError.value = ''
+      },
+    })
+  } catch {
+    widgetLoadError.value = 'Не удалось загрузить виджет доставки'
+  }
+}
+
+async function loadProductionDays(): Promise<void> {
+  try {
+    const settings = await settingsApi.get()
+    productionDays.min = settings.productionDaysMin
+    productionDays.max = settings.productionDaysMax
+  } catch {
+    // Non-critical — keeps showing the default 5–7 days.
+  }
+}
+
+onMounted(() => {
+  void loadOrder()
+  void initCdekWidget()
+  void loadProductionDays()
+})
 
 function extractErrorMessage(err: unknown): string | null {
   if (err && typeof err === 'object') {
@@ -334,6 +436,11 @@ async function handleCalculateDelivery(): Promise<void> {
       postalCode: deliveryForm.postalCode.trim() || undefined,
       recipientName: deliveryForm.recipientName.trim(),
       recipientPhone: deliveryForm.recipientPhone.trim(),
+      // Real values from the CDEK widget, when it's the one driving this — see initCdekWidget's
+      // onChoose. Absent → backend falls back to its own stub formula.
+      price: widgetChoice.value?.price,
+      etaDays: widgetChoice.value?.etaDays,
+      pickupPointCode: widgetChoice.value?.pickupPointCode,
     })
   } catch (err: unknown) {
     deliveryError.value = extractErrorMessage(err) ?? 'Не удалось рассчитать доставку'
@@ -565,6 +672,15 @@ function pluralizeDays(n: number): string {
   display: flex;
   flex-direction: column;
   gap: $spacing-4;
+}
+
+.checkout-cdek-widget {
+  width: 100%;
+  height: 420px;
+  margin-bottom: $spacing-4;
+  border-radius: $radius-md;
+  overflow: hidden;
+  background: $bg-tertiary;
 }
 
 .checkout-card__row {

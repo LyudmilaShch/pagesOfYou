@@ -103,6 +103,7 @@ const navItems = [
   { to: '/admin/fonts', icon: 'mdi-format-font', label: 'Шрифты' },
   { to: '/admin/orders', icon: 'mdi-package-variant-closed', label: 'Заказы' },
   { to: '/admin/promo-codes', icon: 'mdi-ticket-percent-outline', label: 'Промокоды' },
+  { to: '/admin/settings', icon: 'mdi-cog-outline', label: 'Настройки' },
 ]
 
 async function handleLogout(): Promise<void> {

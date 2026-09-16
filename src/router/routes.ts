@@ -91,6 +91,11 @@ export const routes: RouteRecordRaw[] = [
         name: 'admin-promo-codes',
         component: () => import('@/features/admin/pages/AdminPromoCodesPage.vue'),
       },
+      {
+        path: 'settings',
+        name: 'admin-settings',
+        component: () => import('@/features/admin/pages/AdminSettingsPage.vue'),
+      },
     ],
   },
   {
