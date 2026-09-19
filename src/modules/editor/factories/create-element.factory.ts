@@ -13,6 +13,7 @@ export type LibraryElementType =
   | 'title-placeholder'
   | 'subtitle-placeholder'
   | 'text-placeholder'
+  | 'ai-text-placeholder'
   | 'shape-line'
   | 'shape-rectangle'
   | 'shape-circle'
@@ -54,6 +55,13 @@ export const LIBRARY_ELEMENTS: LibraryElementDefinition[] = [
     label: 'Текст',
     icon: 'mdi-format-text',
     description: 'Текстовый блок',
+    category: 'text',
+  },
+  {
+    type: 'ai-text-placeholder',
+    label: 'AI-текст',
+    icon: 'mdi-robot-outline',
+    description: 'Текст, генерируемый AI по ответам анкеты',
     category: 'text',
   },
   {
@@ -188,6 +196,27 @@ export function createElementFromLibrary(
         color: '#111111',
         maxLength: 500,
         required: false,
+        effect: null,
+      }
+
+    case 'ai-text-placeholder':
+      return {
+        ...baseElement(type, 'AI-текст', { x: centerX - 150, y: centerY }, { width: 80, height: 28 }),
+        label: 'AI-текст',
+        prompt: '',
+        questionKeys: [],
+        lengthConstraint: { unit: 'characters', min: null, max: null },
+        fontFamily: EDITOR_FONT_BODY,
+        fontSize: TEXT_FONT_SIZE_DEFAULT,
+        fontWeight: 400,
+        fontItalic: false,
+        lineHeight: 1.5,
+        letterSpacing: 0,
+        textAlign: 'left',
+        verticalAlign: 'top',
+        textTransform: 'none',
+        textSizingMode: TEXT_SIZING_MODE_DEFAULT,
+        color: '#111111',
         effect: null,
       }
 

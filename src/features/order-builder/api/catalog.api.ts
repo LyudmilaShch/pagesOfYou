@@ -11,6 +11,7 @@ import type { BackendResponse } from '@/types/api.types'
 import type { MagazineType } from '../types/magazine-type'
 import type { AdminPhotoFrame } from '@/shared/api/admin/photo-frames.api'
 import type { AdminCustomPhotoMask } from '@/shared/api/admin/custom-photo-masks.api'
+import type { Question } from '../types/question.types'
 
 interface CatalogMagazineType {
   id: string
@@ -103,6 +104,16 @@ export const catalogApi = {
   async getCustomPhotoMasks(): Promise<AdminCustomPhotoMask[]> {
     const { data } = await http.get<BackendResponse<AdminCustomPhotoMask[]>>(
       '/catalog/custom-photo-masks',
+    )
+    return data.data
+  },
+
+  /** All questions of the magazine type — a question's wizard-step placement is derived on the
+   * frontend from which page's canvas elements actually reference its key, not from the question
+   * itself (a question has no page of its own, see `buildQuestionnaireFlow`). */
+  async getQuestions(magazineTypeId: string): Promise<Question[]> {
+    const { data } = await http.get<BackendResponse<Question[]>>(
+      `/catalog/magazine-types/by-id/${magazineTypeId}/questions`,
     )
     return data.data
   },

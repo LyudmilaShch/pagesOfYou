@@ -7,6 +7,7 @@ import {
 } from '../constants/page.constants'
 import { normalizePhotoPlaceholderElement } from '../utils/normalize-photo-placeholder.util'
 import { normalizeTextPlaceholderElement } from '../utils/normalize-text-placeholder.util'
+import { normalizeAiTextPlaceholderElement } from '../utils/normalize-ai-text-placeholder.util'
 import {
   getPageBackgroundCropState,
   normalizePageBackgroundImageFit,
@@ -66,7 +67,9 @@ function normalizeElementTree(elements: Array<PageElement & { zIndex?: number }>
   const withoutZIndex = sortedByLegacyZIndex.map(({ zIndex: _zIndex, ...rest }) => rest as PageElement)
 
   return mapTree(withoutZIndex, (leaf) =>
-    normalizePhotoPlaceholderElement(normalizeTextPlaceholderElement(leaf)) as LeafElement,
+    normalizeAiTextPlaceholderElement(
+      normalizePhotoPlaceholderElement(normalizeTextPlaceholderElement(leaf)),
+    ) as LeafElement,
   )
 }
 

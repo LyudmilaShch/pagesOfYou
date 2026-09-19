@@ -6,10 +6,10 @@
       <div class="create-order__topbar-inner">
         <router-link to="/" class="create-order__brand">Фолио</router-link>
 
-        <div class="create-order__steps-label" aria-label="Шаг 1 из 3">
+        <div class="create-order__steps-label" aria-label="Шаг 1 из 4">
           <span class="create-order__steps-current">1</span>
           <span class="create-order__steps-sep">/</span>
-          <span class="create-order__steps-total">3</span>
+          <span class="create-order__steps-total">4</span>
         </div>
       </div>
     </header>
@@ -135,7 +135,7 @@ import { useAuthStore } from '@/stores/auth.store'
 import { ordersApi } from '../api/orders.api'
 import type { OrderSummary } from '../types/order.types'
 import { clearLocalDraft, readLocalDraft, type StoredLocalDraft } from '../utils/local-draft-storage.util'
-import { resumeOrder } from '../utils/resume-order.util'
+import { resolveResumeRoute, resumeOrder } from '../utils/resume-order.util'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
 import MagazineTypeCard from '../components/MagazineTypeCard.vue'
 import ResumeDraftModal from '../components/ResumeDraftModal.vue'
@@ -210,12 +210,9 @@ async function onResumeContinue(orderId?: string): Promise<void> {
       await resumeOrder(router, orderId)
     } else if (resumeModal.mode === 'guest' && resumeModal.guestDraft) {
       await store.restoreLocalDraft(resumeModal.guestDraft)
-      const firstPage = store.order?.journalPages[0]
-      if (store.order && firstPage) {
-        await router.push({
-          name: 'journal-page-editor',
-          params: { orderId: store.order.id, journalPageId: firstPage.id },
-        })
+      const target = store.order ? resolveResumeRoute(store.order) : null
+      if (target) {
+        await router.push(target)
       }
     }
   } catch {
@@ -240,14 +237,13 @@ async function handleNext(): Promise<void> {
   try {
     await store.startDraft(store.selectedMagazineType.id)
 
-    const firstPage = store.order?.journalPages[0]
-    if (!store.order || !firstPage) {
+    if (!store.order) {
       return
     }
 
     await router.push({
-      name: 'journal-page-editor',
-      params: { orderId: store.order.id, journalPageId: firstPage.id },
+      name: 'order-photo-upload',
+      params: { orderId: store.order.id },
     })
   } catch {
     // orderError is set in the store

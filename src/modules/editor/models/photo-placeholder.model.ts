@@ -30,6 +30,8 @@ export interface PhotoPlaceholder extends PageElementBase {
   maxImages: number
   required: boolean
   defaultImageUrl?: string | null
+  /** Question.key this element auto-fills from (AUTO sync state, future phase). */
+  questionKey?: string | null
   stroke: string
   strokeWidth: number
   strokeStyle: PhotoStrokeStyle

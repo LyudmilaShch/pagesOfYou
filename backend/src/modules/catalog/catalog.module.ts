@@ -8,6 +8,7 @@ import { SpreadDesignsController } from './controllers/spread-designs.controller
 import { FontsController } from './controllers/fonts.controller';
 import { CatalogPhotoFramesController } from './controllers/photo-frames.controller';
 import { CatalogCustomPhotoMasksController } from './controllers/custom-photo-masks.controller';
+import { CatalogQuestionsController } from './controllers/questions.controller';
 import { MagazineTypesService } from './services/magazine-types.service';
 import { CatalogMagazineDefaultSpreadsService } from './services/magazine-default-spreads.service';
 import { CatalogMagazinePagesService } from './services/magazine-pages.service';
@@ -17,6 +18,7 @@ import { SpreadDesignsService } from './services/spread-designs.service';
 import { FontsService } from './services/fonts.service';
 import { CatalogPhotoFramesService } from './services/photo-frames.service';
 import { CatalogCustomPhotoMasksService } from './services/custom-photo-masks.service';
+import { CatalogQuestionsService } from './services/questions.service';
 
 @Module({
   controllers: [
@@ -29,6 +31,7 @@ import { CatalogCustomPhotoMasksService } from './services/custom-photo-masks.se
     FontsController,
     CatalogPhotoFramesController,
     CatalogCustomPhotoMasksController,
+    CatalogQuestionsController,
   ],
   providers: [
     MagazineTypesService,
@@ -40,6 +43,7 @@ import { CatalogCustomPhotoMasksService } from './services/custom-photo-masks.se
     FontsService,
     CatalogPhotoFramesService,
     CatalogCustomPhotoMasksService,
+    CatalogQuestionsService,
   ],
   exports: [MagazineTypesService, MagazineStylesService, SpreadDesignsService],
 })

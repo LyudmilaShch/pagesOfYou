@@ -25,7 +25,13 @@ import { useRoute } from 'vue-router'
 import EditorPage from '@/modules/editor/pages/EditorPage.vue'
 import { useEditorStore } from '@/modules/editor/store/editor.store'
 import { ensureCustomFontsLoaded } from '@/modules/editor/utils/custom-fonts.util'
+import {
+  editorQuestions,
+  provideEditorQuestions,
+  type EditorQuestionRef,
+} from '@/modules/editor/services/editor-questions'
 import { adminMagazinePagesApi } from '@/shared/api/admin/magazine-pages.api'
+import { adminQuestionsApi } from '@/shared/api/admin/questions.api'
 
 const route = useRoute()
 const store = useEditorStore()
@@ -54,10 +60,30 @@ onMounted(async () => {
   // Text elements already on the page may have been measured (above) before their custom font
   // finished registering — fix up their wrap width/height now that it has.
   void fontsReady.then(() => store.recalculateAllTextElementSizes())
+
+  void loadQuestions()
 })
+
+async function loadQuestions(): Promise<void> {
+  const questions = await adminQuestionsApi.list(magazineTypeId)
+
+  provideEditorQuestions(
+    questions.map((question) => ({
+      key: question.key,
+      label: question.label,
+    })),
+    async (payload) => {
+      const created = await adminQuestionsApi.create(magazineTypeId, payload)
+      const ref: EditorQuestionRef = { key: created.key, label: created.label }
+      editorQuestions.value = [...editorQuestions.value, ref]
+      return ref
+    },
+  )
+}
 
 onUnmounted(() => {
   store.reset()
+  provideEditorQuestions([])
 })
 </script>
 

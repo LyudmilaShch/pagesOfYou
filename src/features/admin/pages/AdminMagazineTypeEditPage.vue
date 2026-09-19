@@ -24,6 +24,7 @@
         <v-tab value="image">Изображение</v-tab>
         <v-tab value="discounts">Скидки</v-tab>
         <v-tab value="pages">Страницы журнала</v-tab>
+        <v-tab value="questions">Вопросы</v-tab>
         <v-tab value="default-spreads">Развороты по умолчанию</v-tab>
       </v-tabs>
 
@@ -112,6 +113,10 @@
           <MagazineTypePagesTab :magazine-type-id="magazineTypeId" />
         </v-window-item>
 
+        <v-window-item value="questions">
+          <MagazineTypeQuestionsTab :magazine-type-id="magazineTypeId" />
+        </v-window-item>
+
         <v-window-item value="default-spreads">
           <MagazineTypeDefaultSpreadsTab :magazine-type-id="magazineTypeId" />
         </v-window-item>
@@ -130,6 +135,7 @@ import { useRoute } from 'vue-router'
 
 import MagazineTypeDefaultSpreadsTab from '@/features/admin/components/MagazineTypeDefaultSpreadsTab.vue'
 import MagazineTypePagesTab from '@/features/admin/components/MagazineTypePagesTab.vue'
+import MagazineTypeQuestionsTab from '@/features/admin/components/MagazineTypeQuestionsTab.vue'
 import { useMagazineTypesStore } from '@/features/admin/stores/magazine-types.store'
 import ImageUploader from '@/components/ImageUploader.vue'
 import { adminMagazineTypesApi, type BadgeType } from '@/shared/api/admin/magazine-types.api'

@@ -9,6 +9,7 @@ import type {
   TextVerticalAlign,
 } from '@/modules/editor/models/text-placeholder.model'
 import type { CanvasData } from '@/modules/editor/models/canvas-data.model'
+import type { AiTextPlaceholder } from '@/modules/editor/models/ai-text-placeholder.model'
 import {
   normalizePhotoStrokePosition,
   normalizePhotoStrokeStyle,
@@ -123,6 +124,24 @@ export function mergeElementWithPlaceholderValue(
     }
   }
 
+  if (template.type === 'ai-text-placeholder') {
+    const aiText = template as AiTextPlaceholder
+    // No questionKey/defaultText on this type — the generated (or admin-authored preview) text
+    // travels through previewPlaceholderText, which the Konva render pipeline already reads for
+    // ai-text-placeholder (see element-node.adapter.ts's getTextPlaceholderElement).
+    const generatedText =
+      local?.textValue !== undefined
+        ? local.textValue
+        : saved?.textValue !== undefined && saved.textValue !== null
+          ? saved.textValue
+          : undefined
+
+    return {
+      ...aiText,
+      previewPlaceholderText: generatedText?.trim() || aiText.previewPlaceholderText,
+    }
+  }
+
   if (template.type === 'photo-placeholder') {
     const photo = template as PhotoPlaceholder
     const userUrl = typeof json.url === 'string' ? json.url.trim() : undefined
@@ -193,13 +212,18 @@ export function mergeElementWithPlaceholderValue(
 export function materializeCanvasData(
   canvasData: CanvasData,
   placeholderValues: PlaceholderValue[],
+  localByElementId?: Map<string, LocalPlaceholderDraft>,
 ): CanvasData {
   const byElementId = new Map(placeholderValues.map((value) => [value.elementId, value]))
 
   return {
     ...canvasData,
     elements: mapTree(canvasData.elements, (leaf) =>
-      mergeElementWithPlaceholderValue(leaf, byElementId.get(leaf.id)) as LeafElement,
+      mergeElementWithPlaceholderValue(
+        leaf,
+        byElementId.get(leaf.id),
+        localByElementId?.get(leaf.id),
+      ) as LeafElement,
     ),
   }
 }

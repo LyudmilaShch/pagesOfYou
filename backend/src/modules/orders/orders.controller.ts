@@ -11,6 +11,7 @@ import { ReorderJournalSpreadsDto } from './dto/reorder-journal-spreads.dto';
 import { SaveJournalPageCanvasDto } from './dto/save-journal-page-canvas.dto';
 import { SetJournalPageTemplateDto } from './dto/set-journal-page-template.dto';
 import { UpsertPlaceholdersDto } from './dto/upsert-placeholders.dto';
+import { UpsertQuestionnaireAnswersDto } from './dto/upsert-questionnaire-answers.dto';
 
 @ApiTags('Orders')
 @ApiBearerAuth()
@@ -52,6 +53,31 @@ export class OrdersController {
     @Body() body: UpsertPlaceholdersDto,
   ) {
     return this.ordersService.upsertPlaceholders(orderId, journalPageId, user.sub, body);
+  }
+
+  @Post(':orderId/journal-pages/:journalPageId/elements/:elementId/regenerate-ai-text')
+  @ApiOperation({
+    summary: 'Regenerate one ai-text-placeholder element on demand (not best-effort — surfaces errors)',
+  })
+  regenerateAiText(
+    @CurrentUser() user: JwtPayload,
+    @Param('orderId') orderId: string,
+    @Param('journalPageId') journalPageId: string,
+    @Param('elementId') elementId: string,
+  ) {
+    return this.ordersService.regenerateAiText(orderId, user.sub, journalPageId, elementId);
+  }
+
+  @Patch(':orderId/questionnaire-answers')
+  @ApiOperation({
+    summary: 'Save questionnaire answers and sync them into bound template elements',
+  })
+  upsertQuestionnaireAnswers(
+    @CurrentUser() user: JwtPayload,
+    @Param('orderId') orderId: string,
+    @Body() body: UpsertQuestionnaireAnswersDto,
+  ) {
+    return this.ordersService.upsertQuestionnaireAnswers(orderId, user.sub, body);
   }
 
   @Patch(':orderId/journal-pages/:journalPageId/canvas')

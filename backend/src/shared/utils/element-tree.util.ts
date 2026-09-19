@@ -1,4 +1,4 @@
-import type { CanvasElement, CanvasLeafElement } from '../types/canvas-data.types';
+import type { CanvasAiTextPlaceholder, CanvasElement, CanvasLeafElement } from '../types/canvas-data.types';
 import { isCanvasGroupElement } from '../types/canvas-data.types';
 
 /**
@@ -161,4 +161,17 @@ export function flattenTree(nodes: CanvasElement[]): CanvasLeafElement[] {
 
   walk(nodes, ROOT_FRAME);
   return result;
+}
+
+/** `ai-text-placeholder` leaves whose `questionKeys` intersect the given set — unlike
+ * `PlaceholderValue` sync (which matches a single `questionKey` per element), an AI-text block can
+ * reference several questions at once, so this is `.some(...)`, not `===`. */
+export function findAiTextLeavesForKeys(
+  leaves: CanvasLeafElement[],
+  keys: Set<string>,
+): CanvasAiTextPlaceholder[] {
+  return leaves.filter(
+    (leaf): leaf is CanvasAiTextPlaceholder =>
+      leaf.type === 'ai-text-placeholder' && leaf.questionKeys.some((key) => keys.has(key)),
+  );
 }

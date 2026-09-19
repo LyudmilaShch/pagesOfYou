@@ -10,12 +10,14 @@ import {
   jwtConfig,
   otpConfig,
   r2Config,
+  yandexGptConfig,
   yandexStorageConfig,
 } from './config';
 import { PrismaModule } from './database';
 import { AdminAuthModule } from './modules/admin-auth/admin-auth.module';
 import { AdminMagazineTypesModule } from './modules/admin-magazine-types/admin-magazine-types.module';
 import { AdminMagazinePagesModule } from './modules/admin-magazine-pages/admin-magazine-pages.module';
+import { AdminPageTemplatesModule } from './modules/admin-page-templates/admin-page-templates.module';
 import { AdminPhotoFramesModule } from './modules/admin-photo-frames/admin-photo-frames.module';
 import { AdminCustomPhotoMasksModule } from './modules/admin-custom-photo-masks/admin-custom-photo-masks.module';
 import { AdminFontsModule } from './modules/admin-fonts/admin-fonts.module';
@@ -49,6 +51,7 @@ import { HealthModule } from './modules/health/health.module';
         r2Config,
         yandexStorageConfig,
         cdekConfig,
+        yandexGptConfig,
       ],
       cache: true,
     }),
@@ -73,6 +76,7 @@ import { HealthModule } from './modules/health/health.module';
     AdminAuthModule,
     AdminMagazineTypesModule,
     AdminMagazinePagesModule,
+    AdminPageTemplatesModule,
     AdminPhotoFramesModule,
     AdminCustomPhotoMasksModule,
     AdminFontsModule,

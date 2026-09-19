@@ -58,11 +58,49 @@ interface Window {
 }
 
 declare module 'page-flip' {
+  /** Payload page-flip passes to event handlers registered via `.on(name, cb)` — mirrors its own
+   * `WidgetEvent` (see `node_modules/page-flip/src/Event/EventObject.ts`); `data`'s actual shape
+   * depends on the event (e.g. a page index number for `'flip'`). */
+  export interface PageFlipEvent {
+    data: number | string | boolean | object
+    object: PageFlip
+  }
+
+  /** The book's actual computed/rendered rect (see BasicTypes.ts) — `left`/`top`/`width`/`height`
+   * are pixels relative to the block element (getUI().getDistElement(), which sizes itself flush
+   * against the root element passed to `new PageFlip(...)`) — NOT necessarily the same box as
+   * that root element itself, since page-flip letterboxes the actual pages within it when the
+   * aspect ratio doesn't match exactly. */
+  export interface PageRect {
+    left: number
+    top: number
+    width: number
+    height: number
+    pageWidth: number
+  }
+
   export class PageFlip {
     constructor(element: HTMLElement, settings: Record<string, unknown>)
     loadFromImages(images: string[]): void
+    /** HTML mode — takes the pages' own DOM elements and REPARENTS them (appendChild) into its
+     * internal wrapper. Only reactive Vue content rendered into these elements via `<Teleport>`
+     * survives that move cleanly (a plain v-for owned by the calling component's own template
+     * would fight page-flip over the nodes' position on the next render). */
+    loadFromHTML(items: NodeListOf<HTMLElement> | HTMLElement[]): void
+    updateFromHtml(items: NodeListOf<HTMLElement> | HTMLElement[]): void
     destroy(): void
     update(): void
     getRender(): unknown
+    /** Animated. */
+    flipNext(): void
+    /** Animated. */
+    flipPrev(): void
+    /** Instant, no animation. */
+    turnToPage(page: number): void
+    getCurrentPageIndex(): number
+    getPageCount(): number
+    getBoundsRect(): PageRect
+    on(eventName: string, callback: (e: PageFlipEvent) => void): PageFlip
+    off(eventName: string): void
   }
 }

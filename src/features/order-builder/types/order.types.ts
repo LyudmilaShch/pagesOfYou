@@ -38,12 +38,15 @@ export interface PlaceholderJsonValue {
   }>
 }
 
+export type PlaceholderSource = 'AUTO' | 'AI' | 'OVERRIDDEN'
+
 export interface PlaceholderValue {
   id: string
   elementId: string
   valueType: PlaceholderValueType
   textValue: string | null
   jsonValue: PlaceholderJsonValue | null
+  source: PlaceholderSource
 }
 
 export interface MagazinePageSummary {
@@ -83,6 +86,7 @@ export interface OrderDetail {
     pricePerExtraFourPages: string | null
   }
   journalPages: JournalPage[]
+  questionAnswers: QuestionAnswer[]
   deliveryMethod: DeliveryMethod | null
   deliveryCity: string | null
   deliveryAddress: string | null
@@ -100,6 +104,27 @@ export interface PlaceholderInput {
   valueType: PlaceholderValueType
   textValue?: string
   jsonValue?: PlaceholderJsonValue
+}
+
+/** { url } for IMAGE questions, { urls } for GALLERY questions. */
+export interface QuestionAnswerJsonValue {
+  url?: string
+  urls?: string[]
+}
+
+/** One saved answer to a questionnaire `Question`, at the order level — unlike
+ * `PlaceholderValue`, not tied to a specific page/element, since one answer can be synced into
+ * several canvas elements (possibly on different pages) that share the same `questionKey`. */
+export interface QuestionAnswer {
+  questionKey: string
+  textValue: string | null
+  jsonValue: QuestionAnswerJsonValue | null
+}
+
+export interface QuestionAnswerInput {
+  questionKey: string
+  textValue?: string
+  jsonValue?: QuestionAnswerJsonValue
 }
 
 /** One row of the account page's journal/order lists — a lighter shape than `OrderDetail`

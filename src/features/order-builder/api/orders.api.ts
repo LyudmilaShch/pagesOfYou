@@ -2,7 +2,13 @@ import { resolveAssetUrl } from '@/shared/config/assets'
 import { http } from '@/shared/api/http'
 import type { BackendResponse } from '@/types/api.types'
 import type { CanvasData } from '@/modules/editor/models/canvas-data.model'
-import type { DeliveryMethod, OrderDetail, PaginatedOrders, PlaceholderInput } from '../types/order.types'
+import type {
+  DeliveryMethod,
+  OrderDetail,
+  PaginatedOrders,
+  PlaceholderInput,
+  QuestionAnswerInput,
+} from '../types/order.types'
 import type { JournalSlotType, JournalSpreadLayout } from '../constants/journal.constants'
 
 export interface SetJournalPageTemplatePayload {
@@ -76,6 +82,33 @@ export const ordersApi = {
     const { data } = await http.patch<BackendResponse<OrderDetail>>(
       `/orders/${orderId}/journal-pages/${journalPageId}/placeholders`,
       { values },
+    )
+    return data.data
+  },
+
+  /** Not best-effort — unlike the automatic generation triggered by saving a questionnaire
+   * answer, this is a deliberate user action, so a failure (no answers yet, YandexGPT
+   * unavailable) rejects instead of silently doing nothing. */
+  async regenerateAiText(
+    orderId: string,
+    journalPageId: string,
+    elementId: string,
+  ): Promise<string> {
+    const { data } = await http.post<BackendResponse<{ text: string }>>(
+      `/orders/${orderId}/journal-pages/${journalPageId}/elements/${elementId}/regenerate-ai-text`,
+    )
+    return data.data.text
+  },
+
+  /** Order-level (not page-level) — one answer can sync into elements on several journal pages
+   * at once. See `OrdersService.upsertQuestionnaireAnswers`. */
+  async saveQuestionnaireAnswers(
+    orderId: string,
+    answers: QuestionAnswerInput[],
+  ): Promise<OrderDetail> {
+    const { data } = await http.patch<BackendResponse<OrderDetail>>(
+      `/orders/${orderId}/questionnaire-answers`,
+      { answers },
     )
     return data.data
   },

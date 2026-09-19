@@ -495,7 +495,7 @@
 
         </div>
 
-        <div v-if="isTextElement" class="editor-properties__section">
+        <div v-if="isTextStyleElement" class="editor-properties__section">
 
           <p class="editor-properties__section-title">Типографика</p>
 
@@ -849,7 +849,7 @@
 
         </div>
 
-        <div v-if="isTextElement" class="editor-properties__section">
+        <div v-if="isTextStyleElement" class="editor-properties__section">
 
           <p class="editor-properties__section-title">Цвет</p>
 
@@ -862,7 +862,7 @@
 
         </div>
 
-        <div v-if="isTextElement" class="editor-properties__section">
+        <div v-if="isTextStyleElement" class="editor-properties__section">
 
           <p class="editor-properties__section-title">Эффекты</p>
 
@@ -922,6 +922,103 @@
             @update:model-value="patchElement({ required: $event })"
 
           />
+
+          <EditorQuestionPickerField
+            v-if="hasEditorQuestions"
+            :model-value="textElement.questionKey ? [textElement.questionKey] : []"
+            hint="Элемент будет автоматически заполняться ответом на этот вопрос"
+            @update:model-value="patchElement({ questionKey: $event[0] ?? null })"
+          />
+
+          <template v-if="hasPlaceholderSync && textElement.questionKey">
+            <v-chip
+              v-if="currentPlaceholderSourceMeta"
+              size="small"
+              variant="tonal"
+              :prepend-icon="currentPlaceholderSourceMeta.icon"
+              class="editor-properties__field-label--spaced"
+            >
+              {{ currentPlaceholderSourceMeta.label }}
+            </v-chip>
+
+            <v-btn
+              variant="outlined"
+              size="small"
+              block
+              prepend-icon="mdi-refresh"
+              class="editor-properties__field-label--spaced"
+              @click="handleRevertToAnswer"
+            >
+              Обновить из анкеты
+            </v-btn>
+
+            <p v-if="revertFeedback" class="editor-properties__field-label editor-properties__field-label--spaced">
+              {{ revertFeedback }}
+            </p>
+          </template>
+
+        </div>
+
+        <div v-if="isAiTextElement && hasEditorQuestions" class="editor-properties__section">
+
+          <p class="editor-properties__section-title">AI-текст</p>
+
+          <EditorTextField
+            :model-value="aiTextElement.label"
+            label="Название поля"
+            @update:model-value="patchElement({ label: $event })"
+          />
+
+          <p class="editor-properties__field-label editor-properties__field-label--spaced">
+            {{ aiTextElement.questionKeys.length }} вопрос(ов) в промпте · {{ aiTextLengthSummary }}
+          </p>
+
+          <v-btn
+            variant="outlined"
+            block
+            prepend-icon="mdi-robot-outline"
+            @click="panelStack.push({ id: 'ai-text-config', title: 'Генерация AI-текста' })"
+          >
+            Настроить генерацию
+          </v-btn>
+
+        </div>
+
+        <div v-if="isAiTextElement && hasPlaceholderSync" class="editor-properties__section">
+
+          <p class="editor-properties__section-title">AI-текст</p>
+
+          <v-chip
+            v-if="currentPlaceholderSourceMeta"
+            size="small"
+            variant="tonal"
+            :prepend-icon="currentPlaceholderSourceMeta.icon"
+            class="editor-properties__field-label--spaced"
+          >
+            {{ currentPlaceholderSourceMeta.label }}
+          </v-chip>
+
+          <EditorTextField
+            :model-value="aiTextElement.previewPlaceholderText ?? ''"
+            label="Текст"
+            multiline
+            :rows="4"
+            @update:model-value="patchElement({ previewPlaceholderText: $event })"
+          />
+
+          <v-btn
+            variant="outlined"
+            block
+            prepend-icon="mdi-refresh"
+            :loading="isRegeneratingAiText"
+            @click="handleRegenerateAiText"
+          >
+            Перегенерировать
+          </v-btn>
+
+          <p v-if="regenerateAiTextError" class="editor-properties__field-label editor-properties__field-label--spaced">
+            {{ regenerateAiTextError }}
+          </p>
 
         </div>
 
@@ -1208,6 +1305,40 @@
 
           />
 
+          <EditorQuestionPickerField
+            v-if="hasEditorQuestions"
+            :model-value="photoElement.questionKey ? [photoElement.questionKey] : []"
+            hint="Элемент будет автоматически заполняться ответом на этот вопрос"
+            @update:model-value="patchElement({ questionKey: $event[0] ?? null })"
+          />
+
+          <template v-if="hasPlaceholderSync && photoElement.questionKey">
+            <v-chip
+              v-if="currentPlaceholderSourceMeta"
+              size="small"
+              variant="tonal"
+              :prepend-icon="currentPlaceholderSourceMeta.icon"
+              class="editor-properties__field-label--spaced"
+            >
+              {{ currentPlaceholderSourceMeta.label }}
+            </v-chip>
+
+            <v-btn
+              variant="outlined"
+              size="small"
+              block
+              prepend-icon="mdi-refresh"
+              class="editor-properties__field-label--spaced"
+              @click="handleRevertToAnswer"
+            >
+              Обновить из анкеты
+            </v-btn>
+
+            <p v-if="revertFeedback" class="editor-properties__field-label editor-properties__field-label--spaced">
+              {{ revertFeedback }}
+            </p>
+          </template>
+
         </div>
 
         <div v-if="isShapeElement" class="editor-properties__section">
@@ -1408,6 +1539,10 @@ import { usePropertiesPanelStack } from '../composables/use-properties-panel-sta
 import { PROPERTIES_PANEL_STACK_KEY } from '../composables/properties-panel-stack.context'
 import PropertiesPanelScreenHeader from './properties-panel/PropertiesPanelScreenHeader.vue'
 import { PANEL_SCREENS, type PanelScreenId } from './properties-panel/panel-screen-registry'
+import { createEditorQuestion, editorQuestions } from '../services/editor-questions'
+import EditorQuestionPickerField from './EditorQuestionPickerField.vue'
+import { editorPlaceholderSync } from '../services/editor-placeholder-sync'
+import { extractApiErrorMessage } from '@/shared/utils/api-error.util'
 import { TEXT_EFFECT_CARDS, getTextEffectDemoStyle } from '../models/text-effect.model'
 import type { TextEffect, TextEffectCardDef } from '../models/text-effect.model'
 import {
@@ -1474,6 +1609,8 @@ import {
   isTextPlaceholderElement,
 
 } from '../utils/placeholder-display.util'
+import { isAiTextElement as isAiTextPageElement } from '../models'
+import type { AiTextPlaceholder } from '../models/ai-text-placeholder.model'
 
 
 
@@ -1615,6 +1752,84 @@ const isTextElement = computed(() => selected.value && isTextPlaceholderElement(
 
 const isPhotoElement = computed(() => selected.value && isPhotoPlaceholderElement(selected.value))
 
+const isAiTextElement = computed(() => selected.value && isAiTextPageElement(selected.value))
+
+// AiTextPlaceholder deliberately duplicates TextPlaceholder's typography fields (fontFamily,
+// fontSize, color, effect, etc. — see the model's own comment) so the same font/color/effects
+// controls apply to both; only the text-only "Контент"/"Поведение" sections (defaultText,
+// required, single questionKey) stay gated to isTextElement alone.
+const isTextStyleElement = computed(() => isTextElement.value || isAiTextElement.value)
+
+const aiTextElement = computed(() => selected.value as AiTextPlaceholder)
+
+const aiTextLengthSummary = computed(() => {
+  const constraint = aiTextElement.value.lengthConstraint
+  const unitLabel = constraint.unit === 'words' ? 'слов' : 'символов'
+  return `${constraint.min ?? '—'}–${constraint.max ?? '—'} ${unitLabel}`
+})
+
+// True whenever we're in admin (template-build) mode — not just "there happen to be questions
+// already" — so the picker (and its "add question" form) still shows when the magazine type has
+// zero questions yet. The customer-facing editor never provides either, so this stays false there.
+const hasEditorQuestions = computed(() => editorQuestions.value.length > 0 || createEditorQuestion.value !== null)
+
+// ---------------------------------------------------------------------------
+// Sync-state (Этап 5) — customer-only, gated on editorPlaceholderSync being provided
+// (JournalPageEditorPage.vue). Never set in admin contexts, see editor-placeholder-sync.ts.
+// ---------------------------------------------------------------------------
+
+const hasPlaceholderSync = computed(() => editorPlaceholderSync.value !== null)
+
+const PLACEHOLDER_SOURCE_META: Record<string, { label: string; icon: string }> = {
+  AUTO: { label: 'Из анкеты', icon: 'mdi-clipboard-text-outline' },
+  AI: { label: 'Сгенерировано AI', icon: 'mdi-robot-outline' },
+  OVERRIDDEN: { label: 'Изменено вручную', icon: 'mdi-pencil-outline' },
+}
+
+const currentPlaceholderSourceMeta = computed(() => {
+  if (!selected.value || !editorPlaceholderSync.value) {
+    return null
+  }
+  const source = editorPlaceholderSync.value.sourceByElementId.get(selected.value.id)
+  return source ? PLACEHOLDER_SOURCE_META[source] : null
+})
+
+const revertFeedback = ref<string | null>(null)
+
+function handleRevertToAnswer(): void {
+  if (!selected.value || !editorPlaceholderSync.value) {
+    return
+  }
+  const applied = editorPlaceholderSync.value.revertToAnswer(selected.value.id)
+  revertFeedback.value = applied ? null : 'Нет сохранённого ответа на этот вопрос'
+}
+
+const isRegeneratingAiText = ref(false)
+const regenerateAiTextError = ref<string | null>(null)
+
+async function handleRegenerateAiText(): Promise<void> {
+  if (!selected.value || !editorPlaceholderSync.value) {
+    return
+  }
+  isRegeneratingAiText.value = true
+  regenerateAiTextError.value = null
+  try {
+    await editorPlaceholderSync.value.regenerateAiText(selected.value.id)
+  } catch (err) {
+    regenerateAiTextError.value = extractApiErrorMessage(err, 'Не удалось сгенерировать текст')
+  } finally {
+    isRegeneratingAiText.value = false
+  }
+}
+
+watch(
+  () => selected.value?.id,
+  () => {
+    revertFeedback.value = null
+    regenerateAiTextError.value = null
+  },
+)
+
 const isShapeElement = computed(
 
   () =>
@@ -1643,8 +1858,13 @@ const activeTextEffectLabel = computed(() => {
   return TEXT_EFFECT_CARDS.find((card) => card.type === effect.type)?.label ?? ''
 })
 
+const isTextOrAiTextElement = (
+  element: typeof selected.value,
+): element is import('../models/text-placeholder.model').TextPlaceholder | AiTextPlaceholder =>
+  !!element && (isTextPlaceholderElement(element) || isAiTextPageElement(element))
+
 const isTextBold = computed(() => {
-  if (!selected.value || !isTextPlaceholderElement(selected.value)) {
+  if (!isTextOrAiTextElement(selected.value)) {
     return false
   }
 
@@ -1652,7 +1872,7 @@ const isTextBold = computed(() => {
 })
 
 const isTextItalic = computed(() => {
-  if (!selected.value || !isTextPlaceholderElement(selected.value)) {
+  if (!isTextOrAiTextElement(selected.value)) {
     return false
   }
 
@@ -1660,7 +1880,7 @@ const isTextItalic = computed(() => {
 })
 
 const isTextUppercase = computed(() => {
-  if (!selected.value || !isTextPlaceholderElement(selected.value)) {
+  if (!isTextOrAiTextElement(selected.value)) {
     return false
   }
 
@@ -1668,7 +1888,7 @@ const isTextUppercase = computed(() => {
 })
 
 const hasAdvancedTextSpacing = computed(() => {
-  if (!selected.value || !isTextPlaceholderElement(selected.value)) {
+  if (!isTextOrAiTextElement(selected.value)) {
     return false
   }
 

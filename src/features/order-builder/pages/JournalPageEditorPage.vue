@@ -51,6 +51,8 @@ import { provideEditorAssets } from '@/modules/editor/services/editor-assets'
 import { provideEditorLeftPanelExtraCategories } from '@/modules/editor/services/editor-left-panel-extra-category'
 import { provideEditorTopAction } from '@/modules/editor/services/editor-top-action'
 import { provideEditorPhotoPicker } from '@/modules/editor/services/editor-photo-picker'
+import { provideEditorPlaceholderSync } from '@/modules/editor/services/editor-placeholder-sync'
+import { findNodeById } from '@/modules/editor/utils/element-tree.util'
 import { useAuthStore } from '@/stores/auth.store'
 import AuthModal from '@/components/auth/AuthModal.vue'
 import { userEditorAssetsProvider } from '../services/user-editor-assets'
@@ -59,6 +61,7 @@ import { useOrderBuilderStore } from '../stores/order-builder.store'
 import { materializeCanvasData } from '../utils/merge-placeholder-element.util'
 import { getGalleryScope } from '../utils/photo-gallery-scope.util'
 import JournalStructurePanel from '../components/JournalStructurePanel.vue'
+import QuestionnaireEntryPanel from '../components/QuestionnaireEntryPanel.vue'
 import PhotoGalleryPanel from '../components/PhotoGalleryPanel.vue'
 import PhotoGalleryPickerDialog from '../components/PhotoGalleryPickerDialog.vue'
 import MissingContentModal from '../components/MissingContentModal.vue'
@@ -223,6 +226,7 @@ function handlePhotoPickerClose(): void {
 provideEditorAssets(userEditorAssetsProvider)
 provideEditorLeftPanelExtraCategories([
   { key: 'structure', label: 'Структура', icon: 'mdi-view-sequential-outline', panel: JournalStructurePanel },
+  { key: 'questionnaire', label: 'Анкета', icon: 'mdi-clipboard-text-outline', panel: QuestionnaireEntryPanel },
   { key: 'gallery', label: 'Галерея', icon: 'mdi-image-multiple-outline', panel: PhotoGalleryPanel },
 ])
 provideEditorTopAction({
@@ -233,6 +237,63 @@ provideEditorTopAction({
   onClick: handleSubmitOrder,
 })
 provideEditorPhotoPicker({ open: openPhotoPicker })
+
+// Snapshot of each element's PlaceholderValue.source, taken from the currently-loaded order — not
+// live-tracked (see editor-placeholder-sync.ts's doc comment for why). Re-derives whenever the
+// "Структура" panel switches :journalPageId on this same route instance.
+const placeholderSourceByElementId = computed(() => {
+  const map = new Map<string, 'AUTO' | 'AI' | 'OVERRIDDEN'>()
+  const page = orderBuilderStore.order?.journalPages.find((p) => p.id === journalPageId.value)
+  for (const value of page?.placeholderValues ?? []) {
+    map.set(value.elementId, value.source)
+  }
+  return map
+})
+
+/** "Обновить из анкеты" — pulls the current questionnaire answer for this element's questionKey
+ * straight into the live canvas element. Purely a client-side patch (rides the next normal
+ * autosave like any other edit) — no backend call, the answer is already in orderBuilderStore. */
+function revertToAnswer(elementId: string): boolean {
+  const element = store.document && findNodeById(store.document.canvasData.elements, elementId)
+  if (!element || !('questionKey' in element) || !element.questionKey) {
+    return false
+  }
+
+  const answer = orderBuilderStore.order?.questionAnswers.find(
+    (a) => a.questionKey === element.questionKey,
+  )
+  if (!answer) {
+    return false
+  }
+
+  if (element.type === 'photo-placeholder') {
+    if (!answer.jsonValue?.url) {
+      return false
+    }
+    store.updateElement(elementId, { defaultImageUrl: answer.jsonValue.url })
+  } else {
+    if (!answer.textValue?.trim()) {
+      return false
+    }
+    store.updateElement(elementId, { defaultText: answer.textValue })
+  }
+
+  return true
+}
+
+async function regenerateAiText(elementId: string): Promise<string> {
+  const text = await ordersApi.regenerateAiText(orderId.value, journalPageId.value, elementId)
+  store.updateElement(elementId, { previewPlaceholderText: text })
+  return text
+}
+
+provideEditorPlaceholderSync({
+  get sourceByElementId() {
+    return placeholderSourceByElementId.value
+  },
+  revertToAnswer,
+  regenerateAiText,
+})
 
 /** Ensures order-builder.store holds the order this route points at — it's the single source of
  * truth both this editor and the "Структура" rail panel read/write, regardless of entry path
@@ -377,6 +438,7 @@ onUnmounted(() => {
   provideEditorLeftPanelExtraCategories([])
   provideEditorTopAction(null)
   provideEditorPhotoPicker(null)
+  provideEditorPlaceholderSync(null)
   // Best-effort save of any pending edit before tearing down — `store.saveCanvas()` reads
   // `document.value.canvasData` synchronously before its first await, so kicking off the request
   // here (without awaiting it) still captures the latest state even though `reset()` runs right

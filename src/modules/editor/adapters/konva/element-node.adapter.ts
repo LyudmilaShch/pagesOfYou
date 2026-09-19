@@ -864,6 +864,20 @@ function buildBaseTextConfig(textEl: TextPlaceholder, displayText?: string | nul
 }
 
 function getTextPlaceholderElement(element: PageElement): TextPlaceholder | null {
+  if (element.type === 'ai-text-placeholder') {
+    // Rendered through the same Text pipeline as a real placeholder (same typography fields),
+    // but its content is never directly user-editable in this phase — only a static preview
+    // until generation exists (future phase). `defaultText` is synthesized, not a real field on
+    // AiTextPlaceholder, so resolveTextContent's normal defaultText → label fallback chain works
+    // unchanged.
+    return {
+      ...element,
+      defaultText: element.previewPlaceholderText?.trim() || `🤖 ${element.label}`,
+      maxLength: 0,
+      required: false,
+    } as unknown as TextPlaceholder
+  }
+
   if (
     element.type !== 'text-placeholder' &&
     element.type !== 'title-placeholder' &&

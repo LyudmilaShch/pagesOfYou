@@ -5,6 +5,7 @@ import type {
   CanvasTextEffectType,
 } from '../types/canvas-data.types';
 import { normalizePhotoPlaceholderElement } from './normalize-photo-placeholder.util';
+import { normalizeAiTextPlaceholderElement } from './normalize-ai-text-placeholder.util';
 
 const TEXT_TYPES = new Set([
   'text-placeholder',
@@ -90,7 +91,9 @@ export function normalizeTextPlaceholderElement(element: CanvasElement): CanvasE
 }
 
 export function normalizeCanvasElement(element: CanvasElement): CanvasElement {
-  return normalizePhotoPlaceholderElement(normalizeTextPlaceholderElement(element));
+  return normalizeAiTextPlaceholderElement(
+    normalizePhotoPlaceholderElement(normalizeTextPlaceholderElement(element)),
+  );
 }
 
 export function normalizeCanvasElements(elements: CanvasElement[]): CanvasElement[] {

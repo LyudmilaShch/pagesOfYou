@@ -3,6 +3,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
@@ -10,14 +11,18 @@ import {
   JournalSpreadLayout,
   OrderStatus,
   PageType,
+  PlaceholderSource,
   PlaceholderValueType,
   Prisma,
+  QuestionType,
 } from '@prisma/client';
 import { PrismaService } from '../../database';
 import { resolveAssetUrl } from '../../common/utils/asset-url.util';
 import { MIN_JOURNAL_SPREADS } from '../../shared/constants/journal.constants';
 import { normalizeCanvasData } from '../../shared/types/canvas-data.types';
-import { flattenTree } from '../../shared/utils/element-tree.util';
+import type { CanvasAiTextPlaceholder, CanvasLeafElement } from '../../shared/types/canvas-data.types';
+import { findAiTextLeavesForKeys, flattenTree } from '../../shared/utils/element-tree.util';
+import { AiTextGenerationService } from '../ai-text-generation/ai-text-generation.service';
 import { calculateJournalPrice } from '../../shared/utils/pricing.util';
 import {
   buildInitialJournalSlots,
@@ -39,6 +44,10 @@ import type { ReorderJournalSpreadsDto } from './dto/reorder-journal-spreads.dto
 import type { SaveJournalPageCanvasDto } from './dto/save-journal-page-canvas.dto';
 import type { SetJournalPageTemplateDto } from './dto/set-journal-page-template.dto';
 import type { UpsertPlaceholdersDto } from './dto/upsert-placeholders.dto';
+import type {
+  QuestionAnswerInputDto,
+  UpsertQuestionnaireAnswersDto,
+} from './dto/upsert-questionnaire-answers.dto';
 
 const MAGAZINE_PAGE_SUMMARY = {
   id: true,
@@ -76,6 +85,7 @@ const ORDER_INCLUDE = {
       placeholderValues: true,
     },
   },
+  questionAnswers: true,
 } satisfies Prisma.OrderInclude;
 
 type OrderWithDetails = Prisma.OrderGetPayload<{ include: typeof ORDER_INCLUDE }>;
@@ -87,6 +97,7 @@ export class OrdersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly aiTextGeneration: AiTextGenerationService,
   ) {}
 
   async createDraft(userId: string, dto: CreateDraftOrderDto) {
@@ -319,6 +330,10 @@ export class OrdersService {
           input.jsonValue !== undefined
             ? (input.jsonValue as Prisma.InputJsonValue)
             : Prisma.JsonNull,
+        // A direct write through this endpoint is always a deliberate user edit (simple editor) —
+        // distinct from a value derived by syncAnswersToPlaceholders from a questionnaire answer.
+        // Marking it OVERRIDDEN stops that sync from silently clobbering it on the next answer save.
+        source: PlaceholderSource.OVERRIDDEN,
       };
 
       if (existing) {
@@ -338,6 +353,487 @@ export class OrdersService {
     }
 
     return this.findOne(orderId, userId);
+  }
+
+  /**
+   * Saves questionnaire answers at the order level (one row per `(orderId, questionKey)` — a
+   * single answer can be bound to elements on several `JournalPage`s at once, unlike
+   * `PlaceholderValue` which is keyed per page/element) and projects the changed answers into
+   * every matching canvas element via `syncAnswersToPlaceholders`.
+   */
+  async upsertQuestionnaireAnswers(
+    orderId: string,
+    userId: string,
+    dto: UpsertQuestionnaireAnswersDto,
+  ) {
+    const order = await this.getOwnedOrderOrThrow(orderId, userId);
+
+    if (order.status !== OrderStatus.DRAFT) {
+      throw new BadRequestException('Only draft orders can be edited.');
+    }
+
+    const keys = dto.answers.map((input) => input.questionKey);
+
+    const [questions, existingAnswers] = await Promise.all([
+      this.prisma.question.findMany({
+        where: { magazineTypeId: order.magazineTypeId, key: { in: keys }, deletedAt: null },
+        include: { options: true },
+      }),
+      this.prisma.questionAnswer.findMany({
+        where: { orderId, questionKey: { in: keys } },
+      }),
+    ]);
+    const questionByKey = new Map(questions.map((question) => [question.key, question]));
+    const existingByKey = new Map(existingAnswers.map((answer) => [answer.questionKey, answer]));
+
+    const changedKeys = new Set<string>();
+
+    for (const input of dto.answers) {
+      const question = questionByKey.get(input.questionKey);
+
+      if (!question) {
+        throw new BadRequestException(`Question "${input.questionKey}" not found.`);
+      }
+
+      const { isEmpty, textValue, jsonValue } = this.resolveQuestionAnswerInput(question, input);
+      const existing = existingByKey.get(input.questionKey);
+
+      if (isEmpty) {
+        if (existing) {
+          await this.prisma.questionAnswer.delete({ where: { id: existing.id } });
+          changedKeys.add(input.questionKey);
+        }
+        continue;
+      }
+
+      await this.prisma.questionAnswer.upsert({
+        where: { orderId_questionKey: { orderId, questionKey: input.questionKey } },
+        create: { orderId, questionKey: input.questionKey, textValue, jsonValue: jsonValue ?? Prisma.JsonNull },
+        update: { textValue, jsonValue: jsonValue ?? Prisma.JsonNull },
+      });
+      changedKeys.add(input.questionKey);
+    }
+
+    if (changedKeys.size > 0) {
+      await this.syncAnswersToPlaceholders(orderId, { questionKeys: [...changedKeys] });
+      await this.generateAiTextForElements(orderId, { questionKeys: [...changedKeys] });
+    }
+
+    return this.findOne(orderId, userId);
+  }
+
+  /** Validates one answer input against its `Question.type` and normalizes it into the shape
+   * `QuestionAnswer` stores: TEXT/TEXTAREA/DATE/SELECT → `textValue`, IMAGE → `{ url }`,
+   * GALLERY → `{ urls }`. SELECT is additionally checked against the question's own options. */
+  private resolveQuestionAnswerInput(
+    question: Prisma.QuestionGetPayload<{ include: { options: true } }>,
+    input: QuestionAnswerInputDto,
+  ): { isEmpty: boolean; textValue: string | null; jsonValue: Prisma.InputJsonValue | null } {
+    switch (question.type) {
+      case QuestionType.TEXT:
+      case QuestionType.TEXTAREA:
+      case QuestionType.DATE: {
+        const value = input.textValue?.trim() || null;
+        return { isEmpty: !value, textValue: value, jsonValue: null };
+      }
+
+      case QuestionType.SELECT: {
+        const value = input.textValue?.trim() || null;
+
+        if (value && !question.options.some((option) => option.value === value)) {
+          throw new BadRequestException(`Invalid option for question "${question.key}".`);
+        }
+
+        return { isEmpty: !value, textValue: value, jsonValue: null };
+      }
+
+      case QuestionType.IMAGE: {
+        const url = typeof input.jsonValue?.url === 'string' ? input.jsonValue.url.trim() : '';
+        return {
+          isEmpty: !url,
+          textValue: null,
+          jsonValue: url ? ({ url } as Prisma.InputJsonValue) : null,
+        };
+      }
+
+      case QuestionType.GALLERY: {
+        const rawUrls = input.jsonValue?.urls;
+        const urls = Array.isArray(rawUrls)
+          ? rawUrls.filter(
+              (url): url is string => typeof url === 'string' && url.trim().length > 0,
+            )
+          : [];
+        return {
+          isEmpty: urls.length === 0,
+          textValue: null,
+          jsonValue: urls.length > 0 ? ({ urls } as Prisma.InputJsonValue) : null,
+        };
+      }
+    }
+  }
+
+  /** `text-placeholder`/`title-placeholder`/`subtitle-placeholder`/`photo-placeholder` are the
+   * only leaf types a QuestionAnswer ever writes into — `ai-text-placeholder` reads `questionKeys`
+   * but is deliberately never written here (excluded from `isFillableElement` too): its content
+   * comes from AI generation, a later phase, not a direct answer projection. */
+  private matchesQuestionKey(leaf: CanvasLeafElement, key: string): boolean {
+    if (
+      leaf.type === 'text-placeholder' ||
+      leaf.type === 'title-placeholder' ||
+      leaf.type === 'subtitle-placeholder' ||
+      leaf.type === 'photo-placeholder'
+    ) {
+      return leaf.questionKey === key;
+    }
+
+    return false;
+  }
+
+  /**
+   * Projects `QuestionAnswer` rows into every matching canvas element's `PlaceholderValue`,
+   * scoped by `questionKeys` (incremental — called after an answer changes) and/or
+   * `journalPageIds` (called after a page's template is swapped and its snapshot regenerated).
+   * With neither filter, re-applies every answer of the order across every page. Never touches a
+   * `PlaceholderValue` whose `source` is already `OVERRIDDEN`.
+   */
+  private async syncAnswersToPlaceholders(
+    orderId: string,
+    options: { questionKeys?: string[]; journalPageIds?: string[] },
+  ): Promise<void> {
+    const [answers, journalPages] = await Promise.all([
+      this.prisma.questionAnswer.findMany({
+        where: {
+          orderId,
+          ...(options.questionKeys && { questionKey: { in: options.questionKeys } }),
+        },
+      }),
+      this.prisma.journalPage.findMany({
+        where: {
+          orderId,
+          ...(options.journalPageIds && { id: { in: options.journalPageIds } }),
+        },
+        orderBy: { sortOrder: 'asc' },
+        include: { placeholderValues: true },
+      }),
+    ]);
+
+    if (journalPages.length === 0) {
+      return;
+    }
+
+    const answerByKey = new Map(answers.map((answer) => [answer.questionKey, answer]));
+    // Keys to process: explicit list when given (may include a key whose answer was just
+    // deleted, which must still clear its previously-synced elements), otherwise every answer.
+    const keysToProcess = options.questionKeys ?? [...answerByKey.keys()];
+
+    if (keysToProcess.length === 0) {
+      return;
+    }
+
+    const pagesWithLeaves = journalPages.map((page) => ({
+      page,
+      leaves: flattenTree(normalizeCanvasData(page.pageSnapshot).elements),
+    }));
+
+    const writes: Prisma.PrismaPromise<unknown>[] = [];
+
+    for (const key of keysToProcess) {
+      const answer = answerByKey.get(key) ?? null;
+
+      const matches: Array<{ journalPageId: string; element: CanvasLeafElement }> = [];
+      for (const { page, leaves } of pagesWithLeaves) {
+        for (const leaf of leaves) {
+          if (this.matchesQuestionKey(leaf, key)) {
+            matches.push({ journalPageId: page.id, element: leaf });
+          }
+        }
+      }
+
+      if (matches.length === 0) {
+        continue;
+      }
+
+      const galleryUrls = Array.isArray((answer?.jsonValue as { urls?: unknown } | null)?.urls)
+        ? ((answer!.jsonValue as { urls: string[] }).urls)
+        : null;
+
+      matches.forEach(({ journalPageId, element }, index) => {
+        const journalPage = journalPages.find((page) => page.id === journalPageId)!;
+        const existing = journalPage.placeholderValues.find(
+          (value) => value.elementId === element.id,
+        );
+
+        if (existing?.source === PlaceholderSource.OVERRIDDEN) {
+          return;
+        }
+
+        if (element.type === 'photo-placeholder') {
+          const url = galleryUrls
+            ? galleryUrls[index]
+            : (answer?.jsonValue as { url?: string } | null)?.url;
+          const trimmedUrl = typeof url === 'string' ? url.trim() : '';
+
+          if (!trimmedUrl) {
+            if (existing) {
+              writes.push(this.prisma.placeholderValue.delete({ where: { id: existing.id } }));
+            }
+            return;
+          }
+
+          const mergedJson = {
+            ...((existing?.jsonValue as Record<string, unknown> | null) ?? {}),
+            url: trimmedUrl,
+          } as Prisma.InputJsonValue;
+
+          writes.push(
+            existing
+              ? this.prisma.placeholderValue.update({
+                  where: { id: existing.id },
+                  data: {
+                    jsonValue: mergedJson,
+                    valueType: PlaceholderValueType.PHOTO,
+                    source: PlaceholderSource.AUTO,
+                  },
+                })
+              : this.prisma.placeholderValue.create({
+                  data: {
+                    journalPageId,
+                    elementId: element.id,
+                    valueType: PlaceholderValueType.PHOTO,
+                    jsonValue: mergedJson,
+                    source: PlaceholderSource.AUTO,
+                  },
+                }),
+          );
+          return;
+        }
+
+        const textValue = answer?.textValue?.trim();
+
+        if (!textValue) {
+          if (existing) {
+            writes.push(this.prisma.placeholderValue.delete({ where: { id: existing.id } }));
+          }
+          return;
+        }
+
+        const valueType = resolvePlaceholderValueType(element);
+
+        writes.push(
+          existing
+            ? this.prisma.placeholderValue.update({
+                where: { id: existing.id },
+                data: { textValue, valueType, source: PlaceholderSource.AUTO },
+              })
+            : this.prisma.placeholderValue.create({
+                data: {
+                  journalPageId,
+                  elementId: element.id,
+                  textValue,
+                  valueType,
+                  source: PlaceholderSource.AUTO,
+                },
+              }),
+        );
+      });
+    }
+
+    if (writes.length > 0) {
+      await this.prisma.$transaction(writes);
+    }
+  }
+
+  /**
+   * Generates text for `ai-text-placeholder` elements whose `questionKeys` intersect the given
+   * answers, via YandexGPT (see `AiTextGenerationService`) — mirrors `syncAnswersToPlaceholders`'s
+   * shape (same two call sites, same `questionKeys`/`journalPageIds` filters), but writes
+   * `source: AI` instead of `AUTO` and is best-effort: any failure (missing config, upstream
+   * error) is logged and swallowed here so it can never fail the answer-save request it's called
+   * from.
+   */
+  private async generateAiTextForElements(
+    orderId: string,
+    options: { questionKeys?: string[]; journalPageIds?: string[] },
+  ): Promise<void> {
+    try {
+      const journalPages = await this.prisma.journalPage.findMany({
+        where: {
+          orderId,
+          ...(options.journalPageIds && { id: { in: options.journalPageIds } }),
+        },
+        orderBy: { sortOrder: 'asc' },
+        include: { placeholderValues: true },
+      });
+
+      if (journalPages.length === 0) {
+        return;
+      }
+
+      const pagesWithLeaves = journalPages.map((page) => ({
+        page,
+        leaves: flattenTree(normalizeCanvasData(page.pageSnapshot).elements),
+      }));
+
+      const allAnswers = await this.prisma.questionAnswer.findMany({ where: { orderId } });
+      // Same "answered" criterion buildAiPromptContext uses (non-empty textValue) — gates
+      // generation below on every one of an element's questionKeys meeting it, not just one.
+      const answeredKeys = new Set(
+        allAnswers.filter((answer) => answer.textValue?.trim()).map((answer) => answer.questionKey),
+      );
+
+      // questionKeys not given (called from setJournalPageTemplate) → the new page's AI-text
+      // elements could reference any question the order has ever answered, not just recently
+      // changed ones, so consider every key with a non-empty answer.
+      const relevantKeys = options.questionKeys
+        ? new Set(options.questionKeys)
+        : new Set(allAnswers.map((answer) => answer.questionKey));
+
+      if (relevantKeys.size === 0) {
+        return;
+      }
+
+      const matches: Array<{ journalPageId: string; element: ReturnType<typeof findAiTextLeavesForKeys>[number] }> = [];
+      for (const { page, leaves } of pagesWithLeaves) {
+        for (const element of findAiTextLeavesForKeys(leaves, relevantKeys)) {
+          matches.push({ journalPageId: page.id, element });
+        }
+      }
+
+      if (matches.length === 0) {
+        return;
+      }
+
+      for (const { journalPageId, element } of matches) {
+        const journalPage = journalPages.find((page) => page.id === journalPageId)!;
+        const existing = journalPage.placeholderValues.find((value) => value.elementId === element.id);
+
+        if (existing?.source === PlaceholderSource.OVERRIDDEN) {
+          continue;
+        }
+
+        // Wait for every one of this element's feeding questions, not just whichever one(s) just
+        // changed — generating from a partial answer set (e.g. 1 of 2 questions) would need
+        // regenerating anyway once the rest come in, and risks YandexGPT inventing content for the
+        // still-missing ones.
+        if (!element.questionKeys.every((key) => answeredKeys.has(key))) {
+          continue;
+        }
+
+        const promptContext = await this.buildAiPromptContext(orderId, element);
+        if (!promptContext) {
+          continue;
+        }
+
+        const text = await this.aiTextGeneration.generateText(promptContext, element.lengthConstraint);
+
+        if (!text) {
+          continue;
+        }
+
+        const data = { textValue: text, valueType: PlaceholderValueType.TEXT, source: PlaceholderSource.AI };
+
+        if (existing) {
+          await this.prisma.placeholderValue.update({ where: { id: existing.id }, data });
+        } else {
+          await this.prisma.placeholderValue.create({
+            data: { journalPageId, elementId: element.id, ...data },
+          });
+        }
+      }
+    } catch (err) {
+      this.logger.warn(`AI text generation failed for order ${orderId}: ${err}`);
+    }
+  }
+
+  /** Builds the assembled instruction (admin `prompt` + question/answer pairs) sent to YandexGPT
+   * for one `ai-text-placeholder` element — `null` when none of its `questionKeys` have a
+   * non-empty answer yet (nothing to generate from). Shared by the best-effort batch sync above
+   * and the user-facing single-element `regenerateAiText` below. */
+  private async buildAiPromptContext(
+    orderId: string,
+    element: CanvasAiTextPlaceholder,
+  ): Promise<string | null> {
+    const [questions, answers] = await Promise.all([
+      this.prisma.question.findMany({ where: { key: { in: element.questionKeys } } }),
+      this.prisma.questionAnswer.findMany({
+        where: { orderId, questionKey: { in: element.questionKeys } },
+      }),
+    ]);
+    const questionByKey = new Map(questions.map((question) => [question.key, question]));
+    const answerByKey = new Map(answers.map((answer) => [answer.questionKey, answer]));
+
+    const pairs = element.questionKeys
+      .map((key) => {
+        const question = questionByKey.get(key);
+        const answerText = answerByKey.get(key)?.textValue?.trim();
+        return question && answerText ? `${question.label}: ${answerText}` : null;
+      })
+      .filter((line): line is string => Boolean(line));
+
+    if (pairs.length === 0) {
+      return null;
+    }
+
+    return `${element.prompt}\n\nОтветы пользователя:\n${pairs.join('\n')}`;
+  }
+
+  /**
+   * User-initiated regeneration of a single `ai-text-placeholder` element (the "Перегенерировать"
+   * button in the customer editor) — unlike `generateAiTextForElements`, this is NOT best-effort:
+   * it's a deliberate action, so failures (no answers yet, YandexGPT not configured/unavailable)
+   * are surfaced to the caller instead of being logged and swallowed.
+   */
+  async regenerateAiText(
+    orderId: string,
+    userId: string,
+    journalPageId: string,
+    elementId: string,
+  ): Promise<{ text: string }> {
+    const order = await this.getOwnedOrderOrThrow(orderId, userId);
+
+    if (order.status !== OrderStatus.DRAFT) {
+      throw new BadRequestException('Only draft orders can be edited.');
+    }
+
+    const journalPage = await this.prisma.journalPage.findFirst({
+      where: { id: journalPageId, orderId },
+    });
+
+    if (!journalPage) {
+      throw new NotFoundException('Journal page not found in this order.');
+    }
+
+    const leaves = flattenTree(normalizeCanvasData(journalPage.pageSnapshot).elements);
+    const element = leaves.find((leaf) => leaf.id === elementId);
+
+    if (!element || element.type !== 'ai-text-placeholder') {
+      throw new BadRequestException(`Element "${elementId}" is not an AI-text placeholder.`);
+    }
+
+    const promptContext = await this.buildAiPromptContext(orderId, element);
+    if (!promptContext) {
+      throw new BadRequestException('Ни на один из связанных вопросов ещё нет ответа.');
+    }
+
+    const text = await this.aiTextGeneration.generateText(promptContext, element.lengthConstraint);
+    if (!text) {
+      throw new ServiceUnavailableException(
+        'Не удалось сгенерировать текст. Попробуйте ещё раз позже.',
+      );
+    }
+
+    const existing = await this.prisma.placeholderValue.findUnique({
+      where: { journalPageId_elementId: { journalPageId, elementId } },
+    });
+    const data = { textValue: text, valueType: PlaceholderValueType.TEXT, source: PlaceholderSource.AI };
+
+    if (existing) {
+      await this.prisma.placeholderValue.update({ where: { id: existing.id }, data });
+    } else {
+      await this.prisma.placeholderValue.create({ data: { journalPageId, elementId, ...data } });
+    }
+
+    return { text };
   }
 
   /**
@@ -652,6 +1148,13 @@ export class OrdersService {
       }),
     ]);
 
+    // The new template's elements are fresh (different elementIds, possibly different
+    // questionKey bindings) — re-apply every existing questionnaire answer for the order into
+    // this one regenerated page, so already-answered questions repopulate immediately instead of
+    // staying blank until the next unrelated answer edit.
+    await this.syncAnswersToPlaceholders(orderId, { journalPageIds: [journalPageId] });
+    await this.generateAiTextForElements(orderId, { journalPageIds: [journalPageId] });
+
     return this.findOne(orderId, userId);
   }
 
@@ -961,6 +1464,29 @@ export class OrdersService {
       },
     );
 
+    const questionAnswers = (
+      order.questionAnswers as Array<Record<string, unknown>> | undefined
+    )?.map((answer) => {
+      if (!answer.jsonValue) {
+        return answer;
+      }
+
+      const json = answer.jsonValue as { url?: string; urls?: string[] };
+
+      if (typeof json.url === 'string') {
+        return { ...answer, jsonValue: { ...json, url: resolveAssetUrl(json.url, base) } };
+      }
+
+      if (Array.isArray(json.urls)) {
+        return {
+          ...answer,
+          jsonValue: { ...json, urls: json.urls.map((url) => resolveAssetUrl(url, base)) },
+        };
+      }
+
+      return answer;
+    });
+
     return {
       ...order,
       magazineType: magazineType
@@ -970,6 +1496,7 @@ export class OrdersService {
           }
         : magazineType,
       journalPages,
+      ...(questionAnswers && { questionAnswers }),
     } as T;
   }
 }

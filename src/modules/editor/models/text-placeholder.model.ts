@@ -26,5 +26,7 @@ export interface TextPlaceholder extends PageElementBase {
   maxLength: number
   required: boolean
   defaultText?: string
+  /** Question.key this element auto-fills from (AUTO sync state, future phase). */
+  questionKey?: string | null
   effect: TextEffect | null
 }

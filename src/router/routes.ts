@@ -147,6 +147,21 @@ export const routes: RouteRecordRaw[] = [
     ],
   },
   {
+    path: '/order/:orderId/photos',
+    name: 'order-photo-upload',
+    component: () => import('@/features/order-builder/pages/PhotoUploadPage.vue'),
+    // No requiresAuth — same reasoning as order-questionnaire below: works for an unsaved guest
+    // draft too, reached only via in-app navigation from CreateOrderPage.
+  },
+  {
+    path: '/order/:orderId/questionnaire',
+    name: 'order-questionnaire',
+    component: () => import('@/features/order-builder/pages/QuestionnairePage.vue'),
+    // No requiresAuth — same reasoning as journal-page-editor: works for an unsaved guest draft
+    // too (ensureOrderLoaded inside only works when the order is already in the store, i.e. this
+    // route is reached via in-app navigation from the editor, never a cold URL hit for a guest).
+  },
+  {
     path: '/order/:orderId/checkout',
     name: 'order-checkout',
     component: () => import('@/features/order-builder/pages/CheckoutPage.vue'),

@@ -5,6 +5,7 @@ export type PageElementType =
   | 'text-placeholder'
   | 'title-placeholder'
   | 'subtitle-placeholder'
+  | 'ai-text-placeholder'
   | 'shape-rectangle'
   | 'shape-circle'
   | 'shape-line'

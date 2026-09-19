@@ -15,7 +15,7 @@ import { useAuthStore } from '@/stores/auth.store'
 import { MIN_JOURNAL_SPREADS } from '../constants/journal.constants'
 import { normalizeCanvasData, type CanvasData } from '@/modules/editor/models/canvas-data.model'
 import type { MagazineType } from '../types/magazine-type'
-import type { JournalPage, OrderDetail } from '../types/order.types'
+import type { JournalPage, OrderDetail, PlaceholderInput, QuestionAnswerInput } from '../types/order.types'
 import {
   buildInitialJournalSlots,
   buildJournalPageSnapshot,
@@ -188,6 +188,9 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
             magazineType.pricePerExtraFourPages != null ? String(magazineType.pricePerExtraFourPages) : null,
         },
         journalPages,
+        // A guest's local draft can't have answers yet — the questionnaire only ever saves
+        // against a real backend order (converted from this draft on login).
+        questionAnswers: [],
         // Delivery/promo only ever get set on a real backend order, from the checkout page —
         // a local draft never reaches checkout directly (it's converted to a real order first).
         deliveryMethod: null,
@@ -391,6 +394,119 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
       )
     } catch {
       orderError.value = 'Не удалось применить шаблон.'
+      throw new Error(orderError.value)
+    } finally {
+      isSaving.value = false
+    }
+  }
+
+  /** Mirrors the backend's own upsert/clear semantics (Question saved-answer store) so a guest's
+   * local draft behaves identically to a real order once converted. */
+  function applyLocalQuestionAnswers(answers: QuestionAnswerInput[]): void {
+    if (!order.value) {
+      return
+    }
+
+    const byKey = new Map(order.value.questionAnswers.map((answer) => [answer.questionKey, answer]))
+
+    for (const input of answers) {
+      const isEmpty = !input.textValue?.trim() && !input.jsonValue
+      if (isEmpty) {
+        byKey.delete(input.questionKey)
+      } else {
+        byKey.set(input.questionKey, {
+          questionKey: input.questionKey,
+          textValue: input.textValue?.trim() || null,
+          jsonValue: input.jsonValue ?? null,
+        })
+      }
+    }
+
+    order.value.questionAnswers = [...byKey.values()]
+    saveLocalDraft(order.value.magazineTypeId, order.value)
+  }
+
+  async function saveQuestionnaireAnswers(answers: QuestionAnswerInput[]): Promise<void> {
+    if (!order.value) {
+      return
+    }
+
+    isSaving.value = true
+    orderError.value = null
+
+    try {
+      if (isLocalDraft.value) {
+        applyLocalQuestionAnswers(answers)
+        return
+      }
+
+      order.value = await ordersApi.saveQuestionnaireAnswers(order.value.id, answers)
+    } catch {
+      orderError.value = 'Не удалось сохранить ответ.'
+      throw new Error(orderError.value)
+    } finally {
+      isSaving.value = false
+    }
+  }
+
+  /** Mirrors the backend's own upsertPlaceholders semantics (see OrdersService) — a direct write
+   * is always treated as a deliberate placement, distinct from one `syncAnswersToPlaceholders`
+   * derives from a questionnaire answer, so it's marked OVERRIDDEN to stop a later answer save
+   * from silently clobbering it. The `id` is only ever read back locally (never sent anywhere), so
+   * a client-side placeholder is fine here — it becomes a real one once this draft converts to an
+   * order and every placeholder gets re-synced server-side. */
+  function applyLocalPlaceholders(journalPageId: string, values: PlaceholderInput[]): void {
+    if (!order.value) {
+      return
+    }
+
+    const pageIndex = order.value.journalPages.findIndex((page) => page.id === journalPageId)
+    if (pageIndex === -1) {
+      return
+    }
+
+    const page = order.value.journalPages[pageIndex]
+    const byElementId = new Map(page.placeholderValues.map((value) => [value.elementId, value]))
+
+    for (const input of values) {
+      byElementId.set(input.elementId, {
+        id: byElementId.get(input.elementId)?.id ?? `local-placeholder-${Date.now()}-${input.elementId}`,
+        elementId: input.elementId,
+        valueType: input.valueType,
+        textValue: input.textValue?.trim() || null,
+        jsonValue: input.jsonValue ?? null,
+        source: 'OVERRIDDEN',
+      })
+    }
+
+    order.value.journalPages[pageIndex] = {
+      ...page,
+      placeholderValues: [...byElementId.values()],
+    }
+
+    saveLocalDraft(order.value.magazineTypeId, order.value)
+  }
+
+  /** Direct placeholder write — the advanced editor's simple-fill mode, and now also the photo
+   * step's auto-placement (see PhotoUploadPage.vue), both go through this rather than a
+   * questionnaire answer. */
+  async function savePlaceholders(journalPageId: string, values: PlaceholderInput[]): Promise<void> {
+    if (!order.value) {
+      return
+    }
+
+    isSaving.value = true
+    orderError.value = null
+
+    try {
+      if (isLocalDraft.value) {
+        applyLocalPlaceholders(journalPageId, values)
+        return
+      }
+
+      order.value = await ordersApi.savePlaceholders(order.value.id, journalPageId, values)
+    } catch {
+      orderError.value = 'Не удалось сохранить фото.'
       throw new Error(orderError.value)
     } finally {
       isSaving.value = false
@@ -652,6 +768,9 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
       sortOrder: page.sortOrder,
       pageSnapshot: page.pageSnapshot,
     }))
+    // Captured before `order.value` is replaced below — the guest's locally-held answers (see
+    // `applyLocalQuestionAnswers`) have nowhere else to come from once this local draft is gone.
+    const localAnswers = order.value.questionAnswers
 
     order.value = await ordersApi.createDraft(selectedMagazineType.value.id, journalPages)
     isLocalDraft.value = false
@@ -664,6 +783,22 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     } catch {
       // Best-effort — the order itself is already created; the guest's gallery photos just stay
       // under the old guestId and won't show up in this order's gallery. Not fatal.
+    }
+
+    if (localAnswers.length > 0) {
+      try {
+        order.value = await ordersApi.saveQuestionnaireAnswers(
+          order.value.id,
+          localAnswers.map((answer) => ({
+            questionKey: answer.questionKey,
+            textValue: answer.textValue ?? undefined,
+            jsonValue: answer.jsonValue ?? undefined,
+          })),
+        )
+      } catch {
+        // Best-effort, same reasoning as claimGuestPhotos above — the order already exists; the
+        // user can re-fill the questionnaire if this push fails.
+      }
     }
 
     return order.value
@@ -735,6 +870,8 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     loadOrder,
     applyJournalPageCanvasEdit,
     setJournalPageTemplate,
+    saveQuestionnaireAnswers,
+    savePlaceholders,
     addJournalSpread,
     reorderJournalSpreads,
     getSubmitValidationError,

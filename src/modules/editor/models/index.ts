@@ -31,6 +31,11 @@ export type {
   TextVerticalAlign,
 } from './text-placeholder.model'
 export type {
+  AiTextPlaceholder,
+  LengthConstraint,
+  LengthConstraintUnit,
+} from './ai-text-placeholder.model'
+export type {
   TextEffect,
   TextEffectType,
   TextEffectCardDef,
@@ -83,6 +88,7 @@ import type {
   TitlePlaceholder,
 } from './title-placeholder.model'
 import type { TextPlaceholder } from './text-placeholder.model'
+import type { AiTextPlaceholder } from './ai-text-placeholder.model'
 import type { GroupElement } from './group-element.model'
 
 /** Leaf node — everything that isn't a container. */
@@ -91,6 +97,7 @@ export type LeafElement =
   | TextPlaceholder
   | TitlePlaceholder
   | SubtitlePlaceholder
+  | AiTextPlaceholder
   | ShapeElement
 
 export type PageElement = LeafElement | GroupElement
@@ -119,4 +126,8 @@ export function isShapeElement(element: PageElement): element is ShapeElement {
 
 export function isPhotoElement(element: PageElement): element is PhotoPlaceholder {
   return element.type === 'photo-placeholder'
+}
+
+export function isAiTextElement(element: PageElement): element is AiTextPlaceholder {
+  return element.type === 'ai-text-placeholder'
 }

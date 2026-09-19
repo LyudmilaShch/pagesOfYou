@@ -22,6 +22,7 @@ export type CanvasElementType =
   | 'text-placeholder'
   | 'title-placeholder'
   | 'subtitle-placeholder'
+  | 'ai-text-placeholder'
   | 'shape-rectangle'
   | 'shape-circle'
   | 'shape-line'
@@ -110,6 +111,8 @@ export interface CanvasPhotoPlaceholder extends CanvasElementBase {
   required: boolean;
   /** Admin default image — shown until user uploads their own */
   defaultImageUrl?: string | null;
+  /** Question.key this element auto-fills from (AUTO sync state, future phase). */
+  questionKey?: string | null;
   stroke?: string;
   strokeWidth?: number;
   strokeStyle?: 'solid' | 'dashed';
@@ -206,6 +209,47 @@ export interface CanvasTextPlaceholder extends CanvasElementBase {
   required: boolean;
   /** Admin default text — shown until user replaces it */
   defaultText?: string;
+  /** Question.key this element auto-fills from (AUTO sync state, future phase). */
+  questionKey?: string | null;
+  effect: CanvasTextEffect | null;
+}
+
+export type CanvasLengthConstraintUnit = 'characters' | 'words';
+
+export interface CanvasLengthConstraint {
+  unit: CanvasLengthConstraintUnit;
+  min: number | null;
+  max: number | null;
+}
+
+/**
+ * AI-generated text block: admin defines a prompt template + which questions feed it, the actual
+ * generated text is written back as a normal TEXT PlaceholderValue (source: AI, future phase).
+ * A distinct type (not a flag on CanvasTextPlaceholder) because it needs different admin controls
+ * (prompt, question picker, length constraint) and has no required/defaultText/maxLength — it is
+ * never directly user-fillable.
+ */
+export interface CanvasAiTextPlaceholder extends CanvasElementBase {
+  type: 'ai-text-placeholder';
+  label: string;
+  prompt: string;
+  questionKeys: string[];
+  lengthConstraint: CanvasLengthConstraint;
+  /** Static text shown on-canvas before any generation exists. */
+  previewPlaceholderText?: string;
+
+  // Same typography fields as CanvasTextPlaceholder (deliberately duplicated, not inherited).
+  fontFamily: string;
+  fontSize: number;
+  fontWeight: number;
+  fontItalic: boolean;
+  lineHeight: number;
+  letterSpacing: number;
+  textAlign: 'left' | 'center' | 'right' | 'justify';
+  verticalAlign: 'top' | 'middle' | 'bottom';
+  textTransform: 'none' | 'uppercase';
+  textSizingMode: 'auto' | 'fixed';
+  color: string;
   effect: CanvasTextEffect | null;
 }
 
@@ -237,6 +281,7 @@ export interface CanvasShapeElement extends CanvasElementBase {
 export type CanvasLeafElement =
   | CanvasPhotoPlaceholder
   | CanvasTextPlaceholder
+  | CanvasAiTextPlaceholder
   | CanvasShapeElement;
 
 /** A plain container node — a group is not a separate mechanism, just a node with children. */

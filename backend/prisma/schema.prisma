@@ -79,6 +79,18 @@ enum FieldType {
   NUMBER
 }
 
+/// Тип вопроса анкеты (Question) — активная система, привязана к MagazinePage/canvasData.
+/// Не путать с FieldType выше (legacy, принадлежит неиспользуемой системе
+/// SpreadDesign/FieldDefinition).
+enum QuestionType {
+  TEXT
+  TEXTAREA
+  DATE
+  IMAGE
+  GALLERY
+  SELECT
+}
+
 /// Маркетинговый бейдж на карточке типа журнала
 enum BadgeType {
   TOP // Топ продаж
@@ -107,6 +119,17 @@ enum PlaceholderValueType {
   TEXT
   PHOTO
   DATE
+}
+
+/// Кто фактически управляет содержимым PlaceholderValue. Пока не используется в рантайме
+/// (заполняется дефолтом AUTO) — задел на этап синхронизации анкеты/AI/полного редактора.
+enum PlaceholderSource {
+  /// Значение полностью управляется ответом анкеты
+  AUTO
+  /// Значение сгенерировано AI на основе промпта и ответов анкеты
+  AI
+  /// Пользователь вручную изменил значение в полном редакторе — имеет приоритет
+  OVERRIDDEN
 }
 
 /// Провайдеры оплаты
@@ -286,6 +309,7 @@ model MagazineType {
   pages           MagazinePage[]
   defaultSpreads  MagazineDefaultSpread[]
   orders          Order[]
+  questions       Question[]
 
   // Список для пользователей (отсортированный каталог)
   @@index([isActive, sortOrder])
@@ -483,6 +507,61 @@ model MagazinePage {
   @@map("magazine_pages")
 }
 
+/// Вопрос анкеты — принадлежит типу журнала целиком, не конкретной странице (один вопрос может
+/// быть использован элементами на нескольких страницах шаблона).
+/// Привязка к canvas-элементам (в т.ч. на других страницах того же MagazineType) происходит
+/// не через FK, а через строковый `key`, на который элемент ссылается своим `questionKey`/
+/// `questionKeys` внутри `MagazinePage.canvasData` — см. паттерн PlaceholderValue.elementId.
+model Question {
+  id             String @id @default(cuid())
+  magazineTypeId String
+
+  /// Стабильный идентификатор, на который ссылаются элементы канваса (questionKey/questionKeys).
+  /// Уникален в рамках magazineTypeId, не привязан к конкретной странице — один и тот же вопрос
+  /// может быть использован элементами на нескольких страницах шаблона (например «Имя» — и на
+  /// обложке, и на развороте). Какой шаг анкеты показывает вопрос определяется на лету, по
+  /// первой странице в порядке журнала, где реально встречается элемент с этим key — см.
+  /// buildQuestionnaireFlow на фронтенде.
+  key         String
+  type        QuestionType
+  label       String
+  helpText    String?
+  placeholder String?
+  isRequired  Boolean      @default(false)
+  sortOrder   Int          @default(0)
+
+  /// Ограничения, зависящие от типа (например { minLength, maxLength } для TEXT/TEXTAREA,
+  /// { minCount, maxCount } для IMAGE/GALLERY). Не валидируется до этапа рендеринга анкеты —
+  /// добавлено заранее, чтобы избежать миграции позже.
+  validationRules Json?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  magazineType MagazineType     @relation(fields: [magazineTypeId], references: [id], onDelete: Cascade)
+  options      QuestionOption[]
+
+  @@unique([magazineTypeId, key])
+  @@index([magazineTypeId, sortOrder])
+  @@index([deletedAt])
+  @@map("questions")
+}
+
+/// Вариант выбора для вопроса типа SELECT
+model QuestionOption {
+  id         String @id @default(cuid())
+  questionId String
+  label      String
+  value      String
+  sortOrder  Int    @default(0)
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@index([questionId, sortOrder])
+  @@map("question_options")
+}
+
 /// Шаблон разворота по умолчанию для нового журнала пользователя
 model MagazineDefaultSpread {
   id             String @id @default(cuid())
@@ -621,6 +700,11 @@ model PlaceholderValue {
   textValue     String?              @db.Text
   jsonValue     Json?
 
+  /// Кто управляет значением: AUTO (записано синхронизацией из QuestionAnswer по questionKey),
+  /// AI (будущий этап генерации), OVERRIDDEN (пользователь отредактировал вручную через
+  /// upsertPlaceholders — синхронизация такие строки больше не трогает).
+  source PlaceholderSource @default(AUTO)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -629,6 +713,28 @@ model PlaceholderValue {
   @@unique([journalPageId, elementId])
   @@index([journalPageId])
   @@map("placeholder_values")
+}
+
+/// Ответ пользователя на вопрос анкеты, на уровне заказа (не страницы) — один вопрос может
+/// синхронизироваться сразу в несколько canvas-элементов (в т.ч. на разных JournalPage),
+/// поэтому не привязан к конкретному elementId, в отличие от PlaceholderValue. Привязка к
+/// элементам — по строковому questionKey/questionKeys внутри JournalPage.pageSnapshot, так же
+/// как Question привязывается к шаблону в MagazinePage.canvasData (см. Question.key).
+model QuestionAnswer {
+  id          String  @id @default(cuid())
+  orderId     String
+  questionKey String
+  textValue   String? @db.Text
+  jsonValue   Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([orderId, questionKey])
+  @@index([orderId])
+  @@map("question_answers")
 }
 
 // =============================================================================
@@ -683,11 +789,12 @@ model Order {
   user          User           @relation(fields: [userId], references: [id])
   magazineType  MagazineType   @relation(fields: [magazineTypeId], references: [id])
   magazineStyle MagazineStyle? @relation(fields: [magazineStyleId], references: [id])
-  journalPages  JournalPage[]
-  spreads       OrderSpread[]
-  payments      Payment[]
-  events        OrderEvent[]
-  photos        UploadedFile[]
+  journalPages    JournalPage[]
+  spreads         OrderSpread[]
+  payments        Payment[]
+  events          OrderEvent[]
+  photos          UploadedFile[]
+  questionAnswers QuestionAnswer[]
 
   @@index([userId, status])
   @@index([status, createdAt])
