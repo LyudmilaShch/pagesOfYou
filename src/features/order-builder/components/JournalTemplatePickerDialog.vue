@@ -3,6 +3,9 @@
     <v-card>
       <v-card-title>Выбор шаблона</v-card-title>
       <v-card-subtitle>{{ slotLabel }}</v-card-subtitle>
+      <p v-if="sequence" class="journal-template-picker__sequence">
+        Разворот {{ sequence.current }} из {{ sequence.total }} новых — выберите шаблон по очереди для каждого
+      </p>
       <v-divider />
 
       <v-card-text>
@@ -110,7 +113,7 @@
         <v-spacer />
         <v-btn variant="text" @click="handleClose(false)">Отмена</v-btn>
         <v-btn color="primary" :disabled="!canApply" :loading="loading" @click="handleApply">
-          Применить
+          {{ applyButtonLabel }}
         </v-btn>
       </v-card-actions>
     </v-card>
@@ -133,6 +136,10 @@ const props = defineProps<{
   journalPage: JournalPage | null
   templates: TemplateCatalog
   loading?: boolean
+  /** Set only while picking templates for several newly-added spreads one after another (see
+   * QuestionnaireBook.vue's `handleAddSpread`) — shows "Разворот N из M" and relabels the apply
+   * button, so it reads as a queue instead of a single one-off choice. */
+  sequence?: { current: number; total: number } | null
 }>()
 
 const emit = defineEmits<{
@@ -168,6 +175,10 @@ const activeTemplates = computed((): CatalogMagazinePage[] => {
 
   return props.templates.spread
 })
+
+const applyButtonLabel = computed(() =>
+  props.sequence && props.sequence.current < props.sequence.total ? 'Далее' : 'Применить',
+)
 
 const canApply = computed(() => {
   if (!props.journalPage) {
@@ -224,6 +235,14 @@ function handleApply(): void {
 </script>
 
 <style scoped lang="scss">
+.journal-template-picker__sequence {
+  margin: 0;
+  padding: 0 16px $spacing-3;
+  font-size: $font-size-caption;
+  font-weight: $font-weight-medium;
+  color: $accent;
+}
+
 .journal-template-picker__layout-toggle {
   width: 100%;
 

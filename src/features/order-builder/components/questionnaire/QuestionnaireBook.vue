@@ -40,6 +40,21 @@
           {{ Math.round((viewingFill.answered / viewingFill.total) * 100) }}%
         </span>
 
+        <v-tooltip v-if="!turning" location="top" content-class="editor-tooltip--arrow-top">
+          <template #activator="{ props: tooltipProps }">
+            <button
+              v-bind="tooltipProps"
+              type="button"
+              class="questionnaire-book__template-btn"
+              aria-label="Сменить шаблон разворота"
+              @click="openTemplatePicker"
+            >
+              <v-icon size="16">mdi-view-grid-outline</v-icon>
+            </button>
+          </template>
+          Сменить шаблон
+        </v-tooltip>
+
         <div
           v-if="turning && flapGeometry"
           class="questionnaire-book__flap"
@@ -97,11 +112,35 @@
         <v-icon size="18">mdi-chevron-right</v-icon>
       </button>
     </div>
+
+    <button
+      type="button"
+      class="questionnaire-book__add-spread"
+      :disabled="store.isSaving"
+      @click="handleAddSpread"
+    >
+      <v-icon size="16">mdi-plus</v-icon>
+      Добавить 4 страницы
+    </button>
+
+    <JournalTemplatePickerDialog
+      :open="templatePicker.open"
+      :journal-page="templatePicker.page"
+      :sequence="templatePicker.sequence"
+      :templates="store.groupedTemplates"
+      :loading="store.isSaving"
+      @close="closeTemplatePicker"
+      @apply="handleApplyTemplate"
+    />
+
+    <v-snackbar v-model="snackbar.show" :color="snackbar.color" location="bottom center" :timeout="3000">
+      {{ snackbar.text }}
+    </v-snackbar>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 
 import JournalSpreadThumbnail from '@/modules/editor/components/JournalSpreadThumbnail.vue'
 import type { CanvasData } from '@/modules/editor/models/canvas-data.model'
@@ -113,6 +152,11 @@ import {
 } from '@/modules/editor/constants/page.constants'
 import { getJournalPageDisplayName } from '../../utils/journal-structure.util'
 import type { JournalPage } from '../../types/order.types'
+import type { SetJournalPageTemplatePayload } from '../../api/orders.api'
+import { useOrderBuilderStore } from '../../stores/order-builder.store'
+import JournalTemplatePickerDialog from '../JournalTemplatePickerDialog.vue'
+
+const store = useOrderBuilderStore()
 
 // The frame's own shape switches between these two: full spread width/ratio whenever both halves
 // are (or are about to be — see `frameStyle`) in play, a single page's width/ratio when only a lone
@@ -381,6 +425,101 @@ function flip(direction: 'next' | 'prev'): void {
   )
 }
 
+const snackbar = reactive({ show: false, text: '', color: 'success' as 'success' | 'error' })
+
+function notify(text: string, color: 'success' | 'error' = 'success'): void {
+  snackbar.text = text
+  snackbar.color = color
+  snackbar.show = true
+}
+
+const templatePicker = reactive<{
+  open: boolean
+  page: JournalPage | null
+  sequence: { current: number; total: number } | null
+}>({ open: false, page: null, sequence: null })
+
+// Queue of spreads still waiting for a template choice — empty outside the "just added N new
+// spreads" flow (see `handleAddSpread`), so `advanceTemplateQueue` closing the dialog once it's
+// empty also correctly closes a single ad-hoc pick (`openTemplatePicker`) after just one apply.
+const templateQueue = ref<JournalPage[]>([])
+const templateQueueTotal = ref(0)
+
+function openTemplatePicker(): void {
+  const page = props.pages.find((item) => item.id === viewingPageId.value) ?? null
+  if (!page) {
+    return
+  }
+  templateQueue.value = []
+  templateQueueTotal.value = 0
+  templatePicker.page = page
+  templatePicker.sequence = null
+  templatePicker.open = true
+}
+
+function closeTemplatePicker(): void {
+  templatePicker.open = false
+  templatePicker.page = null
+  templatePicker.sequence = null
+  templateQueue.value = []
+  templateQueueTotal.value = 0
+}
+
+/** Pops the next spread off `templateQueue` and reopens the dialog on it, or closes the dialog
+ * once the queue (and any single ad-hoc pick) is exhausted. */
+function advanceTemplateQueue(): void {
+  const next = templateQueue.value.shift()
+  if (!next) {
+    closeTemplatePicker()
+    return
+  }
+
+  const current = templateQueueTotal.value - templateQueue.value.length
+  templatePicker.page = next
+  templatePicker.sequence = { current, total: templateQueueTotal.value }
+  templatePicker.open = true
+}
+
+async function handleApplyTemplate(payload: SetJournalPageTemplatePayload): Promise<void> {
+  if (!templatePicker.page) {
+    return
+  }
+
+  try {
+    await store.setJournalPageTemplate(templatePicker.page.id, payload)
+    notify('Шаблон применён')
+    advanceTemplateQueue()
+  } catch {
+    notify(store.orderError ?? 'Не удалось применить шаблон', 'error')
+  }
+}
+
+async function handleAddSpread(): Promise<void> {
+  // Adds 2 spreads (4 pages) at once, both starting on the same auto-picked default template —
+  // see order-builder.store.ts's addJournalSpread doc comment. Diffing spread ids before/after
+  // queues both new spreads through the template picker right away, one after another, instead of
+  // leaving the default silently applied to either.
+  const previousSpreadIds = new Set(
+    (store.order?.journalPages ?? []).filter((page) => page.slotType === 'SPREAD').map((page) => page.id),
+  )
+
+  try {
+    await store.addJournalSpread()
+    notify('4 страницы добавлены')
+
+    const newSpreads = (store.order?.journalPages ?? []).filter(
+      (page) => page.slotType === 'SPREAD' && !previousSpreadIds.has(page.id),
+    )
+    if (newSpreads.length > 0) {
+      templateQueue.value = newSpreads
+      templateQueueTotal.value = newSpreads.length
+      advanceTemplateQueue()
+    }
+  } catch {
+    notify(store.orderError ?? 'Не удалось добавить страницы', 'error')
+  }
+}
+
 onBeforeUnmount(() => {
   timers.forEach(clearTimeout)
   timers = []
@@ -501,6 +640,32 @@ onBeforeUnmount(() => {
   background: $text-secondary;
 }
 
+// Bottom-right, not top-right — the fill badge already owns that corner (see
+// `.questionnaire-book__badge` above).
+.questionnaire-book__template-btn {
+  position: absolute;
+  bottom: $spacing-2;
+  right: $spacing-2;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 50%;
+  background: rgba($white, 0.92);
+  color: $text-primary;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  transition: background 0.15s ease, transform 0.15s ease;
+
+  &:hover {
+    background: $white;
+    transform: scale(1.06);
+  }
+}
+
 .questionnaire-book__flap {
   position: absolute;
   top: 0;
@@ -559,5 +724,29 @@ onBeforeUnmount(() => {
   min-width: 160px;
   text-align: center;
   white-space: nowrap;
+}
+
+.questionnaire-book__add-spread {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: $spacing-1 $spacing-3;
+  border: 1px dashed $border-default;
+  border-radius: 999px;
+  background: transparent;
+  color: $text-secondary;
+  font-size: $font-size-body-sm;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+
+  &:hover:not(:disabled) {
+    border-color: $accent;
+    color: $accent;
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.5;
+  }
 }
 </style>
