@@ -293,8 +293,14 @@ export class OrdersService {
 
     for (const input of dto.values) {
       const element = elementMap.get(input.elementId);
+      // A manual edit of an ai-text-placeholder's generated text (the "pencil" icon on the
+      // questionnaire book preview) also goes through this endpoint — deliberately NOT folded
+      // into `isFillableElement` itself, since that's also used for required-field/print-
+      // completeness checks an ai-text-placeholder must stay excluded from (it's never directly
+      // "required" — its content only ever comes from generation or this manual override).
+      const isAiTextManualEdit = element?.type === 'ai-text-placeholder';
 
-      if (!element || !isFillableElement(element)) {
+      if (!element || (!isFillableElement(element) && !isAiTextManualEdit)) {
         throw new BadRequestException(
           `Element "${input.elementId}" is not a fillable placeholder.`,
         );

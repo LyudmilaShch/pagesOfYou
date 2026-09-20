@@ -162,6 +162,13 @@ export const routes: RouteRecordRaw[] = [
     // route is reached via in-app navigation from the editor, never a cold URL hit for a guest).
   },
   {
+    path: '/order/:orderId/review',
+    name: 'order-review',
+    component: () => import('@/features/order-builder/pages/JournalReviewPage.vue'),
+    // No requiresAuth — same reasoning as order-questionnaire above; the missing-photos gate and
+    // guest-draft-to-order conversion happen inside the page itself, right before checkout.
+  },
+  {
     path: '/order/:orderId/checkout',
     name: 'order-checkout',
     component: () => import('@/features/order-builder/pages/CheckoutPage.vue'),

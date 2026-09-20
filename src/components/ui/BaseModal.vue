@@ -11,7 +11,11 @@
       >
         <div
           class="base-modal__panel"
-          :class="{ 'base-modal__panel--fit-viewport': fitViewport }"
+          :class="{
+            'base-modal__panel--fit-viewport': fitViewport,
+            'base-modal__panel--wide': wide,
+            'base-modal__panel--narrow': narrow,
+          }"
         >
           <button
             type="button"
@@ -34,6 +38,13 @@ defineProps<{
   modelValue: boolean
   labelledby?: string
   fitViewport?: boolean
+  /** Raises the panel's max-width from 960px to 1200px — for content that's cramped at the
+   * default size (e.g. a two-column layout with a live preview), rather than every modal. */
+  wide?: boolean
+  /** Lowers the panel's max-width from 960px to 420px — for short, single-column notices (an
+   * icon, a line or two of text, stacked buttons) that otherwise sit lost in a mostly-empty
+   * 960px-wide box. Takes precedence if both `wide` and `narrow` are somehow set. */
+  narrow?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -91,6 +102,14 @@ const handleOverlayClick = () => {
       @include tablet-up {
         height: calc(100dvh - #{$spacing-6} * 2);
       }
+    }
+
+    &--wide {
+      width: min(100%, 1200px);
+    }
+
+    &--narrow {
+      width: min(100%, 420px);
     }
   }
 

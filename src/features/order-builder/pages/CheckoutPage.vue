@@ -644,6 +644,12 @@ function pluralizeDays(n: number): string {
   display: flex;
   gap: $spacing-3;
   margin-bottom: $spacing-4;
+
+  // Side-by-side flex:1 buttons get cramped on narrow phones — "Курьером до двери" wraps awkwardly
+  // at half-width. Stacked, each keeps a comfortable touch target and its label on one line.
+  @include mobile-only {
+    flex-direction: column;
+  }
 }
 
 .checkout-method {

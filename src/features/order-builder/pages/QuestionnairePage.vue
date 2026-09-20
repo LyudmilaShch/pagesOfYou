@@ -17,13 +17,17 @@
       <div class="questionnaire-page__topbar-inner">
         <router-link to="/" class="questionnaire-page__brand">Фолио</router-link>
 
-        <div class="questionnaire-page__steps-label" aria-label="Шаг 3 из 4">
+        <div class="questionnaire-page__steps-label" aria-label="Шаг 3 из 5">
           <span class="questionnaire-page__steps-current">3</span>
           <span class="questionnaire-page__steps-sep">/</span>
-          <span class="questionnaire-page__steps-total">4</span>
+          <span class="questionnaire-page__steps-total">5</span>
         </div>
       </div>
     </header>
+
+    <div class="questionnaire-page__step-progress">
+      <v-progress-linear :model-value="ORDER_STEP_PROGRESS" color="primary" bg-opacity="0.15" height="3" />
+    </div>
 
     <!-- ── Body: 3D spread book (left) + question (right) ──────────────────────────────────── -->
     <div class="questionnaire-page__body">
@@ -37,6 +41,9 @@
             :fill-by-page-id="fillByPageId"
             :pending-element-ids="pendingAiElementIds"
             :drop-enabled="false"
+            ai-text-edit-enabled
+            @edit-ai-text="openAiTextEditor"
+            @regenerate-ai-text="handleRegenerateAiText"
           />
         </div>
 
@@ -44,17 +51,6 @@
           <div class="questionnaire-page__main-scroll">
           <div class="questionnaire-page__container">
             <div v-if="currentStep" :key="currentStep.journalPageId" class="questionnaire-page__question">
-              <div class="questionnaire-page__progress">
-                <!-- Explicit bg-opacity: the theme sets --v-border-opacity to 1 (for actual borders
-                     elsewhere), which v-progress-linear's track also reads by default — without this,
-                     the unfilled track renders fully opaque in the same colour as the fill, making the
-                     bar look 100% full at any progress value. -->
-                <v-progress-linear :model-value="progressPercent" color="primary" bg-opacity="0.15" height="8" rounded />
-                <span class="questionnaire-page__counter text-caption text-secondary">
-                  Шаг {{ stepNumber }} из {{ totalSteps }}
-                </span>
-              </div>
-
               <header class="questionnaire-page__intro">
                 <p class="questionnaire-page__eyebrow text-caption text-secondary">Шаг 3 — Анкета</p>
                 <h1 class="questionnaire-page__title text-h3">{{ currentStepLabel }}</h1>
@@ -162,10 +158,26 @@
 
     <!-- ── Bottom action bar — same chrome as Шаг 1: moves between order-creation steps ─────── -->
     <footer class="questionnaire-page__actions">
+      <div class="questionnaire-page__footer-float">
+        <p class="questionnaire-page__stats">
+          Отвечено вопросов · {{ answeredQuestionsCount }} из {{ totalQuestions }}
+        </p>
+
+        <button
+          v-if="missingPhotoCount > 0"
+          type="button"
+          class="questionnaire-page__missing-photos-pill"
+          @click="missingPhotosModalOpen = true"
+        >
+          <v-icon size="16">mdi-alert-outline</v-icon>
+          Не хватает {{ missingPhotoCount }} фото
+        </button>
+      </div>
+
       <div class="questionnaire-page__actions-inner">
         <v-btn
           variant="outlined"
-          size="large"
+          :size="isMobileViewport ? 'default' : 'large'"
           color="primary"
           class="questionnaire-page__btn-back"
           @click="goToPreviousStep"
@@ -175,7 +187,7 @@
 
         <v-btn
           color="primary"
-          size="large"
+          :size="isMobileViewport ? 'default' : 'large'"
           class="questionnaire-page__btn-next"
           :disabled="!allRequiredAnswered"
           :loading="isFinishing"
@@ -187,16 +199,24 @@
       </div>
     </footer>
 
-    <AuthModal
-      :open="authModalState.open"
-      message="Чтобы оформить заказ, войдите в аккаунт"
-      @success="handleAuthSuccess"
-      @close="handleAuthClose"
-    />
-
     <v-snackbar :model-value="submitErrorMessage !== null" color="error" @update:model-value="submitErrorMessage = null">
       {{ submitErrorMessage }}
     </v-snackbar>
+
+    <AiTextEditModal
+      :open="aiTextEditModal.open"
+      :initial-text="aiTextEditModal.initialText"
+      :length-constraint="aiTextEditModal.lengthConstraint"
+      :loading="aiTextEditModal.saving"
+      @close="closeAiTextEditor"
+      @save="saveAiTextEdit"
+    />
+
+    <MissingPhotosModal
+      :open="missingPhotosModalOpen"
+      @close="missingPhotosModalOpen = false"
+      @continue="continueAfterPhotosFilled"
+    />
   </div>
 </template>
 
@@ -205,9 +225,9 @@ import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { normalizeCanvasData } from '@/modules/editor/models/canvas-data.model'
+import { isAiTextElement } from '@/modules/editor/models'
+import type { AiTextPlaceholder, LengthConstraint } from '@/modules/editor/models'
 import { flattenTree } from '@/modules/editor/utils/element-tree.util'
-import { useAuthStore } from '@/stores/auth.store'
-import AuthModal from '@/components/auth/AuthModal.vue'
 import { catalogApi } from '../api/catalog.api'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
 import { getGalleryScope } from '../utils/photo-gallery-scope.util'
@@ -227,43 +247,26 @@ import type { QuestionAnswer, QuestionAnswerJsonValue } from '../types/order.typ
 import QuestionImageField from '../components/questionnaire/QuestionImageField.vue'
 import QuestionGalleryField from '../components/questionnaire/QuestionGalleryField.vue'
 import QuestionnaireBook from '../components/questionnaire/QuestionnaireBook.vue'
+import AiTextEditModal from '../components/AiTextEditModal.vue'
+import MissingPhotosModal from '../components/MissingPhotosModal.vue'
+import { collectPhotoSlotPreview, countEmptyPhotoSlots } from '../utils/missing-photos.util'
 
 const route = useRoute()
 const router = useRouter()
 const store = useOrderBuilderStore()
-const authStore = useAuthStore()
 
 const orderId = computed(() => route.params.orderId as string)
 const galleryScope = computed(() => getGalleryScope(store))
 
-// Promise-based bridge to <AuthModal> — same pattern as JournalPageEditorPage.vue's own
-// requireAuth(): a guest (local draft) must sign in before it can become a real backend order,
-// which `finish()` needs before it can hand off to checkout.
-const authModalState = reactive<{ open: boolean; resolve: ((success: boolean) => void) | null }>({
-  open: false,
-  resolve: null,
-})
+// This is Шаг 3 of 5 — same hardcoded step number as .questionnaire-page__steps-label below.
+const ORDER_STEP_PROGRESS = (3 / 5) * 100
 
-function requireAuth(): Promise<boolean> {
-  if (authStore.isAuthenticated) {
-    return Promise.resolve(true)
-  }
-  return new Promise((resolve) => {
-    authModalState.resolve = resolve
-    authModalState.open = true
-  })
-}
+// Same threshold as the `mobile-only` SCSS mixin (`$breakpoint-mobile-max: 767px`).
+const isMobileViewport = ref(false)
+let mobileMediaQuery: MediaQueryList | null = null
 
-function handleAuthSuccess(): void {
-  authModalState.open = false
-  authModalState.resolve?.(true)
-  authModalState.resolve = null
-}
-
-function handleAuthClose(): void {
-  authModalState.open = false
-  authModalState.resolve?.(false)
-  authModalState.resolve = null
+function updateIsMobileViewport(): void {
+  isMobileViewport.value = mobileMediaQuery?.matches ?? false
 }
 
 const isLoading = ref(true)
@@ -461,15 +464,11 @@ function handleBeforeUnload(): void {
 const allQuestions = computed<Question[]>(() => flow.value.steps.flatMap((step) => step.questions))
 const totalQuestions = computed(() => allQuestions.value.length)
 const totalSteps = computed(() => flow.value.steps.length)
-const stepNumber = computed(() => currentIndex.value + 1)
 // Fills as questions actually get answered (skipping ahead without answering doesn't move it) —
 // not just "how far into the list is the current position", which would fill even on skips and
 // jump backwards when the user steps back to an earlier step.
 const answeredQuestionsCount = computed(
   () => allQuestions.value.filter((question) => isQuestionAnswered(question, answersAsMap.value)).length,
-)
-const progressPercent = computed(() =>
-  totalQuestions.value === 0 ? 0 : Math.round((answeredQuestionsCount.value / totalQuestions.value) * 100),
 )
 const currentStep = computed<QuestionnaireStep | null>(() => flow.value.steps[currentIndex.value] ?? null)
 // >= rather than === so a questionnaire with zero steps trivially has no "next step" either — the
@@ -542,6 +541,14 @@ const allRequiredAnswered = computed(() =>
   allQuestions.value
     .filter((question) => question.isRequired)
     .every((question) => isQuestionAnswered(question, answersAsMap.value)),
+)
+
+// Bottom-bar pill next to "Продолжить" — a heads-up, not a gate (unlike `allRequiredAnswered`
+// above): "Продолжить" still finishes the questionnaire either way, `finish()` itself is what
+// opens MissingPhotosModal.vue if this is still non-zero at that point. Reuses the exact same
+// check as that gate so the two never disagree about what counts as "missing".
+const missingPhotoCount = computed(() =>
+  countEmptyPhotoSlots(collectPhotoSlotPreview(store.order?.journalPages ?? [])),
 )
 
 const fillByPageId = computed(() => {
@@ -709,15 +716,18 @@ function goToPreviousStep(): void {
 
 const isFinishing = ref(false)
 const submitErrorMessage = ref<string | null>(null)
+const missingPhotosModalOpen = ref(false)
 
 /** Waits for the last edit's save (and any AI generation it triggers) to actually land in
- * `store.order` before navigating — otherwise a redirect into the advanced editor below would
- * mount from the pre-generation snapshot and the AI-text block would appear empty until a manual
- * page reload. By this point the journal is normally already complete (photos auto-placed in
- * Шаг 2, every required question answered here — the bottom bar's "Продолжить" is gated on that),
- * so the common case skips the advanced editor entirely and goes straight to checkout; the editor
- * is only a fallback for the few things this flow can't guarantee on its own (e.g. too few photos
- * uploaded to fill every slot). */
+ * `store.order` before navigating to the review step — otherwise its book would mount from the
+ * pre-generation snapshot and an AI-text block would appear empty until a manual page reload. The
+ * missing-photos check happens right here, immediately after the questionnaire — not deferred to
+ * the review step — so an incomplete journal gets caught at the earliest possible point instead of
+ * only surfacing after the user has already clicked through to review it. JournalReviewPage.vue
+ * still repeats the same check as a safety net right before checkout (its own crop/replace/edit
+ * actions can't actually empty a slot, so it should never actually trigger there in practice —
+ * other required-field validation and the guest-draft-to-order conversion live there instead,
+ * since those are genuinely about the final checkout handoff). */
 async function finish(): Promise<void> {
   if (isFinishing.value) {
     return
@@ -727,45 +737,124 @@ async function finish(): Promise<void> {
   try {
     await flushAnswers()
 
-    // The advanced per-element editor is no longer something a customer can be sent to — this is
-    // the only remaining gap it used to catch (a required photo/text slot with no questionKey of
-    // its own, so nothing in this wizard's own required-field gating tracks it directly; the most
-    // likely real cause is simply not enough photos uploaded in Шаг 2 to fill every slot). Surface
-    // it in place instead and let the user go back a step themselves.
-    if (store.getSubmitValidationError()) {
-      submitErrorMessage.value =
-        'Не хватает содержимого для обязательных мест в журнале — возможно, загружено недостаточно ' +
-        'фото. Вернитесь на шаг «Фото» и загрузите ещё, затем попробуйте снова.'
+    const missingPhotoPages = collectPhotoSlotPreview(store.order?.journalPages ?? [])
+    if (missingPhotoPages.some((page) => page.slots.some((slot) => !slot.url))) {
+      missingPhotosModalOpen.value = true
       return
-    }
-
-    // Checkout is a real backend order's page (`requiresAuth`) — a guest's local draft has to
-    // become one first, same as JournalPageEditorPage.vue's own "Оформить заказ" flow.
-    if (store.isLocalDraft) {
-      const authenticated = await requireAuth()
-      if (!authenticated) {
-        return
-      }
-      await store.convertLocalDraftToOrder()
     }
 
     if (!store.order) {
       return
     }
-    await router.push({ name: 'order-checkout', params: { orderId: store.order.id } })
+    await router.push({ name: 'order-review', params: { orderId: store.order.id } })
   } finally {
     isFinishing.value = false
+  }
+}
+
+/** MissingPhotosModal's own "Продолжить" — only shown once every slot it tracks is filled, so
+ * re-running `finish()` here just falls through its now-satisfied photo check onto the review
+ * navigation. */
+function continueAfterPhotosFilled(): void {
+  missingPhotosModalOpen.value = false
+  void finish()
+}
+
+// ---------------------------------------------------------------------------
+// AI-text manual edit / regenerate (hover icons on the book preview)
+// ---------------------------------------------------------------------------
+
+const aiTextEditModal = reactive<{
+  open: boolean
+  journalPageId: string | null
+  elementId: string | null
+  initialText: string
+  lengthConstraint: LengthConstraint | null
+  saving: boolean
+}>({
+  open: false,
+  journalPageId: null,
+  elementId: null,
+  initialText: '',
+  lengthConstraint: null,
+  saving: false,
+})
+
+/** `canvasDataByPageId` already carries the real saved text (AI-generated or previously
+ * overridden) on `previewPlaceholderText` — see mergeElementWithPlaceholderValue — so this reads
+ * exactly what's on screen, no separate lookup against placeholderValues needed. */
+function findAiTextLeaf(journalPageId: string, elementId: string): AiTextPlaceholder | null {
+  const canvas = canvasDataByPageId.value.get(journalPageId)
+  if (!canvas) {
+    return null
+  }
+  const leaf = flattenTree(canvas.elements).find((item) => item.id === elementId)
+  return leaf && isAiTextElement(leaf) ? leaf : null
+}
+
+function openAiTextEditor(journalPageId: string, elementId: string): void {
+  const leaf = findAiTextLeaf(journalPageId, elementId)
+  if (!leaf) {
+    return
+  }
+  aiTextEditModal.journalPageId = journalPageId
+  aiTextEditModal.elementId = elementId
+  aiTextEditModal.initialText = leaf.previewPlaceholderText ?? ''
+  aiTextEditModal.lengthConstraint = leaf.lengthConstraint
+  aiTextEditModal.open = true
+}
+
+function closeAiTextEditor(): void {
+  aiTextEditModal.open = false
+}
+
+async function saveAiTextEdit(text: string): Promise<void> {
+  if (!aiTextEditModal.journalPageId || !aiTextEditModal.elementId) {
+    return
+  }
+
+  aiTextEditModal.saving = true
+  try {
+    await store.savePlaceholders(aiTextEditModal.journalPageId, [
+      { elementId: aiTextEditModal.elementId, valueType: 'TEXT', textValue: text },
+    ])
+    aiTextEditModal.open = false
+  } catch {
+    // orderError is set in the store — keep the modal open so the user can retry.
+  } finally {
+    aiTextEditModal.saving = false
+  }
+}
+
+/** A fresh AI variant with the same feeding answers — see order-builder.store.ts's
+ * `regenerateAiText`. Needs a real backend order (YandexGPT runs server-side), so a guest still on
+ * a local draft gets a message instead of a silent no-op; the manual edit above works either way. */
+async function handleRegenerateAiText(journalPageId: string, elementId: string): Promise<void> {
+  if (store.isLocalDraft) {
+    submitErrorMessage.value = 'Сначала сохраните заказ, чтобы сгенерировать новый вариант текста.'
+    return
+  }
+
+  try {
+    await store.regenerateAiText(journalPageId, elementId)
+  } catch {
+    submitErrorMessage.value = store.orderError ?? 'Не удалось сгенерировать новый вариант текста.'
   }
 }
 
 onMounted(() => {
   void load()
   window.addEventListener('beforeunload', handleBeforeUnload)
+
+  mobileMediaQuery = window.matchMedia('(max-width: 767px)')
+  updateIsMobileViewport()
+  mobileMediaQuery.addEventListener('change', updateIsMobileViewport)
 })
 
 onUnmounted(() => {
   void flushAnswers()
   window.removeEventListener('beforeunload', handleBeforeUnload)
+  mobileMediaQuery?.removeEventListener('change', updateIsMobileViewport)
   if (pulseTimer) {
     clearTimeout(pulseTimer)
   }
@@ -815,6 +904,40 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   @include page-container;
+}
+
+// Deliberately not the theme's `warning` color — that maps to a muted brown (see theme.ts, same
+// reasoning as JournalStructurePanel.vue's own incomplete-badge) — this needs to read as a clear,
+// warm amber notice at a glance. Opens MissingPhotosModal.vue on click.
+.questionnaire-page__missing-photos-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: $spacing-1;
+  padding: $spacing-2 $spacing-3;
+  border: none;
+  border-radius: 999px;
+  background: #fceada;
+  color: #c9762f;
+  font-size: $font-size-body-sm;
+  font-weight: $font-weight-medium;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 150ms ease;
+
+  &:hover {
+    background: #f8dcc0;
+  }
+
+  @include mobile-only {
+    padding: 4px $spacing-3;
+    font-size: $font-size-caption;
+  }
+}
+
+// Overall progress through the 5-step order-creation flow (not this page's own question-answering
+// progress — see .questionnaire-page__stats further down for that).
+.questionnaire-page__step-progress {
+  flex-shrink: 0;
 }
 
 .questionnaire-page__brand {
@@ -955,19 +1078,11 @@ onUnmounted(() => {
   flex-direction: column;
 }
 
-.questionnaire-page__progress {
-  display: flex;
-  flex-direction: column;
-  gap: $spacing-2;
-  margin-bottom: $spacing-6;
-
-  @include mobile-only {
-    margin-bottom: $spacing-4;
-  }
-}
-
-.questionnaire-page__counter {
+.questionnaire-page__stats {
   margin: 0;
+  font-size: $font-size-caption;
+  color: $text-secondary;
+  white-space: nowrap;
 }
 
 // Same structure/classes as .create-order__intro (eyebrow/title/subtitle) — text-caption,
@@ -1032,11 +1147,30 @@ onUnmounted(() => {
 
 // ── Action bar — copied from CreateOrderPage.vue's .create-order__actions ────────────────────
 .questionnaire-page__actions {
+  position: relative;
   flex-shrink: 0;
   background: rgba($bg-elevated, 0.96);
   backdrop-filter: blur(12px);
   border-top: 1px solid $border-light;
   padding-block: $spacing-4;
+}
+
+// Floats right above the bar: the question-progress counter on the left, the missing-photos pill
+// (when shown) on the right — the bar itself is too narrow to fit a 3-way row (Назад / pill /
+// Продолжить) without overflowing on a phone.
+.questionnaire-page__footer-float {
+  @include page-container;
+  max-width: 1360px;
+  margin-inline: auto;
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: $spacing-3;
+  margin-bottom: $spacing-2;
 }
 
 .questionnaire-page__actions-inner {
@@ -1054,11 +1188,19 @@ onUnmounted(() => {
   letter-spacing: $letter-spacing-button;
   border-color: $border-default !important;
   text-transform: none;
+
+  @include mobile-only {
+    min-width: 96px;
+  }
 }
 
 .questionnaire-page__btn-next {
   min-width: 180px;
   letter-spacing: $letter-spacing-button;
   text-transform: none;
+
+  @include mobile-only {
+    min-width: 140px;
+  }
 }
 </style>

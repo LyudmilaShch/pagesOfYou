@@ -1,5 +1,5 @@
 <template>
-  <div class="questionnaire-book">
+  <div class="questionnaire-book" :class="{ 'questionnaire-book--fit-height': fitHeight }">
     <div class="questionnaire-book__perspective">
       <div
         class="questionnaire-book__frame"
@@ -13,13 +13,20 @@
             class="questionnaire-book__half"
             :style="{ left: half.left, width: half.width }"
           >
-            <div class="questionnaire-book__window" :style="{ left: half.windowLeft, width: half.windowWidth }">
+            <div class="questionnaire-book__window" :data-page-id="half.pageId" :style="{ left: half.windowLeft, width: half.windowWidth }">
               <JournalSpreadThumbnail
                 v-if="half.canvasData"
                 :canvas-data="half.canvasData"
                 :pending-element-ids="pendingElementIds"
                 :drop-enabled="dropEnabled"
+                :crop-enabled="cropEnabled"
+                :pick-enabled="pickEnabled"
+                :ai-text-edit-enabled="aiTextEditEnabled"
                 @drop-photo="(elementId, url) => emit('drop-photo', half.pageId, elementId, url)"
+                @crop-photo="(elementId) => emit('crop-photo', half.pageId, elementId)"
+                @pick-photo="(elementId) => emit('pick-photo', half.pageId, elementId)"
+                @edit-ai-text="(elementId) => emit('edit-ai-text', half.pageId, elementId)"
+                @regenerate-ai-text="(elementId) => emit('regenerate-ai-text', half.pageId, elementId)"
               />
             </div>
           </div>
@@ -28,19 +35,13 @@
         </div>
 
         <span
-          v-if="viewingFill && viewingFill.total > 0 && viewingFill.answered >= viewingFill.total"
-          class="questionnaire-book__badge questionnaire-book__badge--done"
-        >
-          <v-icon size="12" color="white">mdi-check</v-icon>
-        </span>
-        <span
-          v-else-if="viewingFill && viewingFill.answered > 0"
+          v-if="viewingFill && viewingFill.answered > 0 && viewingFill.answered < viewingFill.total"
           class="questionnaire-book__badge questionnaire-book__badge--partial"
         >
           {{ Math.round((viewingFill.answered / viewingFill.total) * 100) }}%
         </span>
 
-        <v-tooltip v-if="!turning" location="top" content-class="editor-tooltip--arrow-top">
+        <v-tooltip v-if="!turning && showStructureControls" location="top" content-class="editor-tooltip--arrow-top">
           <template #activator="{ props: tooltipProps }">
             <button
               v-bind="tooltipProps"
@@ -113,15 +114,34 @@
       </button>
     </div>
 
-    <button
-      type="button"
-      class="questionnaire-book__add-spread"
-      :disabled="store.isSaving"
-      @click="handleAddSpread"
-    >
-      <v-icon size="16">mdi-plus</v-icon>
-      Добавить 4 страницы
-    </button>
+    <div v-if="showStructureControls" class="questionnaire-book__toolbar">
+      <button
+        type="button"
+        class="questionnaire-book__reorder-btn"
+        :disabled="spreadIds.length < 2"
+        @click="reorderDialogOpen = true"
+      >
+        <v-icon size="16">mdi-swap-horizontal</v-icon>
+        Изменить порядок разворотов
+      </button>
+
+      <button
+        type="button"
+        class="questionnaire-book__add-spread"
+        :disabled="store.isSaving"
+        @click="handleAddSpread"
+      >
+        <v-icon size="16">mdi-plus</v-icon>
+        Добавить 4 страницы
+      </button>
+    </div>
+
+    <SpreadReorderDialog
+      :open="reorderDialogOpen"
+      :pages="pages"
+      :canvas-data-by-page-id="canvasDataByPageId"
+      @close="reorderDialogOpen = false"
+    />
 
     <JournalTemplatePickerDialog
       :open="templatePicker.open"
@@ -155,6 +175,7 @@ import type { JournalPage } from '../../types/order.types'
 import type { SetJournalPageTemplatePayload } from '../../api/orders.api'
 import { useOrderBuilderStore } from '../../stores/order-builder.store'
 import JournalTemplatePickerDialog from '../JournalTemplatePickerDialog.vue'
+import SpreadReorderDialog from './SpreadReorderDialog.vue'
 
 const store = useOrderBuilderStore()
 
@@ -179,13 +200,44 @@ const props = defineProps<{
   /** Manual photo-placement mode (see PhotoUploadPage.vue) — forwarded to every
    * `JournalSpreadThumbnail` so its photo-placeholders become drop targets. */
   dropEnabled: boolean
+  /** Shows a crop button on every filled photo (see PhotoUploadPage.vue's PhotoCropModal) —
+   * forwarded to every `JournalSpreadThumbnail`, defaults off since only Шаг 2 offers cropping. */
+  cropEnabled?: boolean
+  /** Shows an "add photo" button on every empty slot (see PhotoUploadPage.vue's gallery picker) —
+   * forwarded to every `JournalSpreadThumbnail`, defaults off for the same reason as `cropEnabled`. */
+  pickEnabled?: boolean
+  /** Shows "edit text"/"regenerate" buttons on every settled ai-text-placeholder (see
+   * QuestionnairePage.vue's AiTextEditModal) — forwarded to every `JournalSpreadThumbnail`,
+   * defaults off since only Шаг 3 (where the text actually gets generated) offers this. */
+  aiTextEditEnabled?: boolean
+  /** Hides the per-spread "Сменить шаблон" button and the "Изменить порядок разворотов"/"Добавить
+   * 4 страницы" toolbar — for contexts where restructuring the journal would be a distraction from
+   * (or work against) the task at hand, e.g. MissingPhotosModal.vue, where adding more spreads
+   * would only create more empty photo slots to fill. Defaults on, since every other caller wants
+   * the full structure controls. */
+  showStructureControls?: boolean
+  /** Sizes the frame from the height its parent gives it instead of the width — every other
+   * caller puts this in a fixed-width column and lets width drive a naturally-computed height, but
+   * JournalReviewPage.vue instead gives it a fixed-HEIGHT area (so the whole step fits one screen
+   * with no scroll on desktop) and needs the frame to shrink to fit that instead. */
+  fitHeight?: boolean
 }>()
+
+const showStructureControls = computed(() => props.showStructureControls ?? true)
 
 const emit = defineEmits<{
   /** A photo was dropped onto a photo-placeholder on the given page — re-emitted from
    * `JournalSpreadThumbnail`'s own `drop-photo` with page context added, since that component
    * only knows the canvas data it was handed, not which journal page it belongs to. */
   'drop-photo': [pageId: string, elementId: string, url: string]
+  /** The crop button on a filled photo was clicked — same page-context re-emit as `drop-photo`. */
+  'crop-photo': [pageId: string, elementId: string]
+  /** The "add photo" button on an empty slot was clicked — same page-context re-emit. */
+  'pick-photo': [pageId: string, elementId: string]
+  /** The "edit text" button on an ai-text-placeholder was clicked — same page-context re-emit. */
+  'edit-ai-text': [pageId: string, elementId: string]
+  /** The "regenerate" button on an ai-text-placeholder was clicked — same page-context re-emit. */
+  'regenerate-ai-text': [pageId: string, elementId: string]
 }>()
 
 // A COVER sits where a book's front cover really is — the right side, with nothing (yet) to its
@@ -280,12 +332,24 @@ const singleSlotSide = computed<'left' | 'right' | null>(() => {
   return leftPageId.value ? 'left' : 'right'
 })
 
-const frameStyle = computed(() => ({
-  width: isSingleSlotAtRest.value ? '50%' : '100%',
-  aspectRatio: String(isSingleSlotAtRest.value ? PAGE_ASPECT_RATIO : SPREAD_ASPECT_RATIO),
-  marginLeft: singleSlotSide.value === 'right' ? 'auto' : undefined,
-  marginRight: singleSlotSide.value === 'left' ? 'auto' : undefined,
-}))
+const frameStyle = computed(() => {
+  const ratio = String(isSingleSlotAtRest.value ? PAGE_ASPECT_RATIO : SPREAD_ASPECT_RATIO)
+  const margins = {
+    marginLeft: singleSlotSide.value === 'right' ? 'auto' : undefined,
+    marginRight: singleSlotSide.value === 'left' ? 'auto' : undefined,
+  }
+
+  // Height is the definite dimension here (from the flex parent — see .questionnaire-book's own
+  // `--fit-height` rule below); `aspect-ratio` then derives width from it, the exact mirror of the
+  // normal width-driven case. A lone cover needs no special-cased "50%" here the way the
+  // width-driven branch does: its own PAGE_ASPECT_RATIO is already half of SPREAD_ASPECT_RATIO, so
+  // deriving width from the SAME 100%-height reproduces that same relative size on its own.
+  if (props.fitHeight) {
+    return { height: '100%', width: 'auto', maxWidth: '100%', aspectRatio: ratio, ...margins }
+  }
+
+  return { width: isSingleSlotAtRest.value ? '50%' : '100%', aspectRatio: ratio, ...margins }
+})
 
 // A null side (nothing left of a COVER, nothing right of a BACK_COVER) simply isn't rendered — the
 // frame's own background shows through, reading as "outside the book" rather than a page. While at
@@ -377,6 +441,13 @@ const viewingLabel = computed(() => {
   }
   return getJournalPageDisplayName(page, spreadIndex)
 })
+
+// Only SPREAD slots are reorderable — the cover/back-cover stay pinned at the very start/end (same
+// rule `reorderJournalSpreads`/JournalStructurePanel.vue's drag-and-drop already enforce). Just
+// used to gate the "Изменить порядок" button (need at least 2 to reorder) — SpreadReorderDialog
+// does the actual reordering.
+const spreadIds = computed(() => props.pages.filter((page) => page.slotType === 'SPREAD').map((page) => page.id))
+const reorderDialogOpen = ref(false)
 
 function flip(direction: 'next' | 'prev'): void {
   if (turning.value) {
@@ -535,6 +606,23 @@ onBeforeUnmount(() => {
   width: 100%;
 }
 
+// Height, not width, is the fixed dimension here — the frame's own `aspect-ratio` (set via
+// `frameStyle`) then derives its width from whatever height `.questionnaire-book__perspective`
+// ends up with, the mirror image of the normal width-driven layout below.
+.questionnaire-book--fit-height {
+  height: 100%;
+  min-height: 0;
+}
+
+.questionnaire-book--fit-height .questionnaire-book__perspective {
+  flex: 1;
+  min-height: 0;
+  width: auto;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+}
+
 .questionnaire-book__perspective {
   width: 100%;
   perspective: 1800px;
@@ -632,10 +720,6 @@ onBeforeUnmount(() => {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
 }
 
-.questionnaire-book__badge--done {
-  background: $accent;
-}
-
 .questionnaire-book__badge--partial {
   background: $text-secondary;
 }
@@ -670,6 +754,13 @@ onBeforeUnmount(() => {
   position: absolute;
   top: 0;
   bottom: 0;
+  // Must outrank every button that can appear inside a half's own JournalSpreadThumbnail (crop/
+  // pick buttons, z-index: 1) as well as the badge/template-switch button above (z-index: 2) —
+  // without this, those un-stacked-context absolute-positioned buttons render ON TOP of the flap
+  // (any element with an explicit z-index beats one left at the `auto` default, regardless of DOM
+  // order), so the target page's controls would flash into view mid-flip, before the leaf
+  // animating over them has actually finished landing.
+  z-index: 3;
   transform-style: preserve-3d;
   transition: transform 0.55s cubic-bezier(0.45, 0.05, 0.35, 1);
   box-shadow: 0 0 30px rgba(0, 0, 0, 0.16);
@@ -724,6 +815,38 @@ onBeforeUnmount(() => {
   min-width: 160px;
   text-align: center;
   white-space: nowrap;
+}
+
+.questionnaire-book__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: $spacing-3;
+}
+
+.questionnaire-book__reorder-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: $spacing-1 $spacing-3;
+  border: 1px solid $border-default;
+  border-radius: 999px;
+  background: $bg-elevated;
+  color: $text-secondary;
+  font-size: $font-size-body-sm;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+
+  &:hover:not(:disabled) {
+    border-color: $accent;
+    color: $accent;
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.5;
+  }
 }
 
 .questionnaire-book__add-spread {

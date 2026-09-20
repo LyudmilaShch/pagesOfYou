@@ -6,10 +6,10 @@
       <div class="create-order__topbar-inner">
         <router-link to="/" class="create-order__brand">Фолио</router-link>
 
-        <div class="create-order__steps-label" aria-label="Шаг 1 из 4">
+        <div class="create-order__steps-label" aria-label="Шаг 1 из 5">
           <span class="create-order__steps-current">1</span>
           <span class="create-order__steps-sep">/</span>
-          <span class="create-order__steps-total">4</span>
+          <span class="create-order__steps-total">5</span>
         </div>
       </div>
     </header>

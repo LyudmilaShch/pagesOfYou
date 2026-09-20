@@ -7,22 +7,60 @@
         v-for="leaf in leaves"
         :key="leaf.id"
         class="spread-thumb__el"
+        :class="{
+          'spread-thumb__el--actionable': isActionableLeaf(leaf),
+          'spread-thumb__el--active': activeElementId === leaf.id,
+        }"
+        :data-element-id="leaf.id"
         :style="elementStyle(leaf)"
+        @click="handleElementTap(leaf)"
       >
-        <img
-          v-if="isPhotoElement(leaf) && leaf.defaultImageUrl"
-          class="spread-thumb__photo"
-          :class="{
-            'spread-thumb__photo--droppable': dropEnabled,
-            'spread-thumb__photo--drag-over': dropEnabled && dragOverElementId === leaf.id,
-          }"
-          :src="leaf.defaultImageUrl"
-          :style="{ borderRadius: `${(leaf.borderRadius ?? 0) * scale}px` }"
-          alt=""
-          @dragover.prevent="onDragOver(leaf.id)"
-          @dragleave="onDragLeave(leaf.id)"
-          @drop.prevent="onDrop($event, leaf.id)"
-        />
+        <template v-if="isPhotoElement(leaf) && leaf.defaultImageUrl">
+          <img
+            class="spread-thumb__photo"
+            :class="{
+              'spread-thumb__photo--droppable': dropEnabled,
+              'spread-thumb__photo--drag-over': dropEnabled && dragOverElementId === leaf.id,
+            }"
+            :data-element-id="leaf.id"
+            :src="leaf.defaultImageUrl"
+            :style="photoImageStyle(leaf)"
+            alt=""
+            @dragover.prevent="onDragOver(leaf.id)"
+            @dragleave="onDragLeave(leaf.id)"
+            @drop.prevent="onDrop($event, leaf.id)"
+          />
+          <div v-if="cropEnabled || pickEnabled" class="spread-thumb__photo-actions">
+            <v-tooltip v-if="pickEnabled" location="top" content-class="editor-tooltip--arrow-top">
+              <template #activator="{ props: tooltipProps }">
+                <button
+                  v-bind="tooltipProps"
+                  type="button"
+                  class="spread-thumb__photo-action-btn"
+                  aria-label="Заменить фото"
+                  @click.stop="emit('pick-photo', leaf.id)"
+                >
+                  <v-icon size="14" color="black">mdi-image-refresh-outline</v-icon>
+                </button>
+              </template>
+              Заменить фото
+            </v-tooltip>
+            <v-tooltip v-if="cropEnabled" location="top" content-class="editor-tooltip--arrow-top">
+              <template #activator="{ props: tooltipProps }">
+                <button
+                  v-bind="tooltipProps"
+                  type="button"
+                  class="spread-thumb__photo-action-btn"
+                  aria-label="Кадрировать фото"
+                  @click.stop="emit('crop-photo', leaf.id)"
+                >
+                  <v-icon size="14" color="black">mdi-crop</v-icon>
+                </button>
+              </template>
+              Кадрировать фото
+            </v-tooltip>
+          </div>
+        </template>
         <div
           v-else-if="isPhotoElement(leaf)"
           class="spread-thumb__photo-empty"
@@ -30,10 +68,26 @@
             'spread-thumb__photo-empty--droppable': dropEnabled,
             'spread-thumb__photo-empty--drag-over': dropEnabled && dragOverElementId === leaf.id,
           }"
+          :data-element-id="leaf.id"
           @dragover.prevent="onDragOver(leaf.id)"
           @dragleave="onDragLeave(leaf.id)"
           @drop.prevent="onDrop($event, leaf.id)"
-        />
+        >
+          <v-tooltip v-if="pickEnabled" location="top" content-class="editor-tooltip--arrow-top">
+            <template #activator="{ props: tooltipProps }">
+              <button
+                v-bind="tooltipProps"
+                type="button"
+                class="spread-thumb__pick-btn"
+                aria-label="Выбрать фото"
+                @click.stop="emit('pick-photo', leaf.id)"
+              >
+                <v-icon size="18" color="black">mdi-image-plus</v-icon>
+              </button>
+            </template>
+            Выбрать фото
+          </v-tooltip>
+        </div>
 
         <div v-else-if="isTextElement(leaf)" class="spread-thumb__text" :style="textStyle(leaf)">
           {{ leaf.defaultText }}
@@ -43,11 +97,53 @@
           v-else-if="isAiTextElement(leaf) && pendingElementIds.has(leaf.id)"
           class="spread-thumb__text-shimmer"
         >
-          <span v-for="n in 3" :key="n" class="spread-thumb__text-shimmer-line" />
+          <p class="spread-thumb__text-shimmer-label" :style="shimmerLabelStyle(leaf)">
+            Генерируем текст
+            <span class="spread-thumb__text-shimmer-dots" aria-hidden="true">
+              <span class="spread-thumb__text-shimmer-dot" />
+              <span class="spread-thumb__text-shimmer-dot" />
+              <span class="spread-thumb__text-shimmer-dot" />
+            </span>
+          </p>
+          <div class="spread-thumb__text-shimmer-lines">
+            <span v-for="n in 3" :key="n" class="spread-thumb__text-shimmer-line" />
+          </div>
         </div>
-        <div v-else-if="isAiTextElement(leaf)" class="spread-thumb__text" :style="textStyle(leaf)">
-          {{ leaf.previewPlaceholderText }}
-        </div>
+        <template v-else-if="isAiTextElement(leaf)">
+          <div class="spread-thumb__text" :style="textStyle(leaf)">
+            {{ leaf.previewPlaceholderText }}
+          </div>
+          <div v-if="aiTextEditEnabled" class="spread-thumb__photo-actions">
+            <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+              <template #activator="{ props: tooltipProps }">
+                <button
+                  v-bind="tooltipProps"
+                  type="button"
+                  class="spread-thumb__photo-action-btn"
+                  aria-label="Изменить текст"
+                  @click.stop="emit('edit-ai-text', leaf.id)"
+                >
+                  <v-icon size="14" color="black">mdi-pencil-outline</v-icon>
+                </button>
+              </template>
+              Изменить текст
+            </v-tooltip>
+            <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+              <template #activator="{ props: tooltipProps }">
+                <button
+                  v-bind="tooltipProps"
+                  type="button"
+                  class="spread-thumb__photo-action-btn"
+                  aria-label="Сгенерировать другой вариант"
+                  @click.stop="emit('regenerate-ai-text', leaf.id)"
+                >
+                  <v-icon size="14" color="black">mdi-refresh</v-icon>
+                </button>
+              </template>
+              Сгенерировать другой вариант
+            </v-tooltip>
+          </div>
+        </template>
 
         <div v-else-if="isShapeElement(leaf)" class="spread-thumb__shape" :style="shapeStyle(leaf)" />
       </div>
@@ -58,11 +154,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
-import type { AiTextPlaceholder, CanvasData, LeafElement, ShapeElement, TextPlaceholder } from '../models'
+import type { AiTextPlaceholder, CanvasData, LeafElement, PhotoPlaceholder, ShapeElement, TextPlaceholder } from '../models'
 import { isAiTextElement, isPhotoElement, isShapeElement, isTextElement } from '../models'
 import { flattenTree } from '../utils/element-tree.util'
 import { ensureCustomFontsLoaded } from '../utils/custom-fonts.util'
 import { A4_PAGE_HEIGHT, A4_PAGE_WIDTH } from '../constants/page.constants'
+import { computePhotoImageLayout, getPhotoCropState, resolvePhotoRenderFitMode } from '../utils/photo-crop.util'
 
 const props = withDefaults(
   defineProps<{
@@ -82,15 +179,76 @@ const props = withDefaults(
      * drop target, highlighted while a drag is over it, emitting `drop-photo` on release instead
      * of doing anything itself (this component has no store access — the parent owns the save). */
     dropEnabled?: boolean
+    /** Shows a small crop button on every filled photo element, emitting `crop-photo` on click
+     * instead of doing anything itself — same "no store access" split as `dropEnabled` above. */
+    cropEnabled?: boolean
+    /** Shows an "add photo" button on every empty photo slot, emitting `pick-photo` on click —
+     * same split as `dropEnabled`/`cropEnabled` above. A click-driven alternative to dragging: the
+     * parent opens a gallery picker for that specific slot (see PhotoUploadPage.vue). */
+    pickEnabled?: boolean
+    /** Shows "edit text"/"regenerate" buttons on every settled (non-pending) ai-text-placeholder,
+     * emitting `edit-ai-text`/`regenerate-ai-text` on click — same split as the photo-action props
+     * above. Only QuestionnairePage.vue's book offers this (see order-builder.store.ts's
+     * `regenerateAiText`, which needs a real backend order). */
+    aiTextEditEnabled?: boolean
   }>(),
-  { pendingElementIds: () => new Set(), dropEnabled: false },
+  {
+    pendingElementIds: () => new Set(),
+    dropEnabled: false,
+    cropEnabled: false,
+    pickEnabled: false,
+    aiTextEditEnabled: false,
+  },
 )
 
 const emit = defineEmits<{
   'drop-photo': [elementId: string, url: string]
+  'crop-photo': [elementId: string]
+  'pick-photo': [elementId: string]
+  'edit-ai-text': [elementId: string]
+  'regenerate-ai-text': [elementId: string]
 }>()
 
 const dragOverElementId = ref<string | null>(null)
+
+function isActionableLeaf(leaf: LeafElement): boolean {
+  return (
+    ((props.cropEnabled || props.pickEnabled) && isPhotoElement(leaf) && !!leaf.defaultImageUrl) ||
+    (props.aiTextEditEnabled && isAiTextElement(leaf) && !props.pendingElementIds.has(leaf.id))
+  )
+}
+
+// On a device with real hover, the crop/replace/edit-text/regenerate buttons reveal on
+// :hover (see the `@media (hover: hover)` CSS below) and this stays unused. On touch, there's no
+// hover to reveal them with — showing them permanently would clutter the small mobile spread
+// card, so a tap on the element toggles them instead (a second tap on the same element hides them
+// again; tapping a different one switches to it).
+const activeElementId = ref<string | null>(null)
+
+function handleElementTap(leaf: LeafElement): void {
+  if (!isActionableLeaf(leaf)) {
+    return
+  }
+  activeElementId.value = activeElementId.value === leaf.id ? null : leaf.id
+}
+
+// Closes the tap-revealed actions when the user clicks/taps anywhere outside the active element —
+// e.g. elsewhere in the book, or outside it entirely. Runs on the document because it needs to see
+// clicks the local @click handlers above don't cover (a different, non-actionable element; outside
+// this component altogether). A click on the active element itself (including its own now-visible
+// action buttons, which stop propagation) never reaches here with a mismatching id, so it's left
+// open; handleElementTap above already updates `activeElementId` before this runs for the same
+// click, so switching straight to a different actionable element doesn't get closed either.
+function handleDocumentClick(event: MouseEvent): void {
+  if (activeElementId.value === null) {
+    return
+  }
+  const target = event.target as HTMLElement | null
+  const leafEl = target?.closest('.spread-thumb__el') as HTMLElement | null
+  if (leafEl?.dataset.elementId !== activeElementId.value) {
+    activeElementId.value = null
+  }
+}
 
 function onDragOver(elementId: string): void {
   if (props.dropEnabled) {
@@ -186,11 +344,95 @@ onMounted(() => {
   // via the FontFace API there, silently falling back to the browser default. Safe to call
   // redundantly — later callers reuse the same in-flight/resolved promise.
   void ensureCustomFontsLoaded()
+
+  document.addEventListener('click', handleDocumentClick)
 })
 
 onBeforeUnmount(() => {
   observer?.disconnect()
+  document.removeEventListener('click', handleDocumentClick)
 })
+
+// Per-instance natural-size cache (not module-level — a handful of photos rendered at once, HTTP
+// cache already dedupes the actual bytes across instances showing the same URL, so the modest
+// redundant decode cost isn't worth a cross-instance singleton). Keyed by URL so a photo reused on
+// several elements only loads once per instance. `imageSizeTick` exists purely to give
+// `photoImageStyle` a reactive dependency to re-run against once a size resolves — the cache/pending
+// set themselves are plain (non-reactive) since only their *presence*, not their content, needs to
+// trigger a re-render.
+const imageNaturalSizes = new Map<string, { width: number; height: number }>()
+const pendingImageSizeUrls = new Set<string>()
+const imageSizeTick = ref(0)
+
+function ensureImageNaturalSize(url: string): void {
+  if (imageNaturalSizes.has(url) || pendingImageSizeUrls.has(url)) {
+    return
+  }
+  pendingImageSizeUrls.add(url)
+  const img = new Image()
+  img.onload = () => {
+    imageNaturalSizes.set(url, { width: img.naturalWidth, height: img.naturalHeight })
+    pendingImageSizeUrls.delete(url)
+    imageSizeTick.value += 1
+  }
+  img.onerror = () => {
+    pendingImageSizeUrls.delete(url)
+  }
+  img.src = url
+}
+
+/** Absolute-positions the `<img>` per `computePhotoImageLayout` so a non-default crop
+ * (cropX/cropY/imageScale, set via PhotoCropModal.vue) actually shows — plain `object-fit: cover`
+ * (the CSS fallback below, used until the natural size resolves) can only ever render the
+ * centered, unzoomed crop. Coordinates from the util come back in the SAME unscaled page-point
+ * space as `leaf.size`/`leaf.position` (matching the real Konva adapter's own convention), so the
+ * result is scaled by `scale.value` here exactly like `elementStyle` does for the wrapping box. */
+function photoImageStyle(leaf: PhotoPlaceholder): Record<string, string> {
+  const url = leaf.defaultImageUrl
+  const fallback = { width: '100%', height: '100%', objectFit: 'cover', borderRadius: `${(leaf.borderRadius ?? 0) * scale.value}px` }
+  if (!url) {
+    return fallback
+  }
+
+  void imageSizeTick.value
+  const natural = imageNaturalSizes.get(url)
+  if (!natural || natural.width <= 0 || natural.height <= 0) {
+    ensureImageNaturalSize(url)
+    return fallback
+  }
+
+  const layout = computePhotoImageLayout(
+    leaf.size.width,
+    leaf.size.height,
+    natural.width,
+    natural.height,
+    resolvePhotoRenderFitMode(leaf.fitMode),
+    getPhotoCropState(leaf),
+  )
+  if (!layout) {
+    return fallback
+  }
+
+  return {
+    position: 'absolute',
+    left: `${layout.x * scale.value}px`,
+    top: `${layout.y * scale.value}px`,
+    width: `${layout.width * scale.value}px`,
+    height: `${layout.height * scale.value}px`,
+    maxWidth: 'none',
+    borderRadius: `${(leaf.borderRadius ?? 0) * scale.value}px`,
+  }
+}
+
+/** Same color the real generated text will render in (`leaf.color`) — not a fixed neutral tone —
+ * so the "Генерируем текст" label reads as a preview of what's coming, not a generic system
+ * notice. Font size scales with the page the same way `textStyle` does for real text. */
+function shimmerLabelStyle(leaf: AiTextPlaceholder): Record<string, string> {
+  return {
+    color: leaf.color,
+    fontSize: `${Math.max(8, 9 * scale.value)}px`,
+  }
+}
 
 function elementStyle(leaf: LeafElement): Record<string, string> {
   // A shape-line's own `size.height` is always 0 — like the Konva canvas (see
@@ -296,12 +538,46 @@ function shapeStyle(leaf: ShapeElement): Record<string, string> {
   height: 100%;
   object-fit: cover;
   display: block;
+  transition: filter 150ms ease;
+}
+
+// Darkens on hover (or, on touch, on tap — see `--active`) only where an action is actually
+// offered (crop/replace/pick — see `spread-thumb__el--actionable`) — elsewhere (admin panels, the
+// questionnaire book) hovering a photo shouldn't visibly change anything, since there's no action
+// behind it there.
+.spread-thumb__el--actionable:hover .spread-thumb__photo,
+.spread-thumb__el--active .spread-thumb__photo {
+  filter: brightness(0.75);
 }
 
 .spread-thumb__photo-empty {
+  position: relative;
   width: 100%;
   height: 100%;
   background: $bg-muted;
+}
+
+.spread-thumb__pick-btn {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: $white;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.16);
+  cursor: pointer;
+  transition: transform 150ms ease;
+
+  &:hover {
+    transform: translate(-50%, -50%) scale(1.08);
+  }
 }
 
 // Manual placement mode (see `dropEnabled`) — outline instead of border so it never shifts layout.
@@ -317,25 +593,121 @@ function shapeStyle(leaf: ShapeElement): Record<string, string> {
   filter: brightness(0.88);
 }
 
+.spread-thumb__photo-actions {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.spread-thumb__photo-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 50%;
+  background: $white;
+  cursor: pointer;
+  transition: transform 150ms ease;
+
+  &:hover {
+    transform: scale(1.08);
+  }
+}
+
+// Hidden until revealed — on a device with real hover, :hover reveals it (see the `@media
+// (hover: hover)` block below); on touch, there's no hover to reveal it with, so a tap toggles
+// `--active` instead (see `handleElementTap`). Unconditional (not media-gated) so both paths
+// share the same hidden default.
+.spread-thumb__photo-actions {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease;
+}
+
+.spread-thumb__el--active .spread-thumb__photo-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+// Same reasoning/pattern as JournalStructurePanel.vue's own drag/template-switch buttons.
+@media (hover: hover) and (pointer: fine) {
+  .spread-thumb__el--actionable:hover .spread-thumb__photo-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
 .spread-thumb__text {
   padding: 0;
 }
 
 // Stands in for an ai-text-placeholder while its (possibly several-second) YandexGPT round-trip is
-// in flight — see `pendingElementIds` — so the wait reads as "generating" rather than the text
-// silently staying stale, or the element going blank, until the save resolves.
+// in flight — see `pendingElementIds` — so the wait reads as "generating" (the "Генерируем
+// текст ···" label + shimmering line placeholders below, the same visual language as
+// ChatGPT/Notion's own "thinking" state) rather than the text silently staying stale, or the
+// element going blank, until the save resolves.
 .spread-thumb__text-shimmer {
   width: 100%;
   height: 100%;
   display: flex;
   flex-direction: column;
   justify-content: center;
+  gap: 8%;
+}
+
+.spread-thumb__text-shimmer-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  font-weight: $font-weight-semibold;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.spread-thumb__text-shimmer-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.spread-thumb__text-shimmer-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: spread-thumb-shimmer-dot 1.2s ease-in-out infinite;
+
+  &:nth-child(2) {
+    animation-delay: 0.15s;
+  }
+  &:nth-child(3) {
+    animation-delay: 0.3s;
+  }
+}
+
+.spread-thumb__text-shimmer-lines {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  flex: 1;
   gap: 12%;
 }
 
 .spread-thumb__text-shimmer-line {
   height: 22%;
   border-radius: 4px;
+  // Widths deliberately uneven (not a uniform block) so this reads as stand-ins for real lines of
+  // text rather than one abstract placeholder shape.
   background: linear-gradient(
     90deg,
     rgba($text-muted, 0.14) 25%,
@@ -362,6 +734,19 @@ function shapeStyle(leaf: ShapeElement): Record<string, string> {
   }
   100% {
     background-position: -200% 0;
+  }
+}
+
+@keyframes spread-thumb-shimmer-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.8);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1);
   }
 }
 </style>

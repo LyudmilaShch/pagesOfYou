@@ -513,6 +513,49 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     }
   }
 
+  /** A fresh AI-generated variant for one ai-text-placeholder, same feeding answers — the "🔄"
+   * icon on the questionnaire book preview. Needs a real backend order (YandexGPT runs
+   * server-side): callers should gate this on `!isLocalDraft` rather than let it throw. The
+   * endpoint only returns the new text, not a full order, so the affected placeholder value is
+   * patched in place here rather than round-tripping a full refetch. */
+  async function regenerateAiText(journalPageId: string, elementId: string): Promise<string> {
+    if (!order.value) {
+      throw new Error('Заказ не загружен.')
+    }
+    if (isLocalDraft.value) {
+      throw new Error('Сначала сохраните заказ, чтобы сгенерировать новый вариант текста.')
+    }
+
+    isSaving.value = true
+    orderError.value = null
+
+    try {
+      const text = await ordersApi.regenerateAiText(order.value.id, journalPageId, elementId)
+
+      const pageIndex = order.value.journalPages.findIndex((page) => page.id === journalPageId)
+      if (pageIndex !== -1) {
+        const page = order.value.journalPages[pageIndex]
+        const byElementId = new Map(page.placeholderValues.map((value) => [value.elementId, value]))
+        byElementId.set(elementId, {
+          id: byElementId.get(elementId)?.id ?? `ai-text-${Date.now()}-${elementId}`,
+          elementId,
+          valueType: 'TEXT',
+          textValue: text,
+          jsonValue: null,
+          source: 'AI',
+        })
+        order.value.journalPages[pageIndex] = { ...page, placeholderValues: [...byElementId.values()] }
+      }
+
+      return text
+    } catch {
+      orderError.value = 'Не удалось сгенерировать новый вариант текста.'
+      throw new Error(orderError.value)
+    } finally {
+      isSaving.value = false
+    }
+  }
+
   /** Adds 2 spreads (= 4 pages) at once, never 1 — printing requires page counts in multiples of
    * 4 (signature/tetrad binding), mirrors `OrdersService.addJournalSpread` on the backend. */
   function applyLocalAddSpread(): void {
@@ -872,6 +915,7 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     setJournalPageTemplate,
     saveQuestionnaireAnswers,
     savePlaceholders,
+    regenerateAiText,
     addJournalSpread,
     reorderJournalSpreads,
     getSubmitValidationError,

@@ -31,16 +31,8 @@
               :class="{ 'journal-template-picker__item--active': selectedLeftId === template.id }"
               @click="selectedLeftId = template.id"
             >
-              <div
-                class="journal-template-picker__preview"
-                :style="{ aspectRatio: getTemplatePreviewAspectRatio(template.canvasData) }"
-              >
-                <img
-                  v-if="template.previewImage"
-                  :src="template.previewImage"
-                  :alt="template.name"
-                />
-                <TemplateCanvasPreview v-else :canvas-data="template.canvasData" />
+              <div class="journal-template-picker__preview">
+                <JournalSpreadThumbnail :canvas-data="normalizedCanvas(template)" :container-ratio="1.19" />
               </div>
               <span class="journal-template-picker__name">{{ template.name }}</span>
             </button>
@@ -56,16 +48,8 @@
               :class="{ 'journal-template-picker__item--active': selectedRightId === template.id }"
               @click="selectedRightId = template.id"
             >
-              <div
-                class="journal-template-picker__preview"
-                :style="{ aspectRatio: getTemplatePreviewAspectRatio(template.canvasData) }"
-              >
-                <img
-                  v-if="template.previewImage"
-                  :src="template.previewImage"
-                  :alt="template.name"
-                />
-                <TemplateCanvasPreview v-else :canvas-data="template.canvasData" />
+              <div class="journal-template-picker__preview">
+                <JournalSpreadThumbnail :canvas-data="normalizedCanvas(template)" :container-ratio="1.19" />
               </div>
               <span class="journal-template-picker__name">{{ template.name }}</span>
             </button>
@@ -82,16 +66,8 @@
               :class="{ 'journal-template-picker__item--active': selectedSingleId === template.id }"
               @click="selectedSingleId = template.id"
             >
-              <div
-                class="journal-template-picker__preview"
-                :style="{ aspectRatio: getTemplatePreviewAspectRatio(template.canvasData) }"
-              >
-                <img
-                  v-if="template.previewImage"
-                  :src="template.previewImage"
-                  :alt="template.name"
-                />
-                <TemplateCanvasPreview v-else :canvas-data="template.canvasData" />
+              <div class="journal-template-picker__preview">
+                <JournalSpreadThumbnail :canvas-data="normalizedCanvas(template)" :container-ratio="1.19" />
               </div>
               <span class="journal-template-picker__name">{{ template.name }}</span>
             </button>
@@ -123,13 +99,13 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 
-import TemplateCanvasPreview from './TemplateCanvasPreview.vue'
+import JournalSpreadThumbnail from '@/modules/editor/components/JournalSpreadThumbnail.vue'
+import { normalizeCanvasData } from '@/modules/editor/models/canvas-data.model'
 import type { CatalogMagazinePage } from '../api/catalog.api'
 import type { SetJournalPageTemplatePayload } from '../api/orders.api'
 import type { JournalSpreadLayout } from '../constants/journal.constants'
 import type { JournalPage } from '../types/order.types'
 import { getJournalPageDisplayName, type TemplateCatalog } from '../utils/journal-structure.util'
-import { getTemplatePreviewAspectRatio } from '../utils/template-preview.util'
 
 const props = defineProps<{
   open: boolean
@@ -175,6 +151,10 @@ const activeTemplates = computed((): CatalogMagazinePage[] => {
 
   return props.templates.spread
 })
+
+function normalizedCanvas(template: CatalogMagazinePage) {
+  return normalizeCanvasData(template.canvasData)
+}
 
 const applyButtonLabel = computed(() =>
   props.sequence && props.sequence.current < props.sequence.total ? 'Далее' : 'Применить',
@@ -286,14 +266,7 @@ function handleApply(): void {
   position: relative;
   width: 100%;
   border-radius: $radius-sm;
-  background: $bg-muted;
   overflow: hidden;
-
-  img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
 }
 
 .journal-template-picker__name {
