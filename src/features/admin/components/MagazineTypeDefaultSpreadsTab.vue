@@ -250,6 +250,15 @@ async function load(): Promise<void> {
         rightMagazinePageId: item.rightMagazinePageId ?? undefined,
       }),
     )
+
+    // A magazine type that already had spreads configured before includedSpreads last changed
+    // keeps its old saved count forever otherwise — the count must always equal includedSpreads-1
+    // (floored at MIN_JOURNAL_SPREADS), not just for brand-new, never-configured magazine types.
+    // Reuses existing rows/templates as much as possible; only the total count changes. The admin
+    // still has to click "Сохранить" to persist this — see save().
+    if (spreads.value.length > 0) {
+      syncToDefaultCount()
+    }
   } finally {
     loading.value = false
   }
@@ -257,6 +266,28 @@ async function load(): Promise<void> {
 
 function initializeDefaults(): void {
   spreads.value = buildDefaultSpreads()
+}
+
+function syncToDefaultCount(): void {
+  const target = defaultSpreadCount.value
+  const current = spreads.value
+
+  if (current.length === target) {
+    return
+  }
+
+  if (current.length > target) {
+    spreads.value = current.slice(0, target)
+    return
+  }
+
+  const template = current.at(-1) ?? buildDefaultSpreads()[0]
+  if (!template) {
+    return
+  }
+
+  const additions = Array.from({ length: target - current.length }, () => toEditableSpread(template))
+  spreads.value = [...current, ...additions]
 }
 
 function addSpread(): void {

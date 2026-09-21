@@ -64,15 +64,15 @@ export interface BuildInitialJournalOptions {
  * The interior spread count a brand-new journal should start with. `includedSpreads` is priced in
  * "spread-equivalents including the cover" units (cover+back-cover together count as 1 — see
  * pricing.util.ts's COVER_SPREAD_EQUIVALENT), so a customer's default journal should have
- * `includedSpreads - 1` interior spreads to actually match what the base price already covers —
- * previously this used the flat print-safety floor (MIN_JOURNAL_SPREADS) instead. Explicitly
- * admin-configured default spreads still win if there are MORE of them than that.
+ * `includedSpreads - 1` interior spreads to actually match what the base price already covers.
+ * This is a strict target, not a floor: admin-configured default spreads are reused for their
+ * content/templates (see resolveConfiguredSpreadAt below) but a LARGER already-configured count
+ * must not inflate this — otherwise lowering includedSpreads on a magazine type that already had
+ * more spreads configured would silently keep handing new orders the old, larger count. Only
+ * MIN_JOURNAL_SPREADS (the print-safety floor) can raise it above includedSpreads - 1.
  */
-export function resolveInitialSpreadCount(
-  includedSpreads: number,
-  configuredSpreads?: DefaultSpreadTemplate[],
-): number {
-  return Math.max(MIN_JOURNAL_SPREADS, includedSpreads - 1, configuredSpreads?.length ?? 0);
+export function resolveInitialSpreadCount(includedSpreads: number): number {
+  return Math.max(MIN_JOURNAL_SPREADS, includedSpreads - 1);
 }
 
 function resolveConfiguredSpreadAt(
@@ -208,7 +208,7 @@ export function buildInitialJournalSlots(
   const backCoverTemplate = pickDefaultBackCoverTemplate(catalog);
   const tocTemplate = pickDefaultTocTemplate(catalog);
   const spreadDefault = pickDefaultSpreadTemplate(catalog);
-  const spreadCount = resolveInitialSpreadCount(options.includedSpreads, options.configuredSpreads);
+  const spreadCount = resolveInitialSpreadCount(options.includedSpreads);
 
   const slots: JournalSlotDraft[] = [];
   let sortOrder = 0;

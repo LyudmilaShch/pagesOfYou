@@ -19,7 +19,7 @@
         <div class="editor-layout__divider editor-layout__desktop-only" aria-hidden="true" />
 
         <div class="editor-layout__brand editor-layout__desktop-only">
-          <span class="editor-layout__brand-name">Фолио</span>
+          <span class="editor-layout__brand-name">Вау, ми!</span>
           <span class="editor-layout__brand-badge">Editor</span>
         </div>
       </div>

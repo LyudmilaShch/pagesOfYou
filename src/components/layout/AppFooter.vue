@@ -3,7 +3,7 @@
     <div class="footer__inner page-container section-sm">
       <div class="content-container footer__grid">
         <div class="footer__brand">
-          <RouterLink to="/" class="footer__logo text-h4">Фолио</RouterLink>
+          <RouterLink to="/" class="footer__logo text-h4">Вау, ми!</RouterLink>
           <p class="footer__tagline text-body-sm text-secondary">
             Индивидуальные журналы
           </p>
@@ -20,7 +20,7 @@
 
       <div class="content-container footer__bottom">
         <p class="text-caption text-muted">
-          © {{ currentYear }} Фолио. Все права защищены.
+          © {{ currentYear }} «Вау, ми!». Все права защищены.
         </p>
       </div>
     </div>

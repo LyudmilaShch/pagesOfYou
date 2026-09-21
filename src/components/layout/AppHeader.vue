@@ -9,7 +9,7 @@
     <div class="header__inner page-container">
       <div class="content-container header__bar">
         <RouterLink to="/" class="header__logo text-h4" @click="closeMenu">
-          Фолио
+          Вау, ми!
         </RouterLink>
 
         <nav class="header__nav" aria-label="Основная навигация">

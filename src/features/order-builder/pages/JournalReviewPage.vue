@@ -15,7 +15,7 @@
     <!-- ── Top navigation bar — same chrome as the other order-creation steps ───────────────── -->
     <header class="journal-review-page__topbar">
       <div class="journal-review-page__topbar-inner">
-        <router-link to="/" class="journal-review-page__brand">Фолио</router-link>
+        <router-link to="/" class="journal-review-page__brand">Вау, ми!</router-link>
 
         <div class="journal-review-page__steps-label" aria-label="Шаг 4 из 5">
           <span class="journal-review-page__steps-current">4</span>

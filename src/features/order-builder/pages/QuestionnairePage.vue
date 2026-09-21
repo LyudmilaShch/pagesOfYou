@@ -15,7 +15,7 @@
     <!-- ── Top navigation bar — same chrome as Шаг 1 (CreateOrderPage.vue) ──────────────── -->
     <header class="questionnaire-page__topbar">
       <div class="questionnaire-page__topbar-inner">
-        <router-link to="/" class="questionnaire-page__brand">Фолио</router-link>
+        <router-link to="/" class="questionnaire-page__brand">Вау, ми!</router-link>
 
         <div class="questionnaire-page__steps-label" aria-label="Шаг 3 из 5">
           <span class="questionnaire-page__steps-current">3</span>

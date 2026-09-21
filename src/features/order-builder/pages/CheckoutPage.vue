@@ -2,7 +2,7 @@
   <div class="checkout-page">
     <header class="checkout-page__topbar">
       <div class="checkout-page__topbar-inner">
-        <router-link to="/" class="checkout-page__brand">Фолио</router-link>
+        <router-link to="/" class="checkout-page__brand">Вау, ми!</router-link>
         <span class="checkout-page__topbar-title">Оформление заказа</span>
       </div>
     </header>

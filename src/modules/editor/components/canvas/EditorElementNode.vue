@@ -772,10 +772,13 @@ const showSelectionOutline = computed(
 // (`isPlaceholderFilled`, called here with no separate order-context value since the advanced
 // editor bakes the current value straight into the element's own `defaultText`/`defaultImageUrl`
 // — there's no other value source to pass) — so a page that reads "incomplete" there always shows
-// exactly which element is the reason right here on the canvas.
+// exactly which element is the reason right here on the canvas. Only meaningful with `orderCanvas`
+// present (a real customer order) — in the admin TEMPLATE editor every photo/text placeholder is
+// "empty" by definition (it's defining a slot, not holding real content), so without this gate
+// every single required element on every template would show the warning outline unconditionally.
 const isRequiredAndUnfilled = computed(() => {
   const element = props.element
-  if (!isFillableElement(element)) {
+  if (!orderCanvas || !isFillableElement(element)) {
     return false
   }
 

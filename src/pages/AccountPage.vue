@@ -3,7 +3,7 @@
     <!-- ── Top navigation bar ─────────────────────────────────────────────── -->
     <header class="account-page__topbar">
       <div class="account-page__topbar-inner">
-        <router-link to="/" class="account-page__brand">Фолио</router-link>
+        <router-link to="/" class="account-page__brand">Вау, ми!</router-link>
         <span class="account-page__topbar-title">Личный кабинет</span>
       </div>
     </header>

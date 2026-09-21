@@ -15,7 +15,7 @@
     <!-- ── Top navigation bar — same chrome as Шаг 1/3 (CreateOrderPage.vue/QuestionnairePage.vue) ── -->
     <header class="photo-upload-page__topbar">
       <div class="photo-upload-page__topbar-inner">
-        <router-link to="/" class="photo-upload-page__brand">Фолио</router-link>
+        <router-link to="/" class="photo-upload-page__brand">Вау, ми!</router-link>
 
         <div class="photo-upload-page__steps-label" aria-label="Шаг 2 из 5">
           <span class="photo-upload-page__steps-current">2</span>
