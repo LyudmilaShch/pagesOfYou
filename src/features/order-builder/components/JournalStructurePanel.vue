@@ -170,7 +170,13 @@ const sidebarEntries = computed(() => {
       spreadNumber += 1
     }
 
-    const label = isSpread ? String(spreadNumber) : page.slotType === 'COVER' ? 'О' : 'З'
+    const label = isSpread
+      ? String(spreadNumber)
+      : page.slotType === 'COVER'
+        ? 'О'
+        : page.slotType === 'TOC'
+          ? 'С'
+          : 'З'
 
     const templateLabel =
       page.slotType === 'SPREAD' && page.layoutMode === 'SPLIT_PAGES'

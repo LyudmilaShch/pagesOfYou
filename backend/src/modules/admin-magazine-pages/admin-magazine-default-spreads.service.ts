@@ -197,11 +197,22 @@ export class AdminMagazineDefaultSpreadsService {
   }
 
   async ensureDefaultsForMagazineType(magazineTypeId: string) {
+    const magazineType = await this.prisma.magazineType.findFirst({
+      where: { id: magazineTypeId, deletedAt: null },
+      select: { includedSpreads: true },
+    });
+    // Same floor as MagazineTypeDefaultSpreadsTab.vue/resolveInitialSpreadCount — never below the
+    // print-safety minimum, but matches what the base price actually covers otherwise.
+    const defaultSpreadCount = Math.max(
+      MIN_JOURNAL_SPREADS,
+      (magazineType?.includedSpreads ?? 0) - 1,
+    );
+
     const existing = await this.prisma.magazineDefaultSpread.count({
       where: { magazineTypeId },
     });
 
-    if (existing >= MIN_JOURNAL_SPREADS) {
+    if (existing >= defaultSpreadCount) {
       return this.findByMagazineTypeId(magazineTypeId);
     }
 
@@ -215,7 +226,7 @@ export class AdminMagazineDefaultSpreadsService {
       return [];
     }
 
-    const items: DefaultSpreadTemplate[] = Array.from({ length: MIN_JOURNAL_SPREADS }, () => ({
+    const items: DefaultSpreadTemplate[] = Array.from({ length: defaultSpreadCount }, () => ({
       ...spreadDefault,
     }));
 

@@ -83,7 +83,7 @@
           color="primary"
           size="large"
           :loading="loadingVerify"
-          :disabled="code.length !== 6 || countdown === 0"
+          :disabled="code.length < 4 || code.length > 6 || countdown === 0"
           block
           @click="handleVerifyCode"
         >
@@ -286,8 +286,8 @@ async function handleSendCode(): Promise<void> {
 async function handleVerifyCode(): Promise<void> {
   codeError.value = ''
 
-  if (code.value.length !== 6) {
-    codeError.value = 'Введите 6-значный код'
+  if (code.value.length < 4 || code.value.length > 6) {
+    codeError.value = 'Введите код из СМС'
     return
   }
 

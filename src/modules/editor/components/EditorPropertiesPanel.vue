@@ -1022,6 +1022,32 @@
 
         </div>
 
+        <div v-if="isTocElement" class="editor-properties__section">
+
+          <p class="editor-properties__section-title">Содержание</p>
+
+          <EditorTextField
+            :model-value="tocElement.label"
+            label="Название поля"
+            @update:model-value="patchElement({ label: $event })"
+          />
+
+          <p class="editor-properties__field-label editor-properties__field-label--spaced">
+            Строки собираются автоматически из названий разворотов и их реальных номеров страниц.
+            Шрифт, цвет и эффекты — в разделах ниже, как у обычного текста.
+          </p>
+
+          <v-btn
+            variant="outlined"
+            block
+            prepend-icon="mdi-format-list-bulleted"
+            @click="panelStack.push({ id: 'toc-config', title: 'Настройки содержания' })"
+          >
+            Настроить интервалы и линию
+          </v-btn>
+
+        </div>
+
         <div v-if="isPhotoElement" class="editor-properties__section">
 
           <p class="editor-properties__section-title">Контент</p>
@@ -1609,8 +1635,9 @@ import {
   isTextPlaceholderElement,
 
 } from '../utils/placeholder-display.util'
-import { isAiTextElement as isAiTextPageElement } from '../models'
+import { isAiTextElement as isAiTextPageElement, isTocElement as isTocPageElement } from '../models'
 import type { AiTextPlaceholder } from '../models/ai-text-placeholder.model'
+import type { TocPlaceholder } from '../models/toc-placeholder.model'
 
 
 
@@ -1753,14 +1780,16 @@ const isTextElement = computed(() => selected.value && isTextPlaceholderElement(
 const isPhotoElement = computed(() => selected.value && isPhotoPlaceholderElement(selected.value))
 
 const isAiTextElement = computed(() => selected.value && isAiTextPageElement(selected.value))
+const isTocElement = computed(() => selected.value && isTocPageElement(selected.value))
 
-// AiTextPlaceholder deliberately duplicates TextPlaceholder's typography fields (fontFamily,
-// fontSize, color, effect, etc. — see the model's own comment) so the same font/color/effects
-// controls apply to both; only the text-only "Контент"/"Поведение" sections (defaultText,
-// required, single questionKey) stay gated to isTextElement alone.
-const isTextStyleElement = computed(() => isTextElement.value || isAiTextElement.value)
+// AiTextPlaceholder/TocPlaceholder both deliberately duplicate TextPlaceholder's typography
+// fields (fontFamily, fontSize, color, effect, etc. — see each model's own comment) so the same
+// font/color/effects controls apply to all three; only the text-only "Контент"/"Поведение"
+// sections (defaultText, required, single questionKey) stay gated to isTextElement alone.
+const isTextStyleElement = computed(() => isTextElement.value || isAiTextElement.value || isTocElement.value)
 
 const aiTextElement = computed(() => selected.value as AiTextPlaceholder)
+const tocElement = computed(() => selected.value as TocPlaceholder)
 
 const aiTextLengthSummary = computed(() => {
   const constraint = aiTextElement.value.lengthConstraint

@@ -25,14 +25,22 @@
         v-for="(question, index) in questions"
         :key="question.id"
         class="magazine-questions-tab__item"
-        :class="{ 'magazine-questions-tab__item--dragging': draggingId === question.id }"
+        :class="{
+          'magazine-questions-tab__item--dragging': draggingId === question.id,
+          'magazine-questions-tab__item--drag-over': dragOverId === question.id && draggingId !== question.id,
+        }"
+        :data-question-id="question.id"
         draggable="true"
         @dragstart="onDragStart(question.id)"
-        @dragover.prevent
+        @dragover.prevent="dragOverId = question.id"
         @drop="onDrop(question.id)"
         @dragend="draggingId = null"
       >
-        <div class="magazine-questions-tab__drag" aria-hidden="true">
+        <div
+          class="magazine-questions-tab__drag"
+          aria-hidden="true"
+          @pointerdown="handleDragHandlePointerDown($event, question.id)"
+        >
           <v-icon size="18">mdi-drag-vertical</v-icon>
         </div>
 
@@ -137,7 +145,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 
 import {
   adminQuestionsApi,
@@ -155,6 +163,7 @@ const props = defineProps<{
 const questions = ref<AdminQuestion[]>([])
 const loading = ref(false)
 const draggingId = ref<string | null>(null)
+const dragOverId = ref<string | null>(null)
 
 const questionTypeItems = Object.entries(QUESTION_TYPE_LABELS).map(([value, label]) => ({
   value: value as QuestionType,
@@ -309,8 +318,63 @@ async function onDrop(targetId: string): Promise<void> {
   })
 }
 
+// Native HTML5 drag-and-drop (draggable/@dragstart/@dragover/@drop above) only fires from a
+// mouse — most mobile browsers never start a native drag from a touch gesture at all. This is a
+// parallel, Pointer Events-based path for touch/pen input on the drag handle — mirrors
+// SpreadReorderDialog.vue's own touch-compatible drag.
+function findRowIdAt(clientX: number, clientY: number): string | null {
+  const el = document.elementFromPoint(clientX, clientY)
+  const row = el ? (el.closest('[data-question-id]') as HTMLElement | null) : null
+  return row?.dataset.questionId ?? null
+}
+
+function handlePointerDragMove(event: PointerEvent): void {
+  const targetId = findRowIdAt(event.clientX, event.clientY)
+  dragOverId.value = targetId && targetId !== draggingId.value ? targetId : null
+}
+
+function stopPointerDragTracking(): void {
+  window.removeEventListener('pointermove', handlePointerDragMove)
+  window.removeEventListener('pointerup', handlePointerDragEnd)
+  window.removeEventListener('pointercancel', handlePointerDragCancel)
+}
+
+function handlePointerDragEnd(event: PointerEvent): void {
+  stopPointerDragTracking()
+
+  const targetId = findRowIdAt(event.clientX, event.clientY)
+  if (targetId) {
+    void onDrop(targetId)
+  }
+  draggingId.value = null
+  dragOverId.value = null
+}
+
+function handlePointerDragCancel(): void {
+  stopPointerDragTracking()
+  draggingId.value = null
+  dragOverId.value = null
+}
+
+function handleDragHandlePointerDown(event: PointerEvent, questionId: string): void {
+  if (event.pointerType === 'mouse') {
+    return
+  }
+
+  event.preventDefault()
+  onDragStart(questionId)
+
+  window.addEventListener('pointermove', handlePointerDragMove)
+  window.addEventListener('pointerup', handlePointerDragEnd)
+  window.addEventListener('pointercancel', handlePointerDragCancel)
+}
+
 onMounted(() => {
   void loadAll()
+})
+
+onBeforeUnmount(() => {
+  stopPointerDragTracking()
 })
 </script>
 
@@ -319,6 +383,7 @@ onMounted(() => {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: $spacing-4;
   margin-bottom: $spacing-6;
 }
@@ -352,14 +417,23 @@ onMounted(() => {
   border-radius: $radius-md;
   background: $bg-elevated;
   cursor: grab;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
 
   &--dragging {
     opacity: 0.55;
+  }
+
+  &--drag-over {
+    border-color: $accent;
+    box-shadow: 0 0 0 2px $state-hover-bg;
   }
 }
 
 .magazine-questions-tab__drag {
   color: $text-muted;
+  // Without this, a touch drag starting here is first interpreted as an attempt to scroll the
+  // page, fighting the pointer-based reorder drag (see handleDragHandlePointerDown).
+  touch-action: none;
 }
 
 .magazine-questions-tab__meta {

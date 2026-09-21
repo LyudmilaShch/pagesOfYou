@@ -5,7 +5,19 @@ import {
   CANVAS_DATA_VERSION,
   type CanvasData,
   type CanvasElement,
+  type PageBackgroundSettings,
 } from '../types/canvas-data.types';
+
+function rootBackgroundOf(canvas: CanvasData): PageBackgroundSettings {
+  return {
+    backgroundColor: canvas.backgroundColor ?? '#FFFFFF',
+    backgroundImageUrl: canvas.backgroundImageUrl ?? null,
+    backgroundImageFit: canvas.backgroundImageFit ?? 'cover',
+    backgroundImageCropX: canvas.backgroundImageCropX ?? 0,
+    backgroundImageCropY: canvas.backgroundImageCropY ?? 0,
+    backgroundImageScale: canvas.backgroundImageScale ?? 1,
+  };
+}
 
 function cloneElementWithOffset(
   element: CanvasElement,
@@ -37,16 +49,22 @@ export function mergePageCanvasesIntoSpread(
     cloneElementWithOffset(element, 'right-', A4_PAGE_WIDTH),
   );
 
+  // Each side keeps its OWN source page's background — flattening them into one shared value
+  // (the old behavior: `leftCanvas.X ?? rightCanvas.X`) meant whichever page happened to have one
+  // set "won" and then bled across BOTH halves once rendered, since nothing downstream knew to
+  // treat it as per-page. The root fields below just mirror the left page's, as a harmless
+  // fallback for any reader that doesn't know about per-page mode.
+  const leftBackground = rootBackgroundOf(leftCanvas);
+  const rightBackground = rootBackgroundOf(rightCanvas);
+
   return {
     version: CANVAS_DATA_VERSION,
     pageWidth: A4_SPREAD_PAGE_WIDTH,
     pageHeight: A4_SPREAD_PAGE_HEIGHT,
-    backgroundColor: leftCanvas.backgroundColor ?? rightCanvas.backgroundColor ?? '#FFFFFF',
-    backgroundImageUrl: leftCanvas.backgroundImageUrl ?? rightCanvas.backgroundImageUrl ?? null,
-    backgroundImageFit: leftCanvas.backgroundImageFit ?? rightCanvas.backgroundImageFit ?? 'cover',
-    backgroundImageCropX: leftCanvas.backgroundImageCropX ?? rightCanvas.backgroundImageCropX ?? 0,
-    backgroundImageCropY: leftCanvas.backgroundImageCropY ?? rightCanvas.backgroundImageCropY ?? 0,
-    backgroundImageScale: leftCanvas.backgroundImageScale ?? rightCanvas.backgroundImageScale ?? 1,
+    ...leftBackground,
+    spreadBackgroundMode: 'per-page',
+    leftPageBackground: leftBackground,
+    rightPageBackground: rightBackground,
     elements: [...leftElements, ...rightElements],
   };
 }

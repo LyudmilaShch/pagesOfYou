@@ -11,6 +11,7 @@ export const ELEMENT_TYPE_META: Record<PageElementType, ElementTypeMeta> = {
   'subtitle-placeholder': { label: 'Подзаголовок', icon: 'mdi-format-header-2' },
   'text-placeholder': { label: 'Текст', icon: 'mdi-format-text' },
   'ai-text-placeholder': { label: 'AI-текст', icon: 'mdi-robot-outline' },
+  'toc-placeholder': { label: 'Содержание', icon: 'mdi-format-list-bulleted' },
   'shape-line': { label: 'Линия', icon: 'mdi-minus' },
   'shape-rectangle': { label: 'Прямоугольник', icon: 'mdi-rectangle-outline' },
   'shape-circle': { label: 'Круг', icon: 'mdi-circle-outline' },

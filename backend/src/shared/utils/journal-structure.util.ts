@@ -19,6 +19,7 @@ export interface TemplateCatalog {
   spread: MagazinePage[];
   page: MagazinePage[];
   backCover: MagazinePage[];
+  toc: MagazinePage[];
 }
 
 export interface DefaultSpreadTemplate {
@@ -33,6 +34,7 @@ export function groupTemplatesByPageType(pages: MagazinePage[]): TemplateCatalog
     spread: pages.filter((page) => page.pageType === PageType.SPREAD),
     page: pages.filter((page) => page.pageType === PageType.PAGE),
     backCover: pages.filter((page) => page.pageType === PageType.BACK_COVER),
+    toc: pages.filter((page) => page.pageType === PageType.TOC),
   };
 }
 
@@ -44,14 +46,33 @@ export function pickDefaultBackCoverTemplate(catalog: TemplateCatalog): Magazine
   return catalog.backCover[0] ?? null;
 }
 
+/** Unlike cover/back-cover, a table of contents is optional — a magazine type with none simply
+ * never gets a TOC slot (see buildInitialJournalSlots, which skips the pushSlot call entirely
+ * rather than letting it fall back to an unrelated template). */
+export function pickDefaultTocTemplate(catalog: TemplateCatalog): MagazinePage | null {
+  return catalog.toc[0] ?? null;
+}
+
 export interface BuildInitialJournalOptions {
+  /** See resolveInitialSpreadCount — required, not optional, so a caller can't silently fall back
+   * to the print-safety floor instead of what the magazine type is actually priced for. */
+  includedSpreads: number;
   configuredSpreads?: DefaultSpreadTemplate[];
 }
 
+/**
+ * The interior spread count a brand-new journal should start with. `includedSpreads` is priced in
+ * "spread-equivalents including the cover" units (cover+back-cover together count as 1 — see
+ * pricing.util.ts's COVER_SPREAD_EQUIVALENT), so a customer's default journal should have
+ * `includedSpreads - 1` interior spreads to actually match what the base price already covers —
+ * previously this used the flat print-safety floor (MIN_JOURNAL_SPREADS) instead. Explicitly
+ * admin-configured default spreads still win if there are MORE of them than that.
+ */
 export function resolveInitialSpreadCount(
+  includedSpreads: number,
   configuredSpreads?: DefaultSpreadTemplate[],
 ): number {
-  return Math.max(MIN_JOURNAL_SPREADS, configuredSpreads?.length ?? MIN_JOURNAL_SPREADS);
+  return Math.max(MIN_JOURNAL_SPREADS, includedSpreads - 1, configuredSpreads?.length ?? 0);
 }
 
 function resolveConfiguredSpreadAt(
@@ -137,15 +158,20 @@ export function buildJournalPageSnapshot(
   primaryTemplate: MagazinePage | null,
   rightTemplate: MagazinePage | null,
 ): CanvasData {
+  // TOC gets the same full spread-width canvas as a regular spread — a table of contents needs
+  // the room, and it's never built from two SPLIT_PAGES halves the way a spread can be (a TOC
+  // template is always one single canvas), so `layoutMode` for it is always null.
+  const isSpreadShaped = slotType === PageType.SPREAD || slotType === PageType.TOC;
+
   if (!primaryTemplate) {
-    if (slotType === PageType.SPREAD) {
+    if (isSpreadShaped) {
       return createSpreadCanvasData();
     }
 
     return createDefaultCanvasData();
   }
 
-  if (slotType === PageType.SPREAD) {
+  if (isSpreadShaped) {
     const canvas =
       layoutMode === JournalSpreadLayout.SPLIT_PAGES && rightTemplate
         ? mergePageCanvasesIntoSpread(
@@ -175,13 +201,14 @@ export interface JournalSlotDraft {
 
 export function buildInitialJournalSlots(
   templates: MagazinePage[],
-  options: BuildInitialJournalOptions = {},
+  options: BuildInitialJournalOptions,
 ): JournalSlotDraft[] {
   const catalog = groupTemplatesByPageType(templates);
   const coverTemplate = pickDefaultCoverTemplate(catalog);
   const backCoverTemplate = pickDefaultBackCoverTemplate(catalog);
+  const tocTemplate = pickDefaultTocTemplate(catalog);
   const spreadDefault = pickDefaultSpreadTemplate(catalog);
-  const spreadCount = resolveInitialSpreadCount(options.configuredSpreads);
+  const spreadCount = resolveInitialSpreadCount(options.includedSpreads, options.configuredSpreads);
 
   const slots: JournalSlotDraft[] = [];
   let sortOrder = 0;
@@ -219,6 +246,14 @@ export function buildInitialJournalSlots(
   };
 
   pushSlot(PageType.COVER, null, coverTemplate, null);
+
+  // Optional, and — unlike every other slot type — never falls back to an unrelated template
+  // when absent: pushSlot's own fallback chain would otherwise insert a bogus TOC slot built from
+  // a random spread/cover template. Guarding the call itself, rather than adding a branch inside
+  // pushSlot, keeps "magazine type just doesn't have a TOC" a clean no-op.
+  if (tocTemplate) {
+    pushSlot(PageType.TOC, null, tocTemplate, null);
+  }
 
   for (let index = 0; index < spreadCount; index += 1) {
     const config = resolveConfiguredSpreadAt(

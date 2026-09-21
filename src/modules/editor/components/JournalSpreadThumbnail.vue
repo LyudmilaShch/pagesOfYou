@@ -1,7 +1,25 @@
 <template>
   <div ref="containerRef" class="spread-thumb" :style="rootStyle">
     <div class="spread-thumb__page" :style="pageStyle">
-      <img v-if="canvasData.backgroundImageUrl" class="spread-thumb__bg" :src="canvasData.backgroundImageUrl" alt="" />
+      <!-- Per-page backgrounds (spreadBackgroundMode: 'per-page') need two independently-clipped
+           layers, one per side — a single full-bleed image (the old approach here) always painted
+           whichever side actually had a background across BOTH pages. getSpreadBackgroundRenderLayers
+           is the same pure geometry the Konva admin canvas already renders through (see
+           PageBackgroundLayer.vue/SpreadPageBackgroundLayers.vue), so this now matches it exactly. -->
+      <div
+        v-for="layer in backgroundLayers"
+        :key="layer.key"
+        class="spread-thumb__bg-layer"
+        :style="backgroundLayerStyle(layer)"
+      >
+        <img
+          v-if="layer.settings.backgroundImageUrl"
+          class="spread-thumb__bg"
+          :style="backgroundImageStyle(layer)"
+          :src="resolveAssetUrl(layer.settings.backgroundImageUrl) ?? layer.settings.backgroundImageUrl"
+          alt=""
+        />
+      </div>
 
       <div
         v-for="leaf in leaves"
@@ -23,7 +41,7 @@
               'spread-thumb__photo--drag-over': dropEnabled && dragOverElementId === leaf.id,
             }"
             :data-element-id="leaf.id"
-            :src="leaf.defaultImageUrl"
+            :src="resolveAssetUrl(leaf.defaultImageUrl) ?? leaf.defaultImageUrl"
             :style="photoImageStyle(leaf)"
             alt=""
             @dragover.prevent="onDragOver(leaf.id)"
@@ -145,6 +163,19 @@
           </div>
         </template>
 
+        <div v-else-if="isTocElement(leaf)" class="spread-thumb__toc" :style="tocContainerStyle(leaf)">
+          <div
+            v-for="entry in resolveTocEntries(leaf)"
+            :key="entry.pageId"
+            class="spread-thumb__toc-entry"
+            :style="tocEntryStyle(leaf)"
+          >
+            <span class="spread-thumb__toc-title">{{ entry.title }}</span>
+            <span v-if="leaf.dotLeader" class="spread-thumb__toc-leader" aria-hidden="true" />
+            <span class="spread-thumb__toc-number">{{ entry.pageLabel }}</span>
+          </div>
+        </div>
+
         <div v-else-if="isShapeElement(leaf)" class="spread-thumb__shape" :style="shapeStyle(leaf)" />
       </div>
     </div>
@@ -154,12 +185,26 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
-import type { AiTextPlaceholder, CanvasData, LeafElement, PhotoPlaceholder, ShapeElement, TextPlaceholder } from '../models'
-import { isAiTextElement, isPhotoElement, isShapeElement, isTextElement } from '../models'
+import type {
+  AiTextPlaceholder,
+  CanvasData,
+  LeafElement,
+  PhotoPlaceholder,
+  ShapeElement,
+  TextPlaceholder,
+  TocEntry,
+  TocPlaceholder,
+} from '../models'
+import { isAiTextElement, isPhotoElement, isShapeElement, isTextElement, isTocElement } from '../models'
 import { flattenTree } from '../utils/element-tree.util'
 import { ensureCustomFontsLoaded } from '../utils/custom-fonts.util'
 import { A4_PAGE_HEIGHT, A4_PAGE_WIDTH } from '../constants/page.constants'
 import { computePhotoImageLayout, getPhotoCropState, resolvePhotoRenderFitMode } from '../utils/photo-crop.util'
+import {
+  getSpreadBackgroundRenderLayers,
+  type SpreadBackgroundRenderLayer,
+} from '../utils/spread-background.util'
+import { resolveAssetUrl } from '@/shared/config/assets'
 
 const props = withDefaults(
   defineProps<{
@@ -191,6 +236,12 @@ const props = withDefaults(
      * above. Only QuestionnairePage.vue's book offers this (see order-builder.store.ts's
      * `regenerateAiText`, which needs a real backend order). */
     aiTextEditEnabled?: boolean
+    /** Real rows for every toc-placeholder on this page — computed once by the caller from the
+     * order's/template's actual page list (see journal-structure.util.ts's `buildTocEntries`),
+     * since this component only ever sees ITS OWN page's canvasData, never its siblings. Left
+     * unset in contexts with no such list to draw from (template pickers, admin thumbnails),
+     * where a generic preview shows instead — see `resolveTocEntries`. */
+    tocEntries?: TocEntry[]
   }>(),
   {
     pendingElementIds: () => new Set(),
@@ -296,9 +347,69 @@ const pageStyle = computed(() => ({
   top: `${offsetY.value}px`,
   width: `${pageWidth.value * scale.value}px`,
   height: `${pageHeight.value * scale.value}px`,
-  backgroundColor: props.canvasData.backgroundColor ?? '#FFFFFF',
+  // Own background color moved to each background layer (see `backgroundLayers`) so per-page
+  // mode can paint the left/right halves differently — this is just a neutral base in case a
+  // layer's own color is somehow transparent, not the real background anymore.
+  backgroundColor: '#FFFFFF',
   overflow: 'hidden' as const,
 }))
+
+// Pure geometry, no Konva dependency — the exact same layer split the admin canvas renders
+// through (PageBackgroundLayer.vue/SpreadPageBackgroundLayers.vue), reused here so this component
+// matches it instead of only ever painting the flat root background across the whole page.
+const backgroundLayers = computed(() => getSpreadBackgroundRenderLayers(props.canvasData))
+
+function backgroundLayerStyle(layer: SpreadBackgroundRenderLayer): Record<string, string> {
+  return {
+    position: 'absolute',
+    left: `${layer.x * scale.value}px`,
+    top: '0px',
+    width: `${layer.width * scale.value}px`,
+    height: `${pageHeight.value * scale.value}px`,
+    overflow: 'hidden',
+    backgroundColor: layer.settings.backgroundColor,
+  }
+}
+
+/** Same natural-size-then-computePhotoImageLayout approach as `photoImageStyle` below — a
+ * background image shares the exact same fit/crop shape (cover|fill, cropX/cropY, imageScale) as
+ * a photo element, just scoped to a background layer's own box instead of an element's. */
+function backgroundImageStyle(layer: SpreadBackgroundRenderLayer): Record<string, string> {
+  const rawUrl = layer.settings.backgroundImageUrl
+  const fallback = { width: '100%', height: '100%', objectFit: 'cover' }
+  if (!rawUrl) {
+    return fallback
+  }
+
+  const url = resolveAssetUrl(rawUrl) ?? rawUrl
+  void imageSizeTick.value
+  const natural = imageNaturalSizes.get(url)
+  if (!natural || natural.width <= 0 || natural.height <= 0) {
+    ensureImageNaturalSize(url)
+    return fallback
+  }
+
+  const layout = computePhotoImageLayout(
+    layer.width,
+    pageHeight.value,
+    natural.width,
+    natural.height,
+    layer.settings.backgroundImageFit,
+    { cropX: layer.settings.backgroundImageCropX, cropY: layer.settings.backgroundImageCropY, imageScale: layer.settings.backgroundImageScale },
+  )
+  if (!layout) {
+    return fallback
+  }
+
+  return {
+    position: 'absolute',
+    left: `${layout.x * scale.value}px`,
+    top: `${layout.y * scale.value}px`,
+    width: `${layout.width * scale.value}px`,
+    height: `${layout.height * scale.value}px`,
+    maxWidth: 'none',
+  }
+}
 
 /** `flattenTree` already resolves group nesting into absolute page coordinates, so nested groups
  * need no special handling here — every leaf's `position`/`rotation` is already page-relative. */
@@ -388,11 +499,12 @@ function ensureImageNaturalSize(url: string): void {
  * space as `leaf.size`/`leaf.position` (matching the real Konva adapter's own convention), so the
  * result is scaled by `scale.value` here exactly like `elementStyle` does for the wrapping box. */
 function photoImageStyle(leaf: PhotoPlaceholder): Record<string, string> {
-  const url = leaf.defaultImageUrl
+  const rawUrl = leaf.defaultImageUrl
   const fallback = { width: '100%', height: '100%', objectFit: 'cover', borderRadius: `${(leaf.borderRadius ?? 0) * scale.value}px` }
-  if (!url) {
+  if (!rawUrl) {
     return fallback
   }
+  const url = resolveAssetUrl(rawUrl) ?? rawUrl
 
   void imageSizeTick.value
   const natural = imageNaturalSizes.get(url)
@@ -494,6 +606,80 @@ function textStyle(leaf: TextPlaceholder | AiTextPlaceholder): Record<string, st
     // config. Without this, digits only started looking vertically offset once `fontFamily` above
     // began actually applying the real font; forcing lining figures here matches the canvas.
     fontVariantNumeric: 'lining-nums',
+  }
+}
+
+// Shown whenever no real order/template data was supplied (see the `tocEntries` prop) — mirrors
+// element-node.adapter.ts's own Konva-side preview rows, so the admin sees roughly the same thing
+// switching between the canvas and any thumbnail that renders through this component instead.
+const TOC_PREVIEW_ENTRIES: TocEntry[] = [
+  { pageId: '__toc-preview-1', title: 'Пример раздела 1', pageLabel: '3' },
+  { pageId: '__toc-preview-2', title: 'Пример раздела 2', pageLabel: '5' },
+  { pageId: '__toc-preview-3', title: 'Пример раздела 3', pageLabel: '7' },
+]
+
+function resolveTocEntries(leaf: TocPlaceholder): TocEntry[] {
+  void leaf
+  return props.tocEntries ?? TOC_PREVIEW_ENTRIES
+}
+
+// Shrinks the gap between entries (never below 0, never above the admin's own configured value)
+// just enough that every row's single-line height still fits the element's box — estimated from
+// font metrics rather than measuring real DOM height, so it stays a synchronous, side-effect-free
+// style computation like every other leaf here. A long title that WRAPS to two lines is the one
+// case this doesn't account for — a rarer, harder-to-solve-cheaply case than the common "a
+// customer added a lot of spreads" one this is actually for.
+function tocEntryGap(leaf: TocPlaceholder): number {
+  const entryCount = resolveTocEntries(leaf).length
+  const gapCount = entryCount - 1
+  if (gapCount <= 0) {
+    return leaf.entryGap
+  }
+
+  const rowHeight = leaf.fontSize * (leaf.lineHeight || 1.2)
+  const availableForGaps = leaf.size.height - entryCount * rowHeight
+  const idealGap = availableForGaps / gapCount
+
+  return Math.max(0, Math.min(leaf.entryGap, idealGap))
+}
+
+function tocContainerStyle(leaf: TocPlaceholder): Record<string, string> {
+  return {
+    display: 'flex',
+    flexDirection: 'column',
+    // Anchors the whole block within the element's box — same meaning as a text element's own
+    // "Закрепить поле" (top/middle/bottom), just applied to the list as a unit rather than a
+    // single text flow.
+    justifyContent:
+      leaf.verticalAlign === 'bottom' ? 'flex-end' : leaf.verticalAlign === 'middle' ? 'center' : 'flex-start',
+    gap: `${tocEntryGap(leaf) * scale.value}px`,
+    fontFamily: leaf.fontFamily,
+    fontSize: `${leaf.fontSize * scale.value}px`,
+    fontWeight: String(leaf.fontWeight ?? 400),
+    fontStyle: leaf.fontItalic ? 'italic' : 'normal',
+    color: leaf.color,
+    textTransform: leaf.textTransform === 'uppercase' ? 'uppercase' : 'none',
+    lineHeight: String(leaf.lineHeight ?? 1.2),
+    letterSpacing: `${leaf.letterSpacing * scale.value}px`,
+    overflow: 'hidden',
+    fontVariantNumeric: 'lining-nums',
+  }
+}
+
+// With a dot leader, the classic layout (title flush left, number flush right, dots filling the
+// gap) always wins — `textAlign` has nothing meaningful to add there. Without one, the title and
+// number sit together as a single unit that `textAlign` positions within the row.
+function tocEntryStyle(leaf: TocPlaceholder): Record<string, string> {
+  if (leaf.dotLeader) {
+    return { display: 'flex', alignItems: 'baseline', gap: `${4 * scale.value}px` }
+  }
+
+  return {
+    display: 'flex',
+    alignItems: 'baseline',
+    justifyContent:
+      leaf.textAlign === 'right' ? 'flex-end' : leaf.textAlign === 'center' ? 'center' : 'flex-start',
+    gap: `${8 * scale.value}px`,
   }
 }
 
@@ -646,6 +832,34 @@ function shapeStyle(leaf: ShapeElement): Record<string, string> {
 
 .spread-thumb__text {
   padding: 0;
+}
+
+.spread-thumb__toc {
+  padding: 0;
+}
+
+.spread-thumb__toc-entry {
+  min-width: 0;
+}
+
+.spread-thumb__toc-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spread-thumb__toc-leader {
+  flex: 1;
+  min-width: 12px;
+  align-self: flex-end;
+  margin-bottom: 0.2em;
+  border-bottom: 1px dotted currentColor;
+  opacity: 0.5;
+}
+
+.spread-thumb__toc-number {
+  flex-shrink: 0;
 }
 
 // Stands in for an ai-text-placeholder while its (possibly several-second) YandexGPT round-trip is

@@ -14,6 +14,13 @@
             <span class="spread-reorder__label">Обложка</span>
           </div>
 
+          <div v-if="tocCanvas" class="spread-reorder__item spread-reorder__item--fixed">
+            <div class="spread-reorder__thumb">
+              <JournalSpreadThumbnail :canvas-data="tocCanvas" :container-ratio="1.19" />
+            </div>
+            <span class="spread-reorder__label">Содержание</span>
+          </div>
+
           <div
             v-for="(page, index) in spreadPages"
             :key="page.id"
@@ -93,6 +100,13 @@ const coverCanvas = computed(() => {
 })
 const backCoverCanvas = computed(() => {
   const page = props.pages.find((item) => item.slotType === 'BACK_COVER')
+  return page ? props.canvasDataByPageId.get(page.id) ?? null : null
+})
+// Same fixed, non-draggable treatment as cover/back-cover — a TOC slot never appears in
+// dto.spreadIds server-side either (see orders.service.ts's reorderJournalSpreads), so it can
+// only ever sit right after the cover.
+const tocCanvas = computed(() => {
+  const page = props.pages.find((item) => item.slotType === 'TOC')
   return page ? props.canvasDataByPageId.get(page.id) ?? null : null
 })
 

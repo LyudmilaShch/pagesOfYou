@@ -135,6 +135,7 @@ export class OrdersService {
       dto.journalPages && dto.journalPages.length > 0
         ? this.buildJournalSlotsFromDto(dto.journalPages, templatePages)
         : buildInitialJournalSlots(templatePages, {
+            includedSpreads: magazineType.includedSpreads,
             configuredSpreads: await this.loadConfiguredSpreads(dto.magazineTypeId),
           });
 
@@ -1023,6 +1024,9 @@ export class OrdersService {
 
     const cover = order.journalPages.find((page) => page.slotType === PageType.COVER);
     const backCover = order.journalPages.find((page) => page.slotType === PageType.BACK_COVER);
+    // Same treatment as cover/back-cover: never accepted in dto.spreadIds, so it can't end up
+    // anywhere but right after the cover — see the TOC PageType comment in schema.prisma.
+    const toc = order.journalPages.find((page) => page.slotType === PageType.TOC);
     const spreads = order.journalPages.filter((page) => page.slotType === PageType.SPREAD);
 
     if (!cover || !backCover) {
@@ -1041,7 +1045,9 @@ export class OrdersService {
     }
 
     const orderedSpreads = dto.spreadIds.map((id) => spreads.find((page) => page.id === id)!);
-    const nextOrder = [cover, ...orderedSpreads, backCover];
+    const nextOrder = toc
+      ? [cover, toc, ...orderedSpreads, backCover]
+      : [cover, ...orderedSpreads, backCover];
 
     await this.prisma.$transaction(
       nextOrder.map((page, index) =>
@@ -1127,6 +1133,11 @@ export class OrdersService {
     } else if (journalPage.slotType === PageType.BACK_COVER) {
       if (primaryTemplate.pageType !== PageType.BACK_COVER) {
         throw new BadRequestException('Back cover slot requires a BACK_COVER template.');
+      }
+      layoutMode = null;
+    } else if (journalPage.slotType === PageType.TOC) {
+      if (primaryTemplate.pageType !== PageType.TOC) {
+        throw new BadRequestException('Table of contents slot requires a TOC template.');
       }
       layoutMode = null;
     }

@@ -17,15 +17,23 @@
         </div>
       </header>
 
-      <v-tabs v-model="activeTab" color="primary" class="mt-edit-page__tabs">
-        <v-tab value="general">Общие сведения</v-tab>
-        <v-tab value="price">Цена</v-tab>
-        <v-tab value="seo">SEO</v-tab>
-        <v-tab value="image">Изображение</v-tab>
-        <v-tab value="discounts">Скидки</v-tab>
-        <v-tab value="pages">Страницы журнала</v-tab>
-        <v-tab value="questions">Вопросы</v-tab>
-        <v-tab value="default-spreads">Развороты по умолчанию</v-tab>
+      <!-- 9 tabs with long Russian labels don't fit a mobile-width v-tabs bar — Vuetify falls
+           back to horizontal swipe-scroll with no visible arrow affordance on touch, so tabs past
+           the first 2-3 (like "AI-тексты") are easy to miss entirely. A plain dropdown is far more
+           discoverable there; desktop keeps the familiar tab bar. -->
+      <v-select
+        v-if="isMobileViewport"
+        v-model="activeTab"
+        :items="tabItems"
+        item-title="label"
+        item-value="value"
+        variant="outlined"
+        density="comfortable"
+        hide-details
+        class="mt-edit-page__tabs-select"
+      />
+      <v-tabs v-else v-model="activeTab" color="primary" class="mt-edit-page__tabs">
+        <v-tab v-for="tab in tabItems" :key="tab.value" :value="tab.value">{{ tab.label }}</v-tab>
       </v-tabs>
 
       <v-window v-model="activeTab" class="mt-edit-page__window">
@@ -117,8 +125,15 @@
           <MagazineTypeQuestionsTab :magazine-type-id="magazineTypeId" />
         </v-window-item>
 
+        <v-window-item value="ai-texts">
+          <MagazineTypeAiTextsTab :magazine-type-id="magazineTypeId" />
+        </v-window-item>
+
         <v-window-item value="default-spreads">
-          <MagazineTypeDefaultSpreadsTab :magazine-type-id="magazineTypeId" />
+          <MagazineTypeDefaultSpreadsTab
+            :magazine-type-id="magazineTypeId"
+            :included-spreads="form.includedSpreads ?? 0"
+          />
         </v-window-item>
       </v-window>
     </div>
@@ -130,9 +145,10 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from 'vue'
+import { onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
+import MagazineTypeAiTextsTab from '@/features/admin/components/MagazineTypeAiTextsTab.vue'
 import MagazineTypeDefaultSpreadsTab from '@/features/admin/components/MagazineTypeDefaultSpreadsTab.vue'
 import MagazineTypePagesTab from '@/features/admin/components/MagazineTypePagesTab.vue'
 import MagazineTypeQuestionsTab from '@/features/admin/components/MagazineTypeQuestionsTab.vue'
@@ -145,6 +161,26 @@ const store = useMagazineTypesStore()
 const magazineTypeId = route.params.id as string
 const activeTab = ref((route.query.tab as string) || 'general')
 const saving = ref(false)
+
+const tabItems = [
+  { value: 'general', label: 'Общие сведения' },
+  { value: 'price', label: 'Цена' },
+  { value: 'seo', label: 'SEO' },
+  { value: 'image', label: 'Изображение' },
+  { value: 'discounts', label: 'Скидки' },
+  { value: 'pages', label: 'Страницы журнала' },
+  { value: 'questions', label: 'Вопросы' },
+  { value: 'ai-texts', label: 'AI-тексты' },
+  { value: 'default-spreads', label: 'Развороты по умолчанию' },
+]
+
+// Same threshold as the `mobile-only` SCSS mixin (`$breakpoint-mobile-max: 767px`).
+const isMobileViewport = ref(false)
+let mobileMediaQuery: MediaQueryList | null = null
+
+function updateIsMobileViewport(): void {
+  isMobileViewport.value = mobileMediaQuery?.matches ?? false
+}
 
 const evenNum = (v: number) => v % 2 === 0 || 'Должно быть чётным (печать кратна 4 страницам)'
 
@@ -289,6 +325,14 @@ function saveDiscounts(): Promise<void> {
 
 onMounted(() => {
   void loadType()
+
+  mobileMediaQuery = window.matchMedia('(max-width: 767px)')
+  updateIsMobileViewport()
+  mobileMediaQuery.addEventListener('change', updateIsMobileViewport)
+})
+
+onBeforeUnmount(() => {
+  mobileMediaQuery?.removeEventListener('change', updateIsMobileViewport)
 })
 </script>
 
@@ -303,6 +347,7 @@ onMounted(() => {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: $spacing-4;
   margin-bottom: $spacing-6;
 }
@@ -332,6 +377,10 @@ onMounted(() => {
 }
 
 .mt-edit-page__tabs {
+  margin-bottom: $spacing-4;
+}
+
+.mt-edit-page__tabs-select {
   margin-bottom: $spacing-4;
 }
 

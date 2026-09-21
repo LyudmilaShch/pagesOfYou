@@ -14,15 +14,16 @@ export class VerifyCodeDto {
   phone: string;
 
   /**
-   * 6-digit OTP code received via SMS (or logged to console in MVP).
+   * OTP code received via SMS (or logged to console in MVP). Normally 6 digits, but accepted
+   * down to 4 — see OtpService.verifyOtp's TEST_LOGIN_PHONES block for why.
    * @example "123456"
    */
   @ApiProperty({
     example: '123456',
-    description: '6-digit verification code',
+    description: '4-6 digit verification code',
   })
   @IsString()
-  @Length(6, 6, { message: 'Code must be exactly 6 digits' })
-  @Matches(/^\d{6}$/, { message: 'Code must contain only digits' })
+  @Length(4, 6, { message: 'Code must be 4 to 6 digits' })
+  @Matches(/^\d{4,6}$/, { message: 'Code must contain only digits' })
   code: string;
 }

@@ -3,7 +3,7 @@ import { resolveAssetUrl } from '@/shared/config/assets'
 import type { BackendResponse } from '@/types/api.types'
 import type { CanvasData } from '@/modules/editor/models/canvas-data.model'
 
-export type PageType = 'COVER' | 'PAGE' | 'SPREAD' | 'BACK_COVER'
+export type PageType = 'COVER' | 'PAGE' | 'SPREAD' | 'BACK_COVER' | 'TOC'
 
 export interface AdminMagazinePage {
   id: string
@@ -42,6 +42,7 @@ export const PAGE_TYPE_LABELS: Record<PageType, string> = {
   PAGE: 'Страница',
   SPREAD: 'Разворот',
   BACK_COVER: 'Задняя обложка',
+  TOC: 'Содержание',
 }
 
 function withResolvedPreview(item: AdminMagazinePage): AdminMagazinePage {

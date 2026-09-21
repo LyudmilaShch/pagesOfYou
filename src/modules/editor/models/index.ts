@@ -35,6 +35,7 @@ export type {
   LengthConstraint,
   LengthConstraintUnit,
 } from './ai-text-placeholder.model'
+export type { TocPlaceholder, TocEntry } from './toc-placeholder.model'
 export type {
   TextEffect,
   TextEffectType,
@@ -89,6 +90,7 @@ import type {
 } from './title-placeholder.model'
 import type { TextPlaceholder } from './text-placeholder.model'
 import type { AiTextPlaceholder } from './ai-text-placeholder.model'
+import type { TocPlaceholder } from './toc-placeholder.model'
 import type { GroupElement } from './group-element.model'
 
 /** Leaf node — everything that isn't a container. */
@@ -98,6 +100,7 @@ export type LeafElement =
   | TitlePlaceholder
   | SubtitlePlaceholder
   | AiTextPlaceholder
+  | TocPlaceholder
   | ShapeElement
 
 export type PageElement = LeafElement | GroupElement
@@ -130,4 +133,8 @@ export function isPhotoElement(element: PageElement): element is PhotoPlaceholde
 
 export function isAiTextElement(element: PageElement): element is AiTextPlaceholder {
   return element.type === 'ai-text-placeholder'
+}
+
+export function isTocElement(element: PageElement): element is TocPlaceholder {
+  return element.type === 'toc-placeholder'
 }

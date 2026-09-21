@@ -29,25 +29,79 @@
 
           <template v-else>
 
-            <!-- ============ TEXT ============ -->
-            <template v-if="isTextElement">
+            <!-- ============ TEXT / AI-TEXT / TOC ============ -->
+            <!-- AiTextPlaceholder/TocPlaceholder both deliberately duplicate TextPlaceholder's
+                 typography fields (fontFamily, fontSize, color, effect, etc.) rather than
+                 inheriting them — same reasoning as EditorPropertiesPanel.vue's own
+                 isTextStyleElement — so this block covers all three, sharing the font/color/
+                 effects sections (via `styleElement`, typed for exactly those common fields)
+                 while "Контент"/"Поведение" branch per type, since defaultText/required (plain
+                 text), the AI prompt config (ai-text), and the auto-generated rows (toc) don't
+                 overlap. -->
+            <template v-if="isTextElement || isAiTextElement || isTocElement">
 
               <template v-if="activeCategory === 'content'">
-                <label class="mobile-dock__field">
-                  <span class="mobile-dock__field-label">Название поля</span>
-                  <input
-                    type="text"
-                    :value="textElement.label"
-                    @change="patchElement({ label: ($event.target as HTMLInputElement).value })"
-                  />
-                </label>
-                <label class="mobile-dock__field">
-                  <span class="mobile-dock__field-label">Значение по умолчанию</span>
-                  <textarea
-                    :value="textElement.defaultText ?? ''"
-                    @change="patchElement({ defaultText: ($event.target as HTMLTextAreaElement).value })"
-                  />
-                </label>
+                <template v-if="isAiTextElement">
+                  <label class="mobile-dock__field">
+                    <span class="mobile-dock__field-label">Название поля</span>
+                    <input
+                      type="text"
+                      :value="aiTextElement.label"
+                      @change="patchElement({ label: ($event.target as HTMLInputElement).value })"
+                    />
+                  </label>
+                  <p v-if="hasEditorQuestions" class="mobile-dock__label-static">
+                    {{ aiTextElement.questionKeys.length }} вопрос(ов) в промпте · {{ aiTextLengthSummary }}
+                  </p>
+                  <button
+                    v-if="hasEditorQuestions"
+                    type="button"
+                    class="mobile-dock__inline-toggle"
+                    @click="panelStack.push({ id: 'ai-text-config', title: 'Генерация AI-текста' })"
+                  >
+                    <span>Настроить генерацию</span>
+                    <v-icon size="16">mdi-chevron-right</v-icon>
+                  </button>
+                </template>
+                <template v-else-if="isTocElement">
+                  <label class="mobile-dock__field">
+                    <span class="mobile-dock__field-label">Название поля</span>
+                    <input
+                      type="text"
+                      :value="tocElement.label"
+                      @change="patchElement({ label: ($event.target as HTMLInputElement).value })"
+                    />
+                  </label>
+                  <p class="mobile-dock__label-static">
+                    Строки собираются автоматически из названий разворотов и их реальных номеров
+                    страниц. Шрифт, цвет и эффекты — во вкладках рядом, как у обычного текста.
+                  </p>
+                  <button
+                    type="button"
+                    class="mobile-dock__inline-toggle"
+                    @click="panelStack.push({ id: 'toc-config', title: 'Настройки содержания' })"
+                  >
+                    <span>Настроить интервалы и линию</span>
+                    <v-icon size="16">mdi-chevron-right</v-icon>
+                  </button>
+                </template>
+                <template v-else>
+                  <label class="mobile-dock__field">
+                    <span class="mobile-dock__field-label">Название поля</span>
+                    <input
+                      type="text"
+                      :value="textElement.label"
+                      @change="patchElement({ label: ($event.target as HTMLInputElement).value })"
+                    />
+                  </label>
+                  <label class="mobile-dock__field">
+                    <span class="mobile-dock__field-label">Значение по умолчанию</span>
+                    <textarea
+                      :value="textElement.defaultText ?? ''"
+                      @change="patchElement({ defaultText: ($event.target as HTMLTextAreaElement).value })"
+                    />
+                  </label>
+                </template>
               </template>
 
               <template v-if="activeCategory === 'font'">
@@ -55,7 +109,7 @@
                   <span class="mobile-dock__field-label">Шрифт</span>
                   <v-select
                     class="mobile-dock__vselect"
-                    :model-value="textElement.fontFamily"
+                    :model-value="styleElement.fontFamily"
                     :items="fontOptions"
                     item-title="title"
                     item-value="value"
@@ -71,16 +125,16 @@
                     <input
                       type="number"
                       min="1"
-                      :value="textElement.fontSize"
-                      @change="patchElement({ fontSize: toNumber(($event.target as HTMLInputElement).value, textElement.fontSize) })"
+                      :value="styleElement.fontSize"
+                      @change="patchElement({ fontSize: toNumber(($event.target as HTMLInputElement).value, styleElement.fontSize) })"
                     />
                     <span class="mobile-dock__unit">px</span>
                   </div>
                   <div class="mobile-dock__stepper">
-                    <button type="button" aria-label="Увеличить" @click="patchElement({ fontSize: textElement.fontSize + 1 })">
+                    <button type="button" aria-label="Увеличить" @click="patchElement({ fontSize: styleElement.fontSize + 1 })">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 15l7-7 7 7" /></svg>
                     </button>
-                    <button type="button" aria-label="Уменьшить" @click="patchElement({ fontSize: Math.max(1, textElement.fontSize - 1) })">
+                    <button type="button" aria-label="Уменьшить" @click="patchElement({ fontSize: Math.max(1, styleElement.fontSize - 1) })">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 9l7 7 7-7" /></svg>
                     </button>
                   </div>
@@ -95,16 +149,16 @@
 
                 <p class="mobile-dock__label-static">Выравнивание текста</p>
                 <div class="mobile-dock__align-row">
-                  <button type="button" class="mobile-dock__align-btn" :class="{ active: textElement.textAlign === 'left' }" aria-label="По левому краю" @click="setTextAlign('left')">
+                  <button type="button" class="mobile-dock__align-btn" :class="{ active: styleElement.textAlign === 'left' }" aria-label="По левому краю" @click="setTextAlign('left')">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6h16M4 12h10M4 18h13" /></svg>
                   </button>
-                  <button type="button" class="mobile-dock__align-btn" :class="{ active: textElement.textAlign === 'center' }" aria-label="По центру" @click="setTextAlign('center')">
+                  <button type="button" class="mobile-dock__align-btn" :class="{ active: styleElement.textAlign === 'center' }" aria-label="По центру" @click="setTextAlign('center')">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6h16M7 12h10M5.5 18h13" /></svg>
                   </button>
-                  <button type="button" class="mobile-dock__align-btn" :class="{ active: textElement.textAlign === 'right' }" aria-label="По правому краю" @click="setTextAlign('right')">
+                  <button type="button" class="mobile-dock__align-btn" :class="{ active: styleElement.textAlign === 'right' }" aria-label="По правому краю" @click="setTextAlign('right')">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6h16M10 12h10M7 18h13" /></svg>
                   </button>
-                  <button type="button" class="mobile-dock__align-btn" :class="{ active: textElement.textAlign === 'justify' }" aria-label="По ширине" @click="setTextAlign('justify')">
+                  <button type="button" class="mobile-dock__align-btn" :class="{ active: styleElement.textAlign === 'justify' }" aria-label="По ширине" @click="setTextAlign('justify')">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
                   </button>
                 </div>
@@ -117,14 +171,14 @@
                       class="mobile-dock__mini-num-field"
                       type="number"
                       step="0.05"
-                      :value="textElement.lineHeight"
-                      @change="patchElement({ lineHeight: toNumber(($event.target as HTMLInputElement).value, textElement.lineHeight) })"
+                      :value="styleElement.lineHeight"
+                      @change="patchElement({ lineHeight: toNumber(($event.target as HTMLInputElement).value, styleElement.lineHeight) })"
                     />
                     <div class="mobile-dock__mini-stepper">
-                      <button type="button" aria-label="Увеличить" @click="patchElement({ lineHeight: Math.min(LINE_HEIGHT_MAX, textElement.lineHeight + 0.05) })">
+                      <button type="button" aria-label="Увеличить" @click="patchElement({ lineHeight: Math.min(LINE_HEIGHT_MAX, styleElement.lineHeight + 0.05) })">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 15l7-7 7 7" /></svg>
                       </button>
-                      <button type="button" aria-label="Уменьшить" @click="patchElement({ lineHeight: Math.max(LINE_HEIGHT_MIN, textElement.lineHeight - 0.05) })">
+                      <button type="button" aria-label="Уменьшить" @click="patchElement({ lineHeight: Math.max(LINE_HEIGHT_MIN, styleElement.lineHeight - 0.05) })">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 9l7 7 7-7" /></svg>
                       </button>
                     </div>
@@ -137,14 +191,14 @@
                       class="mobile-dock__mini-num-field"
                       type="number"
                       step="0.1"
-                      :value="textElement.letterSpacing"
-                      @change="patchElement({ letterSpacing: toNumber(($event.target as HTMLInputElement).value, textElement.letterSpacing) })"
+                      :value="styleElement.letterSpacing"
+                      @change="patchElement({ letterSpacing: toNumber(($event.target as HTMLInputElement).value, styleElement.letterSpacing) })"
                     />
                     <div class="mobile-dock__mini-stepper">
-                      <button type="button" aria-label="Увеличить" @click="patchElement({ letterSpacing: Math.min(LETTER_SPACING_MAX, textElement.letterSpacing + 0.1) })">
+                      <button type="button" aria-label="Увеличить" @click="patchElement({ letterSpacing: Math.min(LETTER_SPACING_MAX, styleElement.letterSpacing + 0.1) })">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 15l7-7 7 7" /></svg>
                       </button>
-                      <button type="button" aria-label="Уменьшить" @click="patchElement({ letterSpacing: Math.max(LETTER_SPACING_MIN, textElement.letterSpacing - 0.1) })">
+                      <button type="button" aria-label="Уменьшить" @click="patchElement({ letterSpacing: Math.max(LETTER_SPACING_MIN, styleElement.letterSpacing - 0.1) })">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 9l7 7 7-7" /></svg>
                       </button>
                     </div>
@@ -153,13 +207,13 @@
                 <div class="mobile-dock__mini-row">
                   <span class="mobile-dock__mini-label">Закрепить поле</span>
                   <div class="mobile-dock__mini-seg">
-                    <button type="button" class="mobile-dock__mini-seg-btn" :class="{ active: textElement.verticalAlign === 'bottom' }" aria-label="Снизу" @click="setVerticalAlign('bottom')">
+                    <button type="button" class="mobile-dock__mini-seg-btn" :class="{ active: styleElement.verticalAlign === 'bottom' }" aria-label="Снизу" @click="setVerticalAlign('bottom')">
                       <v-icon size="15">mdi-format-vertical-align-bottom</v-icon>
                     </button>
-                    <button type="button" class="mobile-dock__mini-seg-btn" :class="{ active: textElement.verticalAlign === 'middle' }" aria-label="По центру" @click="setVerticalAlign('middle')">
+                    <button type="button" class="mobile-dock__mini-seg-btn" :class="{ active: styleElement.verticalAlign === 'middle' }" aria-label="По центру" @click="setVerticalAlign('middle')">
                       <v-icon size="15">mdi-format-vertical-align-center</v-icon>
                     </button>
-                    <button type="button" class="mobile-dock__mini-seg-btn" :class="{ active: textElement.verticalAlign === 'top' }" aria-label="Сверху" @click="setVerticalAlign('top')">
+                    <button type="button" class="mobile-dock__mini-seg-btn" :class="{ active: styleElement.verticalAlign === 'top' }" aria-label="Сверху" @click="setVerticalAlign('top')">
                       <v-icon size="15">mdi-format-vertical-align-top</v-icon>
                     </button>
                   </div>
@@ -168,7 +222,7 @@
 
               <template v-if="activeCategory === 'color'">
                 <EditorColorPicker
-                  :model-value="textElement.color"
+                  :model-value="styleElement.color"
                   label="Цвет текста"
                   fallback="#111111"
                   @update:model-value="patchElement({ color: $event })"
@@ -177,7 +231,7 @@
 
               <template v-if="activeCategory === 'effects'">
                 <div class="mobile-dock__fx-scroll">
-                  <button type="button" class="mobile-dock__fx-item" :class="{ active: !textElement.effect }" @click="removeTextEffect">
+                  <button type="button" class="mobile-dock__fx-item" :class="{ active: !styleElement.effect }" @click="removeTextEffect">
                     <span class="mobile-dock__fx-thumb">Аа</span>
                     <span class="mobile-dock__fx-label">Нет</span>
                   </button>
@@ -186,14 +240,14 @@
                     :key="card.type"
                     type="button"
                     class="mobile-dock__fx-item"
-                    :class="{ active: textElement.effect?.type === card.type }"
+                    :class="{ active: styleElement.effect?.type === card.type }"
                     @click="selectTextEffect(card)"
                   >
                     <span class="mobile-dock__fx-thumb" :style="getTextEffectDemoStyle(card.type)">Аа</span>
                     <span class="mobile-dock__fx-label">{{ card.label }}</span>
                   </button>
                 </div>
-                <template v-if="textElement.effect">
+                <template v-if="styleElement.effect">
                   <button
                     type="button"
                     class="mobile-dock__inline-toggle"
@@ -211,7 +265,7 @@
 
                   <template v-if="effectSettingsOpen">
                     <p class="mobile-dock__label-static">Настройки эффекта — {{ activeTextEffectLabel }}</p>
-                    <EditorEffectSettingsForm :effect="textElement.effect" @patch="patchEffectParams" />
+                    <EditorEffectSettingsForm :effect="styleElement.effect" @patch="patchEffectParams" />
                   </template>
                 </template>
               </template>
@@ -719,10 +773,14 @@ import type { EffectDescriptor } from '../models/effect-descriptor.model'
 import { PHOTO_MASK_DESCRIPTORS, getCustomPhotoMaskCssClipPath } from '../models/photo-mask.model'
 import type { PhotoMaskType } from '../models/photo-mask.model'
 import type { TextAlign, TextVerticalAlign } from '../models/text-placeholder.model'
+import { isAiTextElement as isAiTextPageElement, isTocElement as isTocPageElement } from '../models'
+import type { AiTextPlaceholder } from '../models/ai-text-placeholder.model'
+import type { TocPlaceholder } from '../models/toc-placeholder.model'
 import type { AdminPhotoFrame } from '@/shared/api/admin/photo-frames.api'
 import type { AdminCustomPhotoMask } from '@/shared/api/admin/custom-photo-masks.api'
 import { editorAssets } from '../services/editor-assets'
 import { editorPhotoPicker } from '../services/editor-photo-picker'
+import { createEditorQuestion, editorQuestions } from '../services/editor-questions'
 import { resolveAssetUrl, toStoredAssetPath } from '@/shared/config/assets'
 import { useErrorMessageModal } from '@/shared/composables/useErrorMessageModal'
 import { getUploadErrorMessage } from '@/shared/utils/api-error.util'
@@ -952,6 +1010,27 @@ const GROUP_CHIPS: DockChip[] = [
   { id: 'position', label: 'Позиция', mdiIcon: 'mdi-arrow-all' },
 ]
 
+// No "Поведение" chip — AiTextPlaceholder has no `required` field (unlike TextPlaceholder), see
+// the model.
+const AI_TEXT_CHIPS: DockChip[] = [
+  { id: 'content', label: 'Контент', mdiIcon: 'mdi-robot-outline' },
+  { id: 'font', label: 'Шрифт', mdiIcon: 'mdi-format-font' },
+  { id: 'color', label: 'Цвет', mdiIcon: 'mdi-palette-outline' },
+  { id: 'effects', label: 'Эффекты', mdiIcon: 'mdi-star-four-points-outline' },
+  { id: 'position', label: 'Позиция', mdiIcon: 'mdi-arrow-all' },
+]
+
+// Same shape as AI_TEXT_CHIPS — "Контент" opens the toc-config screen (entry spacing/dot leader,
+// the only fields with no text equivalent), font/color/effects are the same shared sections text
+// and ai-text already use. No "Поведение" chip — TocPlaceholder has no `required` field.
+const TOC_CHIPS: DockChip[] = [
+  { id: 'content', label: 'Контент', mdiIcon: 'mdi-format-list-bulleted' },
+  { id: 'font', label: 'Шрифт', mdiIcon: 'mdi-format-font' },
+  { id: 'color', label: 'Цвет', mdiIcon: 'mdi-palette-outline' },
+  { id: 'effects', label: 'Эффекты', mdiIcon: 'mdi-star-four-points-outline' },
+  { id: 'position', label: 'Позиция', mdiIcon: 'mdi-arrow-all' },
+]
+
 const isTextElement = computed(() => Boolean(selected.value && isTextPlaceholderElement(selected.value)))
 const isPhotoElement = computed(() => Boolean(selected.value && isPhotoPlaceholderElement(selected.value)))
 const isShapeElement = computed(
@@ -963,11 +1042,37 @@ const isShapeElement = computed(
 const isLineElement = computed(() => selected.value?.type === 'shape-line')
 const isRectangleElement = computed(() => selected.value?.type === 'shape-rectangle')
 const isGroupElement = computed(() => selected.value?.type === 'group')
+const isAiTextElement = computed(() => Boolean(selected.value && isAiTextPageElement(selected.value)))
+const isTocElement = computed(() => Boolean(selected.value && isTocPageElement(selected.value)))
 
 const textElement = computed(() => selected.value as import('../models/text-placeholder.model').TextPlaceholder)
+const aiTextElement = computed(() => selected.value as AiTextPlaceholder)
+const tocElement = computed(() => selected.value as TocPlaceholder)
+
+// Typed for exactly the fields font/color/effects need — TextPlaceholder, AiTextPlaceholder, and
+// TocPlaceholder all carry them (duplicated, not inherited — see each model's own comment), so
+// this reads any of the three without needing a per-type branch in those sections.
+const styleElement = computed(() => {
+  const element = selected.value as
+    | import('../models/text-placeholder.model').TextPlaceholder
+    | AiTextPlaceholder
+    | TocPlaceholder
+  return element
+})
+
+// Same gate as EditorPropertiesPanel.vue's own hasEditorQuestions — true in admin (template-build)
+// context, where a question list (however empty) or an "add question" callback is provided; false
+// in the customer-facing order editor, which has no such affordance.
+const hasEditorQuestions = computed(() => editorQuestions.value.length > 0 || createEditorQuestion.value !== null)
+
+const aiTextLengthSummary = computed(() => {
+  const constraint = aiTextElement.value.lengthConstraint
+  const unitLabel = constraint.unit === 'words' ? 'слов' : 'символов'
+  return `${constraint.min ?? '—'}–${constraint.max ?? '—'} ${unitLabel}`
+})
 
 const activeTextEffectLabel = computed(() => {
-  const effect = textElement.value?.effect
+  const effect = styleElement.value?.effect
   if (!effect) {
     return ''
   }
@@ -981,7 +1086,7 @@ const effectSettingsOpen = ref(true)
 const filterSettingsOpen = ref(true)
 
 function patchEffectParams(partial: Record<string, unknown>): void {
-  const effect = textElement.value?.effect
+  const effect = styleElement.value?.effect
   if (!effect) {
     return
   }
@@ -992,6 +1097,12 @@ const photoElement = computed(() => selected.value as import('../models/photo-pl
 const shapeElement = computed(() => selected.value as import('../models/shape-element.model').ShapeElement)
 
 const chips = computed<DockChip[]>(() => {
+  if (isAiTextElement.value) {
+    return AI_TEXT_CHIPS
+  }
+  if (isTocElement.value) {
+    return TOC_CHIPS
+  }
   if (isTextElement.value) {
     return TEXT_CHIPS
   }
@@ -1007,11 +1118,9 @@ const chips = computed<DockChip[]>(() => {
   return []
 })
 
-const isTextBold = computed(() => Boolean(selected.value && isTextPlaceholderElement(selected.value) && selected.value.fontWeight >= 600))
-const isTextItalic = computed(() => Boolean(selected.value && isTextPlaceholderElement(selected.value) && selected.value.fontItalic))
-const isTextUppercase = computed(
-  () => Boolean(selected.value && isTextPlaceholderElement(selected.value) && selected.value.textTransform === 'uppercase'),
-)
+const isTextBold = computed(() => Boolean(styleElement.value && styleElement.value.fontWeight >= 600))
+const isTextItalic = computed(() => Boolean(styleElement.value?.fontItalic))
+const isTextUppercase = computed(() => styleElement.value?.textTransform === 'uppercase')
 
 const LETTER_SPACING_MIN = -2
 const LETTER_SPACING_MAX = 20

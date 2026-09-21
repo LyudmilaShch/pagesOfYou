@@ -4,6 +4,7 @@ import type { PageElement } from '../../models'
 import type { PhotoPlaceholder } from '../../models/photo-placeholder.model'
 import { hasPhotoStroke } from '../../utils/element-stroke.util'
 import type { TextPlaceholder } from '../../models/text-placeholder.model'
+import type { TocPlaceholder } from '../../models/toc-placeholder.model'
 import type { TextEffect } from '../../models/text-effect.model'
 import type { PhotoFilter } from '../../models/photo-filter.model'
 import { SHAPE_SHADOW_DESCRIPTORS } from '../../models/shape-shadow.model'
@@ -863,7 +864,33 @@ function buildBaseTextConfig(textEl: TextPlaceholder, displayText?: string | nul
   }
 }
 
+const TOC_PREVIEW_ENTRIES = [
+  { title: 'Пример раздела 1', pageLabel: '3' },
+  { title: 'Пример раздела 2', pageLabel: '5' },
+  { title: 'Пример раздела 3', pageLabel: '7' },
+]
+
+/** The template editor has no "real" order to number pages against — a magazine type can back
+ * orders with different final spread counts — so this is illustrative only, purely for the admin
+ * to gauge font/spacing while designing. The real, per-order rows render in the customer-facing
+ * DOM book (JournalSpreadThumbnail.vue), which can lay out title/dot-leader/number as separate
+ * flex columns; Konva's single Text node here can only approximate that with padded strings. */
+function buildTocPreviewText(element: TocPlaceholder): string {
+  const leaderChar = element.dotLeader ? '⋯' : ' '
+  return TOC_PREVIEW_ENTRIES.map((entry) => `${entry.title} ${leaderChar.repeat(8)} ${entry.pageLabel}`).join('\n\n')
+}
+
 function getTextPlaceholderElement(element: PageElement): TextPlaceholder | null {
+  if (element.type === 'toc-placeholder') {
+    return {
+      ...element,
+      defaultText: buildTocPreviewText(element),
+      textSizingMode: 'auto',
+      maxLength: 0,
+      required: false,
+    } as unknown as TextPlaceholder
+  }
+
   if (element.type === 'ai-text-placeholder') {
     // Rendered through the same Text pipeline as a real placeholder (same typography fields),
     // but its content is never directly user-editable in this phase — only a static preview

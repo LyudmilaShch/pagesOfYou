@@ -22,6 +22,7 @@
                 :crop-enabled="cropEnabled"
                 :pick-enabled="pickEnabled"
                 :ai-text-edit-enabled="aiTextEditEnabled"
+                :toc-entries="tocEntriesFor(half.pageId)"
                 @drop-photo="(elementId, url) => emit('drop-photo', half.pageId, elementId, url)"
                 @crop-photo="(elementId) => emit('crop-photo', half.pageId, elementId)"
                 @pick-photo="(elementId) => emit('pick-photo', half.pageId, elementId)"
@@ -164,13 +165,14 @@ import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 
 import JournalSpreadThumbnail from '@/modules/editor/components/JournalSpreadThumbnail.vue'
 import type { CanvasData } from '@/modules/editor/models/canvas-data.model'
+import type { TocEntry } from '@/modules/editor/models/toc-placeholder.model'
 import {
   A4_PAGE_HEIGHT,
   A4_PAGE_WIDTH,
   A4_SPREAD_PAGE_HEIGHT,
   A4_SPREAD_PAGE_WIDTH,
 } from '@/modules/editor/constants/page.constants'
-import { getJournalPageDisplayName } from '../../utils/journal-structure.util'
+import { buildTocEntries, getJournalPageDisplayName } from '../../utils/journal-structure.util'
 import type { JournalPage } from '../../types/order.types'
 import type { SetJournalPageTemplatePayload } from '../../api/orders.api'
 import { useOrderBuilderStore } from '../../stores/order-builder.store'
@@ -240,14 +242,26 @@ const emit = defineEmits<{
   'regenerate-ai-text': [pageId: string, elementId: string]
 }>()
 
+// Real table-of-contents rows for every toc-placeholder in the book — computed once from the
+// actual page list (real page numbers only exist per order/template instance, see
+// journal-structure.util.ts's buildTocEntries), then each half gets its own page excluded so a
+// toc-placeholder never lists the spread it's sitting on.
+const fullTocEntries = computed(() => buildTocEntries(props.pages))
+
+function tocEntriesFor(pageId: string): TocEntry[] {
+  return fullTocEntries.value.filter((entry) => entry.pageId !== pageId)
+}
+
 // A COVER sits where a book's front cover really is — the right side, with nothing (yet) to its
-// left. A BACK_COVER mirrors that on the left, with nothing to its right. Only a SPREAD occupies
-// both sides at once (the same canvas, windowed into two halves — see `windowFor` below).
+// left. A BACK_COVER mirrors that on the left, with nothing to its right. A SPREAD — and a TOC,
+// built on the same spread-width canvas (see journal-structure.util.ts's buildJournalPageSnapshot)
+// — occupies both sides at once (the same canvas, windowed into two halves — see `windowFor`
+// below).
 function sidesFor(page: JournalPage | undefined): { left: string | null; right: string | null } {
   if (!page) {
     return { left: null, right: null }
   }
-  if (page.slotType === 'SPREAD') {
+  if (page.slotType === 'SPREAD' || page.slotType === 'TOC') {
     return { left: page.id, right: page.id }
   }
   return page.slotType === 'COVER' ? { left: null, right: page.id } : { left: page.id, right: null }
@@ -294,15 +308,17 @@ const viewingFill = computed(() =>
 )
 
 function isSpreadPage(pageId: string | null): boolean {
-  return props.pages.find((page) => page.id === pageId)?.slotType === 'SPREAD'
+  const slotType = props.pages.find((page) => page.id === pageId)?.slotType
+  return slotType === 'SPREAD' || slotType === 'TOC'
 }
 
-// A SPREAD canvas is one continuous image spanning both physical pages (see
-// journal-structure.util.ts's buildJournalPageSnapshot) — showing just one half means clipping a
-// 200%-wide inner render shifted left/right (what gives the real book look, a visible spine between
-// two actual page-halves, without needing two different data sources). A single COVER/BACK_COVER
-// canvas IS one physical page already, so it fills its half-slot at its own natural 100% width —
-// windowing it with the 200% trick would wrongly crop it in half.
+// A SPREAD (or TOC — same spread-width canvas, see journal-structure.util.ts's
+// buildJournalPageSnapshot) canvas is one continuous image spanning both physical pages —
+// showing just one half means clipping a 200%-wide inner render shifted left/right (what gives
+// the real book look, a visible spine between two actual page-halves, without needing two
+// different data sources). A single COVER/BACK_COVER canvas IS one physical page already, so it
+// fills its half-slot at its own natural 100% width — windowing it with the 200% trick would
+// wrongly crop it in half.
 function windowFor(pageId: string | null, side: 'left' | 'right'): { left: string; width: string } {
   if (!isSpreadPage(pageId)) {
     return { left: '0%', width: '100%' }

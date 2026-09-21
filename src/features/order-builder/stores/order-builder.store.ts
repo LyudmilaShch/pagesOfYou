@@ -79,6 +79,7 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
   function buildLocalJournalPages(
     templates: CatalogMagazinePage[],
     magazineTypeId: string,
+    includedSpreads: number,
     configuredSpreads?: DefaultSpreadTemplate[],
   ): JournalPage[] {
     const catalog = groupTemplatesByPageType(templates)
@@ -87,7 +88,7 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
       throw new Error('MISSING_COVER_TEMPLATES')
     }
 
-    const slots = buildInitialJournalSlots(templates, { configuredSpreads })
+    const slots = buildInitialJournalSlots(templates, { includedSpreads, configuredSpreads })
 
     return slots.map((slot) => {
       const primary = findTemplateById(templates, slot.magazinePageId)!
@@ -165,6 +166,7 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
       const journalPages = buildLocalJournalPages(
         pages,
         magazineTypeId,
+        magazineType.includedSpreads,
         configuredDefaultSpreads.value.length > 0
           ? configuredDefaultSpreads.value
           : undefined,
@@ -640,6 +642,9 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
 
     const cover = order.value.journalPages.find((page) => page.slotType === 'COVER')
     const backCover = order.value.journalPages.find((page) => page.slotType === 'BACK_COVER')
+    // Mirrors orders.service.ts's own reorderJournalSpreads — never accepted in spreadIds, so it
+    // can only ever sit right after the cover.
+    const toc = order.value.journalPages.find((page) => page.slotType === 'TOC')
     const spreads = order.value.journalPages.filter((page) => page.slotType === 'SPREAD')
 
     if (!cover || !backCover || spreadIds.length !== spreads.length) {
@@ -647,7 +652,8 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     }
 
     const orderedSpreads = spreadIds.map((id) => spreads.find((page) => page.id === id)!)
-    order.value.journalPages = [cover, ...orderedSpreads, backCover].map((page, index) => ({
+    const nextOrder = toc ? [cover, toc, ...orderedSpreads, backCover] : [cover, ...orderedSpreads, backCover]
+    order.value.journalPages = nextOrder.map((page, index) => ({
       ...page,
       sortOrder: index,
     }))

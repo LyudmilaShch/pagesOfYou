@@ -3,9 +3,7 @@ import {
   A4_SPREAD_PAGE_HEIGHT,
   A4_SPREAD_PAGE_WIDTH,
 } from '@/modules/editor/constants/page.constants'
-import {
-  DEFAULT_PAGE_BACKGROUND_IMAGE_FIT,
-} from '@/modules/editor/models/page-background.model'
+import { getRootPageBackgroundSettings } from '@/modules/editor/utils/spread-background.util'
 import {
   CANVAS_DATA_VERSION,
   createEmptyCanvasData,
@@ -14,6 +12,7 @@ import {
   type CanvasData,
 } from '@/modules/editor/models/canvas-data.model'
 import type { PageElement } from '@/modules/editor/models'
+import type { TocEntry } from '@/modules/editor/models/toc-placeholder.model'
 import type { CatalogMagazinePage } from '../api/catalog.api'
 import {
   JOURNAL_SLOT_LABELS,
@@ -27,6 +26,7 @@ export interface TemplateCatalog {
   spread: CatalogMagazinePage[]
   page: CatalogMagazinePage[]
   backCover: CatalogMagazinePage[]
+  toc: CatalogMagazinePage[]
 }
 
 export interface DefaultSpreadTemplate {
@@ -61,19 +61,22 @@ export function mergePageCanvasesIntoSpread(
     cloneElementWithOffset(element, 'right-', A4_PAGE_WIDTH),
   )
 
+  // Each side keeps its OWN source page's background — flattening them into one shared value
+  // (the old behavior: `leftCanvas.X ?? rightCanvas.X`) meant whichever page happened to have one
+  // set "won" and then bled across BOTH halves once rendered, since nothing downstream knew to
+  // treat it as per-page. The root fields below just mirror the left page's, as a harmless
+  // fallback for any reader that doesn't know about per-page mode.
+  const leftBackground = getRootPageBackgroundSettings(leftCanvas)
+  const rightBackground = getRootPageBackgroundSettings(rightCanvas)
+
   return {
     version: CANVAS_DATA_VERSION,
     pageWidth: A4_SPREAD_PAGE_WIDTH,
     pageHeight: A4_SPREAD_PAGE_HEIGHT,
-    backgroundColor: leftCanvas.backgroundColor ?? rightCanvas.backgroundColor ?? '#FFFFFF',
-    backgroundImageUrl: leftCanvas.backgroundImageUrl ?? rightCanvas.backgroundImageUrl ?? null,
-    backgroundImageFit:
-      leftCanvas.backgroundImageFit ??
-      rightCanvas.backgroundImageFit ??
-      DEFAULT_PAGE_BACKGROUND_IMAGE_FIT,
-    backgroundImageCropX: leftCanvas.backgroundImageCropX ?? rightCanvas.backgroundImageCropX ?? 0,
-    backgroundImageCropY: leftCanvas.backgroundImageCropY ?? rightCanvas.backgroundImageCropY ?? 0,
-    backgroundImageScale: leftCanvas.backgroundImageScale ?? rightCanvas.backgroundImageScale ?? 1,
+    ...leftBackground,
+    spreadBackgroundMode: 'per-page',
+    leftPageBackground: leftBackground,
+    rightPageBackground: rightBackground,
     elements: [...leftElements, ...rightElements],
   }
 }
@@ -84,17 +87,32 @@ export function groupTemplatesByPageType(pages: CatalogMagazinePage[]): Template
     spread: pages.filter((page) => page.pageType === 'SPREAD'),
     page: pages.filter((page) => page.pageType === 'PAGE'),
     backCover: pages.filter((page) => page.pageType === 'BACK_COVER'),
+    toc: pages.filter((page) => page.pageType === 'TOC'),
   }
 }
 
 export interface BuildInitialJournalOptions {
+  /** See resolveInitialSpreadCount — required, not optional, so a caller can't silently fall back
+   * to the print-safety floor instead of what the magazine type is actually priced for. */
+  includedSpreads: number
   configuredSpreads?: DefaultSpreadTemplate[]
 }
 
+/**
+ * The interior spread count a brand-new journal should start with. `includedSpreads` is priced in
+ * "spread-equivalents including the cover" units (cover+back-cover together count as 1 — see
+ * pricing.util.ts's COVER_SPREAD_EQUIVALENT), so a customer's default journal should have
+ * `includedSpreads - 1` interior spreads to actually match what the base price already covers —
+ * previously this used the flat print-safety floor (MIN_JOURNAL_SPREADS) instead, so a magazine
+ * type priced for e.g. 12 spreads still defaulted new orders to 9. Explicitly admin-configured
+ * default spreads (see MagazineTypeDefaultSpreadsTab.vue) still win if there are MORE of them than
+ * that — this only raises the floor, never overrides a deliberately larger configuration.
+ */
 export function resolveInitialSpreadCount(
+  includedSpreads: number,
   configuredSpreads?: DefaultSpreadTemplate[],
 ): number {
-  return Math.max(MIN_JOURNAL_SPREADS, configuredSpreads?.length ?? MIN_JOURNAL_SPREADS)
+  return Math.max(MIN_JOURNAL_SPREADS, includedSpreads - 1, configuredSpreads?.length ?? 0)
 }
 
 function resolveConfiguredSpreadAt(
@@ -180,11 +198,16 @@ export function buildJournalPageSnapshot(
   primaryTemplate: CatalogMagazinePage | null,
   rightTemplate: CatalogMagazinePage | null,
 ): CanvasData {
+  // TOC gets the same full spread-width canvas as a regular spread — it always needs the room,
+  // and (unlike a spread) is never built from two SPLIT_PAGES halves, so layoutMode for it is
+  // always null.
+  const isSpreadShaped = slotType === 'SPREAD' || slotType === 'TOC'
+
   if (!primaryTemplate) {
-    return slotType === 'SPREAD' ? createSpreadCanvasData() : createEmptyCanvasData()
+    return isSpreadShaped ? createSpreadCanvasData() : createEmptyCanvasData()
   }
 
-  if (slotType === 'SPREAD') {
+  if (isSpreadShaped) {
     const canvas =
       layoutMode === 'SPLIT_PAGES' && rightTemplate
         ? mergePageCanvasesIntoSpread(
@@ -214,13 +237,14 @@ export interface LocalJournalSlotDraft {
 
 export function buildInitialJournalSlots(
   templates: CatalogMagazinePage[],
-  options: BuildInitialJournalOptions = {},
+  options: BuildInitialJournalOptions,
 ): LocalJournalSlotDraft[] {
   const catalog = groupTemplatesByPageType(templates)
   const coverTemplate = catalog.cover[0] ?? null
   const backCoverTemplate = catalog.backCover[0] ?? null
+  const tocTemplate = catalog.toc[0] ?? null
   const spreadDefault = pickDefaultSpreadTemplate(catalog)
-  const spreadCount = resolveInitialSpreadCount(options.configuredSpreads)
+  const spreadCount = resolveInitialSpreadCount(options.includedSpreads, options.configuredSpreads)
 
   const fallbackTemplateId =
     catalog.spread[0]?.id ??
@@ -258,6 +282,13 @@ export function buildInitialJournalSlots(
   }
 
   pushSlot('COVER', null, coverTemplate, null)
+
+  // Optional, and — unlike every other slot — never falls back to an unrelated template when
+  // absent: pushSlot's own fallback chain would otherwise build a bogus TOC slot from a random
+  // spread/cover template. Guarding the call itself keeps "no TOC configured" a clean no-op.
+  if (tocTemplate) {
+    pushSlot('TOC', null, tocTemplate, null)
+  }
 
   for (let index = 0; index < spreadCount; index += 1) {
     const config = resolveConfiguredSpreadAt(
@@ -301,7 +332,52 @@ export function getJournalPageDisplayName(
     return JOURNAL_SLOT_LABELS.BACK_COVER
   }
 
+  if (page.slotType === 'TOC') {
+    return JOURNAL_SLOT_LABELS.TOC
+  }
+
   return `${JOURNAL_SLOT_LABELS.SPREAD} ${spreadIndex ?? ''}`.trim()
+}
+
+/**
+ * Table-of-contents entries for a finished order — computed here rather than stored, since the
+ * same magazine-type template can back orders with different final spread counts (spreads added,
+ * reordered, or swapped per order), so real page numbers only ever exist per order, not per
+ * template. COVER/BACK_COVER are never numbered or listed (same convention as
+ * getJournalPageDisplayName/countSpreadSlots, which already exclude them). SPREAD slots get a
+ * listed entry; the TOC slot itself still spans (and numbers) 2 physical pages like a spread, it
+ * just never lists itself. Each spread spans 2 physical pages, but the listed number is just
+ * where it starts (the left-hand page), not a range — that's the page the reader actually turns
+ * to. `excludePageId` is a defensive extra on top of the TOC-slot exclusion above, for the
+ * (currently impossible) case of a toc-placeholder ending up on a non-TOC page.
+ */
+export function buildTocEntries(
+  pages: Array<{ id: string; slotType: JournalSlotType; magazinePage: { name: string } }>,
+  excludePageId?: string | null,
+): TocEntry[] {
+  const entries: TocEntry[] = []
+  let nextPageNumber = 1
+
+  for (const page of pages) {
+    if (page.slotType !== 'SPREAD' && page.slotType !== 'TOC') {
+      continue
+    }
+
+    const start = nextPageNumber
+    nextPageNumber = start + 2
+
+    if (page.slotType !== 'SPREAD' || page.id === excludePageId) {
+      continue
+    }
+
+    entries.push({
+      pageId: page.id,
+      title: page.magazinePage.name,
+      pageLabel: String(start),
+    })
+  }
+
+  return entries
 }
 
 export function findTemplateById(

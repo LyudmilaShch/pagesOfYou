@@ -418,7 +418,7 @@ export function createSpreadCanvasData(): CanvasData {
 }
 
 export function createCanvasDataForPageType(pageType: string): CanvasData {
-  if (pageType === 'SPREAD') {
+  if (pageType === 'SPREAD' || pageType === 'TOC') {
     return createSpreadCanvasData();
   }
 

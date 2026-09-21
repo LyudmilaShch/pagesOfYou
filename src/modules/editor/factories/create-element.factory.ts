@@ -14,6 +14,7 @@ export type LibraryElementType =
   | 'subtitle-placeholder'
   | 'text-placeholder'
   | 'ai-text-placeholder'
+  | 'toc-placeholder'
   | 'shape-line'
   | 'shape-rectangle'
   | 'shape-circle'
@@ -62,6 +63,13 @@ export const LIBRARY_ELEMENTS: LibraryElementDefinition[] = [
     label: 'AI-текст',
     icon: 'mdi-robot-outline',
     description: 'Текст, генерируемый AI по ответам анкеты',
+    category: 'text',
+  },
+  {
+    type: 'toc-placeholder',
+    label: 'Содержание',
+    icon: 'mdi-format-list-bulleted',
+    description: 'Список разворотов с номерами страниц, собирается автоматически',
     category: 'text',
   },
   {
@@ -218,6 +226,25 @@ export function createElementFromLibrary(
         textSizingMode: TEXT_SIZING_MODE_DEFAULT,
         color: '#111111',
         effect: null,
+      }
+
+    case 'toc-placeholder':
+      return {
+        ...baseElement(type, 'Содержание', { x: centerX - 100, y: centerY - 130 }, { width: 200, height: 260 }),
+        label: 'Содержание',
+        fontFamily: EDITOR_FONT_BODY,
+        fontSize: TEXT_FONT_SIZE_DEFAULT,
+        fontWeight: 400,
+        fontItalic: false,
+        lineHeight: 1.4,
+        letterSpacing: 0,
+        textAlign: 'left',
+        verticalAlign: 'top',
+        textTransform: 'none',
+        color: '#111111',
+        effect: null,
+        entryGap: 12,
+        dotLeader: true,
       }
 
     case 'shape-rectangle':

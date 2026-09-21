@@ -5,9 +5,11 @@
         <h2 class="default-spreads-tab__title">Развороты по умолчанию</h2>
         <p class="default-spreads-tab__subtitle">
           Эти шаблоны будут автоматически подставлены при создании журнала пользователем.
-          Минимум {{ MIN_JOURNAL_SPREADS }} разворотов внутри журнала — вместе с обложкой
-          (передняя + задняя страницы вместе = 1 разворот) это {{ MIN_JOURNAL_SPREADS + 1 }}
-          {{ pluralizeSpreads(MIN_JOURNAL_SPREADS + 1) }}, {{ (MIN_JOURNAL_SPREADS + 1) * 2 }} страниц.
+          По умолчанию — {{ defaultSpreadCount }} разворотов внутри журнала (столько же, сколько
+          указано в разворотах, включённых в базовую цену), минимум {{ MIN_JOURNAL_SPREADS }}.
+          Вместе с обложкой (передняя + задняя страницы вместе = 1 разворот) это
+          {{ defaultSpreadCount + 1 }} {{ pluralizeSpreads(defaultSpreadCount + 1) }},
+          {{ (defaultSpreadCount + 1) * 2 }} страниц.
         </p>
         <p class="default-spreads-tab__total">
           Сейчас настроено: {{ spreads.length }} внутри + обложка =
@@ -42,7 +44,7 @@
     >
       Развороты по умолчанию ещё не настроены.
       <v-btn class="ml-2" size="small" variant="text" @click="initializeDefaults">
-        Создать {{ MIN_JOURNAL_SPREADS }} разворотов
+        Создать {{ defaultSpreadCount }} разворотов
       </v-btn>
     </v-alert>
 
@@ -154,7 +156,16 @@ import MagazineTypePickerDialog from './MagazineTypePickerDialog.vue'
 
 const props = defineProps<{
   magazineTypeId: string
+  /** "Разворотов включено в базовую цену" (Price tab) — the default spread count generated here
+   * should match what the base price already covers, not just the print-safety floor. See
+   * resolveInitialSpreadCount's own doc comment for the includedSpreads-1 conversion. */
+  includedSpreads: number
 }>()
+
+// Never below the print-safety floor, but otherwise matches what the base price covers — same
+// formula as journal-structure.util.ts's resolveInitialSpreadCount, kept separate here since this
+// only has includedSpreads, not a full configuredSpreads list to also factor in.
+const defaultSpreadCount = computed(() => Math.max(MIN_JOURNAL_SPREADS, props.includedSpreads - 1))
 
 interface EditableSpread extends DefaultSpreadItemPayload {
   key: string
@@ -216,7 +227,7 @@ function buildDefaultSpreads(): EditableSpread[] {
     return []
   }
 
-  return Array.from({ length: MIN_JOURNAL_SPREADS }, () =>
+  return Array.from({ length: defaultSpreadCount.value }, () =>
     toEditableSpread({
       layoutMode: spreadDefault.layoutMode,
       magazinePageId: spreadDefault.magazinePageId,

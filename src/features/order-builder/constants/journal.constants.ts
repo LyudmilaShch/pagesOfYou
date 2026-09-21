@@ -5,11 +5,12 @@
  * spread = 10 spreads = 20 pages). */
 export const MIN_JOURNAL_SPREADS = 9
 
-export type JournalSlotType = 'COVER' | 'SPREAD' | 'BACK_COVER'
+export type JournalSlotType = 'COVER' | 'SPREAD' | 'BACK_COVER' | 'TOC'
 export type JournalSpreadLayout = 'SPREAD' | 'SPLIT_PAGES'
 
 export const JOURNAL_SLOT_LABELS: Record<JournalSlotType, string> = {
   COVER: 'Обложка',
   SPREAD: 'Разворот',
   BACK_COVER: 'Задняя обложка',
+  TOC: 'Содержание',
 }

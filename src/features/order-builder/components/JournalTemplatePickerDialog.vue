@@ -149,6 +149,10 @@ const activeTemplates = computed((): CatalogMagazinePage[] => {
     return props.templates.backCover
   }
 
+  if (props.journalPage.slotType === 'TOC') {
+    return props.templates.toc
+  }
+
   return props.templates.spread
 })
 

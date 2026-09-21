@@ -16,6 +16,16 @@ const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
 /** bcrypt cost factor for OTP hashing */
 const BCRYPT_ROUNDS = 10;
 
+/**
+ * TEMPORARY TEST LOGIN — remove once a real SMS provider is wired up in production. Right now
+ * `createOtp` below only logs the real code to the server console (see its own comment), which
+ * isn't visible to an actual user in production, so nobody can sign in. These two numbers can log
+ * in with a fixed code instead — see the check at the top of `verifyOtp`. Delete this block and
+ * that check together once SMS delivery actually works.
+ */
+const TEST_LOGIN_PHONES = new Set(['+79994420043', '+79130044166']);
+const TEST_LOGIN_CODE = '1999';
+
 @Injectable()
 export class OtpService {
   private readonly logger = new Logger(OtpService.name);
@@ -77,6 +87,13 @@ export class OtpService {
    * @throws UnauthorizedException on invalid/expired code or exhausted attempts.
    */
   async verifyOtp(phone: string, rawCode: string): Promise<void> {
+    // TEMPORARY TEST LOGIN — see the block comment above TEST_LOGIN_PHONES. Bypasses the stored-
+    // OTP check entirely for exactly these two numbers; every other phone/code combination (and
+    // rate limiting/throttling on the endpoints) is unaffected.
+    if (TEST_LOGIN_PHONES.has(phone) && rawCode === TEST_LOGIN_CODE) {
+      return;
+    }
+
     const record = await this.prisma.otpCode.findFirst({
       where: {
         phone,
