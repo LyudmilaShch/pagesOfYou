@@ -162,10 +162,16 @@ const props = defineProps<{
   includedSpreads: number
 }>()
 
-// Never below the print-safety floor, but otherwise matches what the base price covers — same
-// formula as journal-structure.util.ts's resolveInitialSpreadCount, kept separate here since this
-// only has includedSpreads, not a full configuredSpreads list to also factor in.
-const defaultSpreadCount = computed(() => Math.max(MIN_JOURNAL_SPREADS, props.includedSpreads - 1))
+// A TOC template (if this magazine type has one — see `pages`, loaded below) is auto-inserted
+// right after the cover on every real journal and spans a full spread's worth of physical pages
+// just like an interior spread does, so it eats one more of the includedSpreads budget too — same
+// `hasToc` adjustment as journal-structure.util.ts's resolveInitialSpreadCount, whose formula this
+// otherwise mirrors (kept separate here since this only has includedSpreads, not a full
+// configuredSpreads list to also factor in). Never below the print-safety floor.
+const hasToc = computed(() => pages.value.some((page) => page.pageType === 'TOC'))
+const defaultSpreadCount = computed(() =>
+  Math.max(MIN_JOURNAL_SPREADS, props.includedSpreads - 1 - (hasToc.value ? 1 : 0)),
+)
 
 interface EditableSpread extends DefaultSpreadItemPayload {
   key: string

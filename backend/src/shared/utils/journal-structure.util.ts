@@ -65,14 +65,20 @@ export interface BuildInitialJournalOptions {
  * "spread-equivalents including the cover" units (cover+back-cover together count as 1 — see
  * pricing.util.ts's COVER_SPREAD_EQUIVALENT), so a customer's default journal should have
  * `includedSpreads - 1` interior spreads to actually match what the base price already covers.
- * This is a strict target, not a floor: admin-configured default spreads are reused for their
- * content/templates (see resolveConfiguredSpreadAt below) but a LARGER already-configured count
- * must not inflate this — otherwise lowering includedSpreads on a magazine type that already had
- * more spreads configured would silently keep handing new orders the old, larger count. Only
- * MIN_JOURNAL_SPREADS (the print-safety floor) can raise it above includedSpreads - 1.
+ * A TOC slot (see buildInitialJournalSlots, which inserts it right after the cover when the
+ * magazine type has a TOC template configured) spans a full spread's worth of physical pages
+ * exactly like an interior spread does (see countSpreadSlots), so it eats one more of that budget
+ * — `hasToc` subtracts it here too, otherwise every new journal for a TOC-enabled magazine type
+ * would default to one spread more than `includedSpreads` actually covers. This is a strict
+ * target, not a floor: admin-configured default spreads are reused for their content/templates
+ * (see resolveConfiguredSpreadAt below) but a LARGER already-configured count must not inflate
+ * this — otherwise lowering includedSpreads on a magazine type that already had more spreads
+ * configured would silently keep handing new orders the old, larger count. Only
+ * MIN_JOURNAL_SPREADS (the print-safety floor) can raise it above includedSpreads - 1 (- 1 more
+ * for TOC).
  */
-export function resolveInitialSpreadCount(includedSpreads: number): number {
-  return Math.max(MIN_JOURNAL_SPREADS, includedSpreads - 1);
+export function resolveInitialSpreadCount(includedSpreads: number, hasToc = false): number {
+  return Math.max(MIN_JOURNAL_SPREADS, includedSpreads - 1 - (hasToc ? 1 : 0));
 }
 
 function resolveConfiguredSpreadAt(
@@ -208,7 +214,7 @@ export function buildInitialJournalSlots(
   const backCoverTemplate = pickDefaultBackCoverTemplate(catalog);
   const tocTemplate = pickDefaultTocTemplate(catalog);
   const spreadDefault = pickDefaultSpreadTemplate(catalog);
-  const spreadCount = resolveInitialSpreadCount(options.includedSpreads);
+  const spreadCount = resolveInitialSpreadCount(options.includedSpreads, Boolean(tocTemplate));
 
   const slots: JournalSlotDraft[] = [];
   let sortOrder = 0;
@@ -271,8 +277,14 @@ export function buildInitialJournalSlots(
   return slots;
 }
 
+// A TOC slot spans (and is priced/printed as) a full spread's worth of physical pages exactly
+// like a SPREAD slot — it just never lists itself as an entry (see buildTocEntries) — so it counts
+// here too. Leaving it out (as this once did) undercounted both pricing and the print-safety floor
+// check for any journal that has a table of contents.
 export function countSpreadSlots(
   pages: Array<{ slotType: PageType }>,
 ): number {
-  return pages.filter((page) => page.slotType === PageType.SPREAD).length;
+  return pages.filter(
+    (page) => page.slotType === PageType.SPREAD || page.slotType === PageType.TOC,
+  ).length;
 }
