@@ -9,13 +9,14 @@ import type {
   TextVerticalAlign,
 } from '@/modules/editor/models/text-placeholder.model'
 import type { CanvasData } from '@/modules/editor/models/canvas-data.model'
-import type { AiTextPlaceholder, LengthConstraint } from '@/modules/editor/models/ai-text-placeholder.model'
+import type { AiTextPlaceholder } from '@/modules/editor/models/ai-text-placeholder.model'
 import {
   normalizePhotoStrokePosition,
   normalizePhotoStrokeStyle,
   normalizePhotoStrokeWidth,
 } from '@/modules/editor/utils/element-stroke.util'
 import { mapTree } from '@/modules/editor/utils/element-tree.util'
+import { buildAiTextFallbackPreview } from '@/modules/editor/utils/ai-text-preview.util'
 import type { PlaceholderJsonValue, PlaceholderValue } from '../types/order.types'
 
 export interface LocalPlaceholderDraft {
@@ -25,35 +26,6 @@ export interface LocalPlaceholderDraft {
 
 function pickNumber(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback
-}
-
-const AI_TEXT_PLACEHOLDER_PHRASE = 'Здесь появится текст после заполнения анкеты. '
-
-/** Before any real generation exists, the customer's book shows this — repeated out to the
- * element's own configured max length — instead of the admin's raw `previewPlaceholderText`
- * field (still used as-is inside the template editor itself, which never goes through this merge)
- * so a short admin label doesn't leave the box looking emptier than the real generated text will
- * actually make it. */
-function buildAiTextFallbackPreview(constraint: LengthConstraint): string {
-  const max = constraint.max
-  if (!max || max <= 0) {
-    return AI_TEXT_PLACEHOLDER_PHRASE.trim()
-  }
-
-  if (constraint.unit === 'words') {
-    const phraseWords = AI_TEXT_PLACEHOLDER_PHRASE.trim().split(/\s+/)
-    const words: string[] = []
-    while (words.length < max) {
-      words.push(...phraseWords)
-    }
-    return words.slice(0, max).join(' ')
-  }
-
-  let result = ''
-  while (result.length < max) {
-    result += AI_TEXT_PLACEHOLDER_PHRASE
-  }
-  return result.slice(0, max).trimEnd()
 }
 
 function pickPhotoStrokeFields(json: PlaceholderJsonValue, photo: PhotoPlaceholder) {

@@ -1,15 +1,23 @@
 import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import type {
+  IStorageProvider,
+  PresignedUploadOptions,
+  PresignedUploadResult,
+} from '../../modules/files/interfaces/storage-provider.interface';
 
 /**
- * Server-side upload to Yandex Object Storage (S3-compatible) — used for
- * admin-uploaded assets (magazine type covers, page previews, photo frames).
- * The backend's own disk is ephemeral in production and must not be relied
- * on for persistence.
+ * Server-side storage on Yandex Object Storage (S3-compatible) — used for both admin-uploaded
+ * assets (magazine type covers, page previews, photo frames) and customer/admin order photos
+ * (see FilesService). Chosen over Cloudflare R2 for the same reason as YandexGPT: the site must
+ * run reliably inside Russia, and this account/bucket was already set up and working for admin
+ * uploads, so order photos reuse it too rather than requiring a separate Cloudflare account.
+ * The backend's own disk is ephemeral in production and must not be relied on for persistence.
  */
 @Injectable()
-export class YandexStorageProvider {
+export class YandexStorageProvider implements IStorageProvider {
   private readonly logger = new Logger(YandexStorageProvider.name);
   private readonly client: S3Client;
   private readonly bucketName?: string;
@@ -35,7 +43,7 @@ export class YandexStorageProvider {
     if (this.missingEnvVars.length > 0) {
       this.logger.error(
         `Yandex Object Storage is not configured — missing environment variable(s): ${this.missingEnvVars.join(', ')}. ` +
-          'Admin uploads will fail until these are set.',
+          'Uploads will fail until these are set.',
       );
     }
 
@@ -47,12 +55,16 @@ export class YandexStorageProvider {
     });
   }
 
-  async uploadBuffer(key: string, body: Buffer, contentType: string): Promise<string> {
+  private assertConfigured(): void {
     if (this.missingEnvVars.length > 0) {
       throw new InternalServerErrorException(
         `Yandex Object Storage не настроен на сервере: отсутствуют переменные окружения ${this.missingEnvVars.join(', ')}.`,
       );
     }
+  }
+
+  async uploadBuffer(key: string, body: Buffer, contentType: string): Promise<string> {
+    this.assertConfigured();
 
     await this.client.send(
       new PutObjectCommand({
@@ -65,7 +77,36 @@ export class YandexStorageProvider {
     );
 
     this.logger.debug(`Uploaded buffer to Yandex Object Storage: ${key}`);
+    return this.getFileUrl(key);
+  }
 
+  async generateUploadUrl(options: PresignedUploadOptions): Promise<PresignedUploadResult> {
+    this.assertConfigured();
+    const { key, contentType, expiresIn = 900 } = options;
+
+    const command = new PutObjectCommand({
+      Bucket: this.bucketName,
+      Key: key,
+      ContentType: contentType,
+      ACL: 'public-read',
+    });
+
+    const uploadUrl = await getSignedUrl(this.client, command, { expiresIn });
+    const publicUrl = this.getFileUrl(key);
+
+    this.logger.debug(`Generated presigned upload URL for key: ${key}`);
+    return { uploadUrl, publicUrl, key };
+  }
+
+  async deleteFile(key: string): Promise<void> {
+    this.assertConfigured();
+
+    await this.client.send(new DeleteObjectCommand({ Bucket: this.bucketName, Key: key }));
+    this.logger.debug(`Deleted file from Yandex Object Storage: ${key}`);
+  }
+
+  getFileUrl(key: string): string {
+    this.assertConfigured();
     return `${this.endpoint}/${this.bucketName}/${key}`;
   }
 }

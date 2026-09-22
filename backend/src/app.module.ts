@@ -9,7 +9,6 @@ import {
   databaseConfig,
   jwtConfig,
   otpConfig,
-  r2Config,
   yandexGptConfig,
   yandexStorageConfig,
 } from './config';
@@ -48,7 +47,6 @@ import { HealthModule } from './modules/health/health.module';
         jwtConfig,
         adminJwtConfig,
         otpConfig,
-        r2Config,
         yandexStorageConfig,
         cdekConfig,
         yandexGptConfig,

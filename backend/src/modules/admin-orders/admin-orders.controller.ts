@@ -41,6 +41,13 @@ export class AdminOrdersController {
     return this.service.findAll(query);
   }
 
+  // Must stay registered before `:id` below — otherwise Nest would match "stats" as an :id value.
+  @Get('stats')
+  @ApiOperation({ summary: 'Order counts by status, for the admin dashboard summary widget' })
+  getStats() {
+    return this.service.getStats();
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get order by id, with journal pages' })
   @ApiParam({ name: 'id', description: 'Prisma cuid' })

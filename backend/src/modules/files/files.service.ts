@@ -5,11 +5,10 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
+import { extname } from 'path';
 import { PrismaService } from '../../database';
-import { toStoredAssetPath, resolveAssetUrl } from '../../common/utils/asset-url.util';
-import { R2StorageProvider } from './providers/r2-storage.provider';
+import { YandexStorageProvider } from '../../shared/storage/yandex-storage.provider';
 import {
   MAX_IMAGE_UPLOAD_SIZE_BYTES,
   MAX_IMAGE_UPLOAD_SIZE_MB,
@@ -25,7 +24,7 @@ export interface RequestUploadUrlDto {
 }
 
 export interface UploadUrlResponse {
-  /** Presigned PUT URL — client uploads directly to R2 */
+  /** Presigned PUT URL — client uploads directly to Yandex Object Storage */
   uploadUrl: string;
   /** Public CDN URL — save after confirming upload */
   publicUrl: string;
@@ -52,12 +51,11 @@ export class FilesService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly storage: R2StorageProvider,
-    private readonly config: ConfigService,
+    private readonly storage: YandexStorageProvider,
   ) {}
 
   /**
-   * Step 1: Generate presigned upload URL for client-side direct upload to R2.
+   * Step 1: Generate presigned upload URL for client-side direct upload to Yandex Object Storage.
    * Does NOT create a DB record yet.
    */
   async requestUploadUrl(userId: string, dto: RequestUploadUrlDto): Promise<UploadUrlResponse> {
@@ -124,9 +122,8 @@ export class FilesService {
     }
   }
 
-  /** Local disk upload — general authenticated uploads (no scope) keep working exactly as
-   * before; `scope.orderId`/`scope.guestId` additionally attach the file to an order or guest
-   * gallery. */
+  /** General authenticated uploads (no scope) keep working exactly as before;
+   * `scope.orderId`/`scope.guestId` additionally attach the file to an order or guest gallery. */
   async registerLocalUpload(
     file: Express.Multer.File | undefined,
     identity: GalleryIdentity,
@@ -155,7 +152,7 @@ export class FilesService {
       throw new UnauthorizedException('Sign in to upload files.');
     }
 
-    return this.persistLocalFile(file, {
+    return this.persistUploadedFile(file, {
       userId,
       orderId,
       guestId,
@@ -185,7 +182,7 @@ export class FilesService {
       throw new NotFoundException('Order not found.');
     }
 
-    return this.persistLocalFile(file, {
+    return this.persistUploadedFile(file, {
       userId: order.userId,
       orderId,
       guestId: null,
@@ -194,45 +191,36 @@ export class FilesService {
     });
   }
 
-  private async persistLocalFile(
+  // Uploads straight to Yandex Object Storage (see orderPhotoUploadInterceptor — the file
+  // arrives as an in-memory buffer, not a disk path) instead of writing to local disk: the
+  // previous version wrote into `uploads/order-photos` on whatever container happened to be
+  // running, which Render (and most PaaS hosts) wipes on every restart/redeploy — every photo a
+  // customer or admin uploaded this way silently vanished the next time the service redeployed.
+  private async persistUploadedFile(
     file: Express.Multer.File,
     data: { userId: string | null; orderId: string | null; guestId: string | null; width?: number; height?: number },
   ) {
-    const backendUrl =
-      this.config.get<string>('app.backendUrl') ??
-      `http://localhost:${process.env.PORT ?? 3000}`;
+    const key = `order-photos/${randomUUID()}${extname(file.originalname)}`;
+    const url = await this.storage.uploadBuffer(key, file.buffer, file.mimetype);
 
-    const normalized = file.path.replace(/\\/g, '/');
-    const uploadsIdx = normalized.indexOf('uploads/');
-    const publicPath =
-      uploadsIdx !== -1 ? normalized.slice(uploadsIdx) : `uploads/order-photos/${file.filename}`;
-
-    const url = `${backendUrl}/${publicPath}`;
-    const storedPath = toStoredAssetPath(url) ?? publicPath;
-
-    return this.prisma.uploadedFile
-      .create({
-        data: {
-          userId: data.userId,
-          orderId: data.orderId,
-          guestId: data.guestId,
-          storageKey: storedPath,
-          url: storedPath,
-          originalName: file.originalname,
-          mimeType: file.mimetype,
-          size: file.size,
-          width: data.width ?? null,
-          height: data.height ?? null,
-        },
-      })
-      .then((record) => ({
-        ...record,
-        url: resolveAssetUrl(record.url, backendUrl) ?? record.url,
-      }));
+    return this.prisma.uploadedFile.create({
+      data: {
+        userId: data.userId,
+        orderId: data.orderId,
+        guestId: data.guestId,
+        storageKey: key,
+        url,
+        originalName: file.originalname,
+        mimeType: file.mimetype,
+        size: file.size,
+        width: data.width ?? null,
+        height: data.height ?? null,
+      },
+    });
   }
 
   /**
-   * TODO: Soft-delete uploaded file. Remove from R2 only after order is completed.
+   * TODO: Soft-delete uploaded file. Remove from storage only after order is completed.
    */
   async deleteFile(fileId: string, identity: GalleryIdentity & GalleryScope): Promise<void> {
     await this.getOwnedFileOrThrow(fileId, identity);

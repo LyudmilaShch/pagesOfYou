@@ -145,6 +145,13 @@ function withResolvedDetail(item: AdminOrderDetail): AdminOrderDetail {
   }
 }
 
+/** Real Prisma `OrderStatus` values only — unlike `AdminOrderStatus`, no synthetic
+ * `PAYMENT_FAILED` (that's derived from Payment records, never an actual Order.status). */
+export interface AdminOrderStats {
+  total: number
+  byStatus: Record<Exclude<AdminOrderStatus, 'PAYMENT_FAILED'>, number>
+}
+
 export const adminOrdersApi = {
   async list(query: AdminOrdersQuery = {}): Promise<PaginatedAdminOrders> {
     const { data } = await adminHttp.get<BackendResponse<PaginatedAdminOrders>>('/admin/orders', {
@@ -154,6 +161,11 @@ export const adminOrdersApi = {
       ...data.data,
       items: data.data.items.map(withResolvedListItem),
     }
+  },
+
+  async getStats(): Promise<AdminOrderStats> {
+    const { data } = await adminHttp.get<BackendResponse<AdminOrderStats>>('/admin/orders/stats')
+    return data.data
   },
 
   async getOne(id: string): Promise<AdminOrderDetail> {

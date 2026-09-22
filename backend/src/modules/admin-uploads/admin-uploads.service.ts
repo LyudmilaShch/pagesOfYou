@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { extname } from 'path';
-import { YandexStorageProvider } from './providers/yandex-storage.provider';
+import { YandexStorageProvider } from '../../shared/storage/yandex-storage.provider';
 
 const ALLOWED_FONT_EXTENSIONS = ['.ttf', '.otf', '.woff', '.woff2'];
 

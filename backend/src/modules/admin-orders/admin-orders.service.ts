@@ -94,6 +94,34 @@ export class AdminOrdersService {
     };
   }
 
+  /**
+   * Order counts for the admin dashboard's summary widget — one `groupBy` query instead of the
+   * dashboard firing a separate paginated `findAll` request per status it wants a count for.
+   * `total` mirrors `findAll`'s own default scope (every status except DRAFT — only orders
+   * customers have actually placed), so the two numbers can never drift apart.
+   */
+  async getStats(): Promise<{ total: number; byStatus: Record<OrderStatus, number> }> {
+    const grouped = await this.prisma.order.groupBy({
+      by: ['status'],
+      where: { deletedAt: null },
+      _count: true,
+    });
+
+    const byStatus = Object.fromEntries(
+      Object.values(OrderStatus).map((status) => [status, 0]),
+    ) as Record<OrderStatus, number>;
+
+    let total = 0;
+    for (const row of grouped) {
+      byStatus[row.status] = row._count;
+      if (row.status !== OrderStatus.DRAFT) {
+        total += row._count;
+      }
+    }
+
+    return { total, byStatus };
+  }
+
   async findOne(id: string) {
     const order = await this.prisma.order.findFirst({
       where: { id, deletedAt: null },

@@ -58,7 +58,7 @@
         </div>
 
         <!-- Empty state -->
-        <div class="dashboard__empty">
+        <div v-if="!hasOrders" class="dashboard__empty">
           <v-icon size="40" color="textDisabled">mdi-package-variant-closed</v-icon>
           <p>Заказов пока нет</p>
           <span>Здесь будут отображаться все заказы покупателей</span>
@@ -73,6 +73,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useAdminAuthStore } from '../stores/admin-auth.store'
 import { adminMagazineTypesApi } from '@/shared/api/admin/magazine-types.api'
+import { adminOrdersApi, type AdminOrderStats } from '@/shared/api/admin/orders.api'
 
 const store = useAdminAuthStore()
 
@@ -88,6 +89,7 @@ const formattedDate = computed(() =>
 // ── Real counts ───────────────────────────────────────────────────────────────
 
 const magazineTypesCount = ref<number | null>(null)
+const orderStatsData = ref<AdminOrderStats | null>(null)
 
 onMounted(async () => {
   try {
@@ -95,6 +97,12 @@ onMounted(async () => {
     magazineTypesCount.value = total
   } catch {
     magazineTypesCount.value = null
+  }
+
+  try {
+    orderStatsData.value = await adminOrdersApi.getStats()
+  } catch {
+    orderStatsData.value = null
   }
 })
 
@@ -110,18 +118,35 @@ const catalogStats = computed(() => [
   },
   {
     label: 'Всего заказов',
-    value: 0,
+    value: orderStatsData.value?.total ?? '…',
     icon: 'mdi-package-variant-closed',
     to: '/admin/orders',
     color: 'neutral',
   },
 ])
 
-const orderStats = [
-  { label: 'Новые', value: 0, color: 'info' },
-  { label: 'В работе', value: 0, color: 'warning' },
-  { label: 'Доставлены', value: 0, color: 'success' },
-]
+// Groups the real per-status counts (see AdminOrdersController.getStats) into the three buckets
+// this widget shows — "Новые" (just placed, not yet worked on), "В работе" (paid through
+// printing), "Доставлены" (actually delivered). CANCELLED deliberately isn't in any bucket here
+// (it's neither new nor in progress nor delivered) — still counted in `catalogStats`' "Всего
+// заказов" above, just not broken out on this row.
+const orderStats = computed(() => {
+  const byStatus = orderStatsData.value?.byStatus
+  const sum = (...statuses: Array<keyof NonNullable<typeof byStatus>>) =>
+    byStatus ? statuses.reduce((total, status) => total + byStatus[status], 0) : '…'
+
+  return [
+    { label: 'Новые', value: sum('SUBMITTED', 'PAYMENT_PENDING'), color: 'info' },
+    {
+      label: 'В работе',
+      value: sum('PAID', 'IN_DESIGN', 'DESIGN_REVIEW', 'APPROVED', 'PRINTING', 'SHIPPED'),
+      color: 'warning',
+    },
+    { label: 'Доставлены', value: sum('DELIVERED'), color: 'success' },
+  ]
+})
+
+const hasOrders = computed(() => (orderStatsData.value?.total ?? 0) > 0)
 </script>
 
 <style scoped lang="scss">

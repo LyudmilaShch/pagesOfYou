@@ -1,33 +1,21 @@
 import { BadRequestException } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
+import { memoryStorage } from 'multer';
 import type { FileFilterCallback } from 'multer';
-import { existsSync, mkdirSync } from 'fs';
-import { extname, join } from 'path';
-import { randomUUID } from 'crypto';
 import { MAX_IMAGE_UPLOAD_SIZE_BYTES } from '../../shared/constants/upload.constants';
 
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
 
 /** Shared multer config for order photo gallery uploads — used by both the customer-facing
- * `/files/image` endpoint and the admin `/admin/orders/:orderId/photos` endpoint, so uploads land
- * in the same local `uploads/order-photos` directory regardless of who's uploading. */
+ * `/files/image` endpoint and the admin `/admin/orders/:orderId/photos` endpoint. Buffers the file
+ * in memory (`file.buffer`, not `file.path`) instead of writing to local disk — Render's (and most
+ * PaaS) container filesystem is ephemeral and gets wiped on every restart/redeploy, which was
+ * silently deleting every previously-uploaded photo the next time the service redeployed. The
+ * caller (`FilesService.persistUploadedFile`) uploads that buffer straight to Yandex Object
+ * Storage instead. */
 export function orderPhotoUploadInterceptor() {
   return FileInterceptor('file', {
-    storage: diskStorage({
-      destination: (
-        _req,
-        _file,
-        cb: (error: Error | null, destination: string) => void,
-      ) => {
-        const dest = join(process.cwd(), 'uploads', 'order-photos');
-        if (!existsSync(dest)) mkdirSync(dest, { recursive: true });
-        cb(null, dest);
-      },
-      filename: (_req, file, cb) => {
-        cb(null, `${randomUUID()}${extname(file.originalname)}`);
-      },
-    }),
+    storage: memoryStorage(),
     limits: { fileSize: MAX_IMAGE_UPLOAD_SIZE_BYTES },
     fileFilter: (_req, file, cb: FileFilterCallback) => {
       if (!ALLOWED_MIME_TYPES.includes(file.mimetype)) {

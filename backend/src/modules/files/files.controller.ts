@@ -31,7 +31,7 @@ export class FilesController {
 
   @UseGuards(JwtAuthGuard)
   @Post('upload-url')
-  @ApiOperation({ summary: 'Get presigned URL for direct upload to R2' })
+  @ApiOperation({ summary: 'Get presigned URL for direct upload to Yandex Object Storage' })
   requestUploadUrl(@CurrentUser() user: JwtPayload, @Body() dto: RequestUploadUrlDto) {
     return this.filesService.requestUploadUrl(user.sub, dto);
   }

@@ -26,6 +26,13 @@ export interface IStorageProvider {
   generateUploadUrl(options: PresignedUploadOptions): Promise<PresignedUploadResult>;
 
   /**
+   * Upload a buffer directly from the server (e.g. a multipart file the backend already received
+   * in memory) — for endpoints that accept the file itself rather than issuing the client a
+   * presigned URL to upload to. Returns the same public CDN URL `getFileUrl(key)` would.
+   */
+  uploadBuffer(key: string, body: Buffer, contentType: string): Promise<string>;
+
+  /**
    * Permanently delete a file from storage.
    */
   deleteFile(key: string): Promise<void>;

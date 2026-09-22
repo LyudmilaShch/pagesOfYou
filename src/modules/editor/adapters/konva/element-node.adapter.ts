@@ -28,6 +28,7 @@ import { TEXT_VERTICAL_ALIGN_DEFAULT } from '../../utils/normalize-text-placehol
 import { isTextPlaceholderType } from '../../utils/normalize-text-placeholder.util'
 import { resolveKonvaFontStyle } from '../../utils/text-style.util'
 import { shouldWrapTextContent } from '../../utils/text-measure.util'
+import { buildAiTextFallbackPreview } from '../../utils/ai-text-preview.util'
 import {
   clampPhotoCrop,
   computePhotoImageLayout,
@@ -896,10 +897,22 @@ function getTextPlaceholderElement(element: PageElement): TextPlaceholder | null
     // but its content is never directly user-editable in this phase — only a static preview
     // until generation exists (future phase). `defaultText` is synthesized, not a real field on
     // AiTextPlaceholder, so resolveTextContent's normal defaultText → label fallback chain works
-    // unchanged.
+    // unchanged. Same fallback phrase (repeated out to the element's own max length) the customer's
+    // book shows before real generation exists — see ai-text-preview.util.ts — so the admin
+    // template editor previews the box at roughly its real eventual fullness too, instead of
+    // whatever short label happens to be configured. `textSizingMode: 'fixed'` is forced (not the
+    // element's own, usually 'auto') regardless of what the admin picked for the eventual real
+    // text — ai-text-placeholder's box is never auto-resized to fit its content (excluded from
+    // computeTextBoxLayout on purpose, since the real generated text lands later, not at editing
+    // time), so 'auto' here would let shouldWrapTextContent skip wrapping and render this preview
+    // as a single unwrapped line spilling out past the admin-drawn box instead of staying inside
+    // it. Forcing 'fixed' makes it always wrap to the box's own width, exactly like a fixed-size
+    // text-placeholder does.
     return {
       ...element,
-      defaultText: element.previewPlaceholderText?.trim() || `🤖 ${element.label}`,
+      textSizingMode: 'fixed',
+      defaultText:
+        element.previewPlaceholderText?.trim() || buildAiTextFallbackPreview(element.lengthConstraint),
       maxLength: 0,
       required: false,
     } as unknown as TextPlaceholder
