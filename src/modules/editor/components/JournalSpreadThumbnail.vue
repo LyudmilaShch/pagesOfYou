@@ -48,7 +48,7 @@
             @dragleave="onDragLeave(leaf.id)"
             @drop.prevent="onDrop($event, leaf.id)"
           />
-          <div v-if="cropEnabled || pickEnabled" class="spread-thumb__photo-actions">
+          <div v-if="cropEnabled || pickEnabled" class="spread-thumb__photo-actions" :style="actionsCenterStyle(leaf)">
             <v-tooltip v-if="pickEnabled" location="top" content-class="editor-tooltip--arrow-top">
               <template #activator="{ props: tooltipProps }">
                 <button
@@ -97,6 +97,7 @@
                 v-bind="tooltipProps"
                 type="button"
                 class="spread-thumb__pick-btn"
+                :style="actionsCenterStyle(leaf)"
                 aria-label="Выбрать фото"
                 @click.stop="emit('pick-photo', leaf.id)"
               >
@@ -242,6 +243,15 @@ const props = withDefaults(
      * unset in contexts with no such list to draw from (template pickers, admin thumbnails),
      * where a generic preview shows instead — see `resolveTocEntries`. */
     tocEntries?: TocEntry[]
+    /** Set by QuestionnaireBook.vue when this instance is windowed into one half of a page-flip
+     * leaf — a SPREAD/TOC canvas renders at full (both-page) width here, clipped by the parent to
+     * just this half (see its own `windowFor`). Action buttons default to centering on an
+     * element's own middle, which for an element spanning both halves (e.g. a full-bleed photo)
+     * sits exactly on the spine — clipped almost entirely out of view in either half. When set,
+     * `photoActionsStyle`/`pickBtnStyle` clamp that center to the visible half instead. Left unset
+     * (every other caller — admin previews, the manual-placement grid, etc.) for the original,
+     * unclamped centering, since those render the canvas at its own natural, unwindowed width. */
+    visibleHalf?: 'left' | 'right'
   }>(),
   {
     pendingElementIds: () => new Set(),
@@ -533,6 +543,38 @@ function photoImageStyle(leaf: PhotoPlaceholder): Record<string, string> {
     height: `${layout.height * scale.value}px`,
     maxWidth: 'none',
     borderRadius: `${(leaf.borderRadius ?? 0) * scale.value}px`,
+  }
+}
+
+/** Centers the crop/replace/pick button on a photo element's own middle — same as the CSS default
+ * (`top:50%;left:50%;transform:translate(-50%,-50%)` on `.spread-thumb__photo-actions`/
+ * `.spread-thumb__pick-btn`) EXCEPT when `visibleHalf` is set (see its own doc comment): a photo
+ * spanning both halves of a windowed spread (a common "full-bleed" layout) has its own middle sit
+ * exactly on the spine, which the parent window clips almost entirely away in either half — the
+ * button ends up unreachable, not just off-center. Clamping the horizontal center to the visible
+ * half's own bounds (intersected with the element's own bounds, so a button never drifts outside
+ * an element far smaller than half the spread) keeps it inside whichever half is actually shown.
+ * Returns undefined when unwindowed, leaving the CSS default in place unchanged. */
+function actionsCenterStyle(leaf: PhotoPlaceholder): Record<string, string> | undefined {
+  if (!props.visibleHalf) {
+    return undefined
+  }
+
+  const elLeft = leaf.position.x * scale.value
+  const elRight = elLeft + leaf.size.width * scale.value
+  const halfWidthPx = (pageWidth.value / 2) * scale.value
+  const visibleLeft = props.visibleHalf === 'left' ? 0 : halfWidthPx
+  const visibleRight = props.visibleHalf === 'left' ? halfWidthPx : halfWidthPx * 2
+
+  const clampedLeft = Math.max(elLeft, visibleLeft)
+  const clampedRight = Math.min(elRight, visibleRight)
+  const centerX = (clampedLeft + clampedRight) / 2 - elLeft
+
+  return {
+    position: 'absolute',
+    left: `${centerX}px`,
+    top: '50%',
+    transform: 'translate(-50%, -50%)',
   }
 }
 

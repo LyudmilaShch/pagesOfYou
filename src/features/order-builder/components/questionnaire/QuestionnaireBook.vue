@@ -23,6 +23,7 @@
                 :pick-enabled="pickEnabled"
                 :ai-text-edit-enabled="aiTextEditEnabled"
                 :toc-entries="tocEntriesFor(half.pageId)"
+                :visible-half="isSpreadPage(half.pageId) ? half.key : undefined"
                 @drop-photo="(elementId, url) => emit('drop-photo', half.pageId, elementId, url)"
                 @crop-photo="(elementId) => emit('crop-photo', half.pageId, elementId)"
                 @pick-photo="(elementId) => emit('pick-photo', half.pageId, elementId)"
@@ -327,7 +328,7 @@ function windowFor(pageId: string | null, side: 'left' | 'right'): { left: strin
 }
 
 interface RenderedHalf {
-  key: string
+  key: 'left' | 'right'
   pageId: string
   left: string
   width: string

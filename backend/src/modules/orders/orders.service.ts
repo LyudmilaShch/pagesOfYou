@@ -244,11 +244,18 @@ export class OrdersService {
           // The account page renders each journal's actual cover (via `JournalSpreadThumbnail`,
           // same as the "Структура" panel/admin order review) instead of the magazine *type*'s
           // static marketing image — a customer's own cover almost always looks different from
-          // the type's generic catalog photo once they've personalized it.
+          // the type's generic catalog photo once they've personalized it. Also fetches the
+          // journal's first interior spread as a fallback source — many cover templates carry no
+          // photo slot at all (just title/text), so a customer who filled in every interior photo
+          // would otherwise see a "photo-less" card even though their journal is full of them (see
+          // `coverCanvas` in AccountPage.vue, which picks whichever of the two actually has one).
+          // `sortOrder asc` + excluding TOC/BACK_COVER from the filter means this always lands on
+          // exactly [cover, first spread] regardless of whether a TOC page sits between them.
           journalPages: {
-            where: { slotType: PageType.COVER },
-            take: 1,
-            select: { id: true, pageSnapshot: true, placeholderValues: true },
+            where: { slotType: { in: [PageType.COVER, PageType.SPREAD] } },
+            orderBy: { sortOrder: 'asc' },
+            take: 2,
+            select: { id: true, slotType: true, pageSnapshot: true, placeholderValues: true },
           },
         },
       }),
@@ -282,7 +289,6 @@ export class OrdersService {
 
     const journalPage = await this.prisma.journalPage.findFirst({
       where: { id: journalPageId, orderId },
-      include: { placeholderValues: true },
     });
 
     if (!journalPage) {
@@ -314,19 +320,19 @@ export class OrdersService {
         );
       }
 
-      const existing = journalPage.placeholderValues.find(
-        (value) => value.elementId === input.elementId,
-      );
-
       const isEmpty =
         expectedType === PlaceholderValueType.PHOTO
           ? !(input.jsonValue as { url?: string } | undefined)?.url?.trim()
           : !input.textValue?.trim();
 
       if (isEmpty) {
-        if (existing) {
-          await this.prisma.placeholderValue.delete({ where: { id: existing.id } });
-        }
+        // `deleteMany` rather than a by-id `delete` off a snapshot read earlier in this loop —
+        // that snapshot goes stale the instant a concurrent request (e.g. two rapid autosaves, or
+        // "Автозаполнение журнала" touching several elements at once) changes the same row, and a
+        // by-id delete of an already-deleted row throws (P2025) instead of just no-op'ing.
+        await this.prisma.placeholderValue.deleteMany({
+          where: { journalPageId, elementId: input.elementId },
+        });
         continue;
       }
 
@@ -343,20 +349,17 @@ export class OrdersService {
         source: PlaceholderSource.OVERRIDDEN,
       };
 
-      if (existing) {
-        await this.prisma.placeholderValue.update({
-          where: { id: existing.id },
-          data,
-        });
-      } else {
-        await this.prisma.placeholderValue.create({
-          data: {
-            journalPageId,
-            elementId: input.elementId,
-            ...data,
-          },
-        });
-      }
+      // `upsert` (not a read-then-create-or-update off a snapshot fetched before this loop
+      // started) — that snapshot can't see rows a concurrent request creates while this loop is
+      // running, so two requests (or two entries for the same elementId in one payload) can both
+      // decide "no existing row" and both `create()`, and the second hits the (journalPageId,
+      // elementId) unique constraint and 500s. `upsert` makes the create-or-update decision
+      // atomically in the database instead, so it can't race.
+      await this.prisma.placeholderValue.upsert({
+        where: { journalPageId_elementId: { journalPageId, elementId: input.elementId } },
+        create: { journalPageId, elementId: input.elementId, ...data },
+        update: data,
+      });
     }
 
     return this.findOne(orderId, userId);

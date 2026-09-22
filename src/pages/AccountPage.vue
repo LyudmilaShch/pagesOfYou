@@ -230,6 +230,8 @@ import type { OrderSummary } from '@/features/order-builder/types/order.types'
 import { ORDER_STATUS_COLORS, ORDER_STATUS_LABELS } from '@/features/order-builder/constants/order-status.constants'
 import type { CanvasData } from '@/modules/editor/models/canvas-data.model'
 import { normalizeCanvasData } from '@/modules/editor/models/canvas-data.model'
+import { isPhotoElement } from '@/modules/editor/models'
+import { flattenTree } from '@/modules/editor/utils/element-tree.util'
 import { materializeCanvasData } from '@/features/order-builder/utils/merge-placeholder-element.util'
 import { resumeOrder } from '@/features/order-builder/utils/resume-order.util'
 import JournalSpreadThumbnail from '@/modules/editor/components/JournalSpreadThumbnail.vue'
@@ -261,15 +263,36 @@ const displayName = computed(
 const drafts = computed(() => orders.value.filter((order) => order.status === 'DRAFT'))
 const placedOrders = computed(() => orders.value.filter((order) => order.status !== 'DRAFT'))
 
-/** Bakes saved placeholder-value diffs into the cover page's own document — same materialization
- * the advanced editor uses — so the card thumbnail reflects the customer's actual cover, not just
- * the bare template. `null` when the order has no cover slot at all (shouldn't normally happen). */
+function hasFilledPhoto(canvas: CanvasData): boolean {
+  return flattenTree(canvas.elements).some((element) => isPhotoElement(element) && !!element.defaultImageUrl)
+}
+
+/** Bakes saved placeholder-value diffs into a page's own document — same materialization the
+ * advanced editor uses — so the card thumbnail reflects the customer's actual content, not just
+ * the bare template. Prefers the cover, but many cover templates carry no photo slot at all (just
+ * title/text) — falls back to the journal's first interior spread (also fetched by
+ * `findAllByUser`) when the cover has none, so a customer who filled in every interior photo
+ * doesn't see a "photo-less" card just because their cover design happens to be text-only. `null`
+ * only when the order has neither a cover nor a spread page (shouldn't normally happen). */
 function coverCanvas(order: OrderSummary): CanvasData | null {
-  const coverPage = order.journalPages[0]
-  if (!coverPage) {
-    return null
+  const coverPage = order.journalPages.find((page) => page.slotType === 'COVER')
+  const spreadPage = order.journalPages.find((page) => page.slotType === 'SPREAD')
+
+  const coverCanvasData = coverPage
+    ? materializeCanvasData(normalizeCanvasData(coverPage.pageSnapshot), coverPage.placeholderValues)
+    : null
+  if (coverCanvasData && hasFilledPhoto(coverCanvasData)) {
+    return coverCanvasData
   }
-  return materializeCanvasData(normalizeCanvasData(coverPage.pageSnapshot), coverPage.placeholderValues)
+
+  const spreadCanvasData = spreadPage
+    ? materializeCanvasData(normalizeCanvasData(spreadPage.pageSnapshot), spreadPage.placeholderValues)
+    : null
+  if (spreadCanvasData && hasFilledPhoto(spreadCanvasData)) {
+    return spreadCanvasData
+  }
+
+  return coverCanvasData ?? spreadCanvasData
 }
 
 const avatarLetter = computed(() => {

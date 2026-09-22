@@ -149,6 +149,7 @@ export interface OrderSummary {
    * for the magazine *type*. Empty only for a malformed order with no cover slot at all. */
   journalPages: Array<{
     id: string
+    slotType: JournalSlotType
     pageSnapshot: CanvasData
     placeholderValues: PlaceholderValue[]
   }>
