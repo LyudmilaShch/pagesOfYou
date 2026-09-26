@@ -29,9 +29,49 @@
       <v-progress-linear :model-value="ORDER_STEP_PROGRESS" color="primary" bg-opacity="0.15" height="3" />
     </div>
 
+    <!-- Mobile-only stepper — same 5 steps as .questionnaire-page__steps-label above, just a fuller
+         visual (desktop keeps the thin progress bar instead). This page is always step 3. Steps
+         behind (< 3) are always clickable; steps ahead are clickable too, but only once
+         `isStepReachable` confirms their own prerequisite content actually exists — so jumping
+         ahead can never land on a broken/empty page. -->
+    <ol class="questionnaire-page__stepper" aria-label="Шаг 3 из 5: Анкета">
+      <li
+        v-for="step in ORDER_STEPS"
+        :key="step.step"
+        class="questionnaire-page__stepper-item"
+        :class="{
+          'questionnaire-page__stepper-item--done': step.step < 3,
+          'questionnaire-page__stepper-item--active': step.step === 3,
+          'questionnaire-page__stepper-item--reachable': step.step > 3 && isStepReachable(step.step),
+        }"
+      >
+        <button
+          v-if="step.step !== 3 && (step.step < 3 || isStepReachable(step.step))"
+          type="button"
+          class="questionnaire-page__stepper-btn"
+          :aria-label="`Перейти к шагу «${step.label}»`"
+          @click="goToStep(step.step)"
+        >
+          <span class="questionnaire-page__stepper-node">
+            <v-icon v-if="step.step < 3" size="10">mdi-check</v-icon>
+            <template v-else>{{ step.step }}</template>
+          </span>
+          <span class="questionnaire-page__stepper-label">{{ step.label }}</span>
+        </button>
+        <template v-else>
+          <span class="questionnaire-page__stepper-node">{{ step.step }}</span>
+          <span class="questionnaire-page__stepper-label">{{ step.label }}</span>
+        </template>
+      </li>
+    </ol>
+
     <!-- ── Body: 3D spread book (left) + question (right) ──────────────────────────────────── -->
     <div class="questionnaire-page__body">
       <div class="questionnaire-page__body-inner">
+        <!-- Desktop-only — the live book preview isn't shown on mobile any more (removed on
+             request, along with its hint banner): with no book alongside it there, the mobile
+             column stack shows .questionnaire-page__intro-mobile below instead (title/description/
+             progress, same pattern as PhotoUploadPage.vue's own intro-mobile). -->
         <div class="questionnaire-page__book-column" aria-label="Развороты журнала">
           <QuestionnaireBook
             :pages="store.order?.journalPages ?? []"
@@ -46,6 +86,33 @@
             @regenerate-ai-text="handleRegenerateAiText"
           />
         </div>
+
+        <!-- Mobile-only — static title/description (not the per-question one below, which stays
+             desktop-only) plus a "Ваши вопросы" fill progress, same pattern as PhotoUploadPage.vue's
+             own .photo-upload-page__intro-mobile/.photo-upload-page__mobile-stats. -->
+        <header class="questionnaire-page__intro-mobile">
+          <h1 class="questionnaire-page__title text-h3">Заполните анкету журнала</h1>
+          <p class="questionnaire-page__subtitle text-body text-secondary">
+            Ответьте на несколько вопросов — мы используем ваши ответы, чтобы подготовить тексты и
+            подписи для страниц журнала.
+          </p>
+
+          <div class="questionnaire-page__mobile-stats">
+            <div class="questionnaire-page__mobile-stats-row">
+              <span class="questionnaire-page__mobile-stats-title">Ваши вопросы</span>
+              <span class="questionnaire-page__mobile-stats-count">
+                {{ answeredQuestionsCount }} из {{ totalQuestions }} отвечено
+              </span>
+            </div>
+            <v-progress-linear
+              :model-value="totalQuestions > 0 ? (answeredQuestionsCount / totalQuestions) * 100 : 0"
+              color="primary"
+              bg-color="#f1d6de"
+              height="6"
+              rounded
+            />
+          </div>
+        </header>
 
         <main class="questionnaire-page__main">
           <div class="questionnaire-page__main-scroll">
@@ -136,13 +203,38 @@
               </div>
 
               <!-- Own controls for stepping between pages of the questionnaire — separate from the
-                   bottom bar's Назад/Продолжить, which move between the order-creation steps. -->
+                   bottom bar's Назад/Продолжить, which move between the order-creation steps. Round
+                   arrow buttons (not the bottom bar's own pill shape) — a deliberately different,
+                   own identity so the two navigation rows read as distinct actions rather than
+                   duplicates of each other. -->
               <div class="questionnaire-page__step-actions">
-                <v-btn v-if="currentIndex > 0" variant="text" @click="goBack">Назад</v-btn>
+                <button
+                  v-if="currentIndex > 0"
+                  type="button"
+                  class="questionnaire-page__step-arrow questionnaire-page__step-arrow--back"
+                  aria-label="Назад"
+                  @click="goBack"
+                >
+                  <v-icon size="18">mdi-chevron-left</v-icon>
+                </button>
                 <v-spacer />
                 <template v-if="!isLastStep">
-                  <v-btn v-if="!currentStepHasRequired" variant="text" @click="goSkip">Пропустить</v-btn>
-                  <v-btn color="primary" @click="goNext">Далее</v-btn>
+                  <button
+                    v-if="!currentStepHasRequired"
+                    type="button"
+                    class="questionnaire-page__step-skip"
+                    @click="goSkip"
+                  >
+                    Пропустить
+                  </button>
+                  <button
+                    type="button"
+                    class="questionnaire-page__step-arrow questionnaire-page__step-arrow--next"
+                    aria-label="Далее"
+                    @click="goNext"
+                  >
+                    <v-icon size="20">mdi-chevron-right</v-icon>
+                  </button>
                 </template>
               </div>
             </div>
@@ -159,10 +251,6 @@
     <!-- ── Bottom action bar — same chrome as Шаг 1: moves between order-creation steps ─────── -->
     <footer class="questionnaire-page__actions">
       <div class="questionnaire-page__footer-float">
-        <p class="questionnaire-page__stats">
-          Отвечено вопросов · {{ answeredQuestionsCount }} из {{ totalQuestions }}
-        </p>
-
         <button
           v-if="missingPhotoCount > 0"
           type="button"
@@ -724,6 +812,32 @@ function goToPreviousStep(): void {
   void router.push({ name: 'order-photo-upload', params: { orderId: orderId.value } })
 }
 
+/** The mobile stepper's own click-to-jump (see .questionnaire-page__stepper) — only ever called
+ * for an already-completed step (< 3 here), never the active/future ones. */
+// Whether every required placeholder in the journal (photo AND text/AI-text) is filled — the same
+// client-side check `getSubmitValidationError` runs before checkout, reused here to decide whether
+// Проверка/Оплата are safe to jump to directly from the mobile stepper.
+const contentComplete = computed(() => store.order != null && store.getSubmitValidationError() === null)
+
+/** Gates the mobile stepper's click-to-jump for a step AHEAD of this one (behind is always
+ * allowed — see the template) — a step only becomes clickable once its own prerequisite content
+ * actually exists, so jumping ahead can never land on a broken/empty page. */
+function isStepReachable(step: number): boolean {
+  return (step === 4 || step === 5) && contentComplete.value
+}
+
+function goToStep(step: number): void {
+  if (step === 1) {
+    void router.push({ name: 'create-order' })
+  } else if (step === 2) {
+    void router.push({ name: 'order-photo-upload', params: { orderId: orderId.value } })
+  } else if (step === 4) {
+    void router.push({ name: 'order-review', params: { orderId: orderId.value } })
+  } else if (step === 5) {
+    void router.push({ name: 'order-checkout', params: { orderId: orderId.value } })
+  }
+}
+
 const isFinishing = ref(false)
 const submitErrorMessage = ref<string | null>(null)
 const missingPhotosModalOpen = ref(false)
@@ -906,6 +1020,10 @@ onUnmounted(() => {
   background: rgba($bg-primary, 0.92);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid $border-light;
+
+  @include mobile-only {
+    height: 44px;
+  }
 }
 
 .questionnaire-page__topbar-inner {
@@ -948,6 +1066,117 @@ onUnmounted(() => {
 // progress — see .questionnaire-page__stats further down for that).
 .questionnaire-page__step-progress {
   flex-shrink: 0;
+
+  // Superseded by .questionnaire-page__stepper below on mobile.
+  @include mobile-only {
+    display: none;
+  }
+}
+
+// ── Mobile stepper — same as PhotoUploadPage.vue's own .photo-upload-page__stepper — desktop
+// keeps the thin .questionnaire-page__step-progress bar instead. ────────────────────────────────
+.questionnaire-page__stepper {
+  display: none;
+
+  @include mobile-only {
+    display: flex;
+    align-items: flex-start;
+    list-style: none;
+    margin: 0;
+    padding: $spacing-2 $spacing-4 6px;
+    background: $bg-primary;
+    border-bottom: 1px solid $border-light;
+  }
+}
+
+.questionnaire-page__stepper-item {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+
+  &:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    top: 9px;
+    left: calc(50% + 11px);
+    right: calc(-50% + 11px);
+    height: 1px;
+    background: $border-default;
+  }
+
+  &--done:not(:last-child)::after {
+    background: $accent;
+  }
+}
+
+// Wraps a completed step's node+label so it's clickable (see the template) — reset to blend back
+// into the item's own layout, since this is purely an interactivity wrapper, not a visual one.
+.questionnaire-page__stepper-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  width: 100%;
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+
+  &:hover .questionnaire-page__stepper-node {
+    transform: scale(1.1);
+  }
+}
+
+.questionnaire-page__stepper-node {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1.5px solid $border-default;
+  background: $bg-elevated;
+  color: $text-muted;
+  font-size: 9px;
+  font-weight: $font-weight-semibold;
+  transition: transform 150ms ease;
+
+  .questionnaire-page__stepper-item--done & {
+    border-color: $accent;
+    background: $accent;
+    color: $white;
+  }
+
+  // Reachable (ahead, but its own content is already ready) gets the same accent outline as
+  // active — not the filled/checkmarked --done treatment, since the step hasn't actually been
+  // visited yet, just unlocked.
+  .questionnaire-page__stepper-item--active &,
+  .questionnaire-page__stepper-item--reachable & {
+    border-color: $accent;
+    color: $accent;
+  }
+}
+
+.questionnaire-page__stepper-label {
+  font-size: 9px;
+  color: $text-muted;
+  text-align: center;
+  white-space: nowrap;
+
+  .questionnaire-page__stepper-item--active & {
+    color: $text-primary;
+    font-weight: $font-weight-semibold;
+  }
+
+  .questionnaire-page__stepper-item--done & {
+    color: $text-secondary;
+  }
 }
 
 .questionnaire-page__brand {
@@ -962,6 +1191,10 @@ onUnmounted(() => {
   &:hover {
     opacity: 0.65;
   }
+
+  @include mobile-only {
+    font-size: $font-size-body-sm;
+  }
 }
 
 .questionnaire-page__steps-label {
@@ -971,6 +1204,10 @@ onUnmounted(() => {
   font-family: $font-family-body;
   font-size: $font-size-body-sm;
   color: $text-muted;
+
+  @include mobile-only {
+    font-size: $font-size-caption;
+  }
 }
 
 .questionnaire-page__steps-current {
@@ -1002,6 +1239,12 @@ onUnmounted(() => {
   width: 100%;
   display: flex;
   align-items: stretch;
+
+  // The book column below is desktop-only (see its own rule) — stacks
+  // .questionnaire-page__intro-mobile above .questionnaire-page__main instead on mobile.
+  @include mobile-only {
+    flex-direction: column;
+  }
 }
 
 .questionnaire-page__book-column {
@@ -1030,9 +1273,49 @@ onUnmounted(() => {
     background: $bg-primary;
   }
 
+  // No live book preview on mobile (removed on request, along with its hint banner) — see
+  // .questionnaire-page__intro-mobile below for what replaces it there.
   @include mobile-only {
     display: none;
   }
+}
+
+// ── Mobile-only static intro — title/description/progress instead of the live book preview.
+// Same pattern as PhotoUploadPage.vue's own .photo-upload-page__intro-mobile/mobile-stats; desktop
+// keeps the per-question .questionnaire-page__intro below instead (see its own mobile-only
+// display:none). ─────────────────────────────────────────────────────────────────────────────
+.questionnaire-page__intro-mobile {
+  display: none;
+
+  @include mobile-only {
+    display: block;
+    flex-shrink: 0;
+    padding-top: $spacing-2;
+  }
+}
+
+.questionnaire-page__mobile-stats {
+  margin-top: $spacing-2;
+}
+
+.questionnaire-page__mobile-stats-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: $spacing-2;
+  margin-bottom: 4px;
+}
+
+.questionnaire-page__mobile-stats-title {
+  font-size: $font-size-caption;
+  font-weight: $font-weight-semibold;
+  color: $text-primary;
+}
+
+.questionnaire-page__mobile-stats-count {
+  font-size: 10px;
+  color: $text-secondary;
+  white-space: nowrap;
 }
 
 // Same padding-block rhythm as .create-order__main, so the question screen reads as a direct
@@ -1049,6 +1332,15 @@ onUnmounted(() => {
   flex: 1;
   min-height: 0;
   background: $bg-elevated;
+
+  // The full-bleed trick below only makes sense in the desktop row split (book column | form
+  // column, each bleeding into the outer gutter on their own side) — in the mobile column stack
+  // there's no "other side" to bleed past.
+  @include mobile-only {
+    &::after {
+      display: none;
+    }
+  }
 
   // Bleeds the same white past the form column's own right edge, all the way to the viewport
   // edge — the outer gutter right of the 1360px-capped content is "the anketa side" too. See the
@@ -1072,8 +1364,18 @@ onUnmounted(() => {
   padding-block: $spacing-8 $spacing-12;
   padding-inline: $spacing-6;
 
+  // On mobile, .questionnaire-page__body-inner already applies its own horizontal padding (via
+  // `@include page-container`) — .questionnaire-page__intro-mobile sits directly in that, unpadded
+  // itself, so this needs padding-inline: 0 too, or its content would sit inset an extra
+  // $spacing-6 relative to the intro above it (double padding, not just a wider margin).
+  //
+  // Bottom padding stays modest (not a large fixed value) — .questionnaire-page__actions below is
+  // a normal flow footer (position: relative, not fixed/overlay), so this has nothing to clear; an
+  // oversized value here would just add dead scrollable space, forcing this to scroll even when the
+  // actual question fields fit the screen without it.
   @include mobile-only {
-    padding-block: $spacing-6 160px;
+    padding-block: $spacing-8;
+    padding-inline: 0;
   }
 }
 
@@ -1088,20 +1390,15 @@ onUnmounted(() => {
   flex-direction: column;
 }
 
-.questionnaire-page__stats {
-  margin: 0;
-  font-size: $font-size-caption;
-  color: $text-secondary;
-  white-space: nowrap;
-}
-
 // Same structure/classes as .create-order__intro (eyebrow/title/subtitle) — text-caption,
 // text-h3, text-body are the project's own typography utility classes (styles/typography.scss).
+// Desktop-only — .questionnaire-page__intro-mobile above replaces this (static title/description,
+// no per-question eyebrow) on mobile.
 .questionnaire-page__intro {
-  margin-bottom: $spacing-6;
+  margin-bottom: $spacing-8;
 
   @include mobile-only {
-    margin-bottom: $spacing-6;
+    display: none;
   }
 }
 
@@ -1112,12 +1409,24 @@ onUnmounted(() => {
 .questionnaire-page__title {
   margin: 0 0 $spacing-3;
 
-  // !important — the "text-h3" utility class on the same <h1> (32px, unconditional) otherwise
-  // wins over this on mobile despite this rule compiling after it (see PhotoUploadPage.vue's own
-  // title rule for the full story).
+  // Shared with .questionnaire-page__intro-mobile's own title above — same treatment as
+  // PhotoUploadPage.vue's own title rule (see its doc comment for why !important is needed here:
+  // the "text-h3" utility class on the same <h1> otherwise wins on mobile despite compiling first).
   @include mobile-only {
-    font-size: $font-size-body-lg !important;
-    margin-bottom: $spacing-2 !important;
+    font-size: $font-size-h4 !important;
+    font-weight: $font-weight-bold !important;
+    line-height: 1.15 !important;
+    margin-bottom: $spacing-1 !important;
+  }
+}
+
+.questionnaire-page__subtitle {
+  max-width: 480px;
+  margin: 0;
+
+  @include mobile-only {
+    font-size: $font-size-caption !important;
+    line-height: 1.3;
   }
 }
 
@@ -1159,8 +1468,61 @@ onUnmounted(() => {
 .questionnaire-page__step-actions {
   display: flex;
   align-items: center;
-  gap: $spacing-2;
+  gap: $spacing-3;
   margin-top: $spacing-6;
+}
+
+// Plain underlined text — deliberately the lightest-weight control in this row, since skipping
+// is the least-emphasized of the three actions here.
+.questionnaire-page__step-skip {
+  border: none;
+  background: none;
+  padding: 0;
+  color: $text-secondary;
+  font-size: $font-size-body-sm;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  transition: color 150ms ease;
+
+  &:hover {
+    color: $accent-deep;
+  }
+}
+
+.questionnaire-page__step-arrow {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 150ms ease, box-shadow 150ms ease;
+
+  &:hover {
+    transform: scale(1.06);
+  }
+}
+
+// Neutral outline — secondary action.
+.questionnaire-page__step-arrow--back {
+  border: 1.5px solid $border-default;
+  background: $bg-elevated;
+  color: $text-primary;
+}
+
+// Filled accent, slightly larger — the primary action in this row, and its own distinct shape
+// (filled circle) rather than the bottom bar's rectangular pill, so the two navigation rows read
+// as clearly different controls instead of duplicates of each other.
+.questionnaire-page__step-arrow--next {
+  width: 46px;
+  height: 46px;
+  border: none;
+  background: $accent;
+  color: $white;
+  box-shadow: 0 4px 12px rgba($accent, 0.35);
 }
 
 // ── Action bar — copied from CreateOrderPage.vue's .create-order__actions ────────────────────
@@ -1173,9 +1535,9 @@ onUnmounted(() => {
   padding-block: $spacing-4;
 }
 
-// Floats right above the bar: the question-progress counter on the left, the missing-photos pill
-// (when shown) on the right — the bar itself is too narrow to fit a 3-way row (Назад / pill /
-// Продолжить) without overflowing on a phone.
+// Floats right above the bar: just the missing-photos pill (when shown) — kept off the main bar
+// itself, which is too narrow to fit a 3-way row (Назад / pill / Продолжить) without overflowing
+// on a phone.
 .questionnaire-page__footer-float {
   @include page-container;
   max-width: 1360px;
@@ -1186,7 +1548,7 @@ onUnmounted(() => {
   right: 0;
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: $spacing-3;
   margin-bottom: $spacing-2;
 }

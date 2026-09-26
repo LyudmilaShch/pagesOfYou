@@ -2,10 +2,49 @@
   <div class="checkout-page">
     <header class="checkout-page__topbar">
       <div class="checkout-page__topbar-inner">
-        <router-link to="/" class="checkout-page__brand">Вау, ми!</router-link>
-        <span class="checkout-page__topbar-title">Оформление заказа</span>
+        <div class="checkout-page__topbar-left">
+          <router-link to="/" class="checkout-page__brand">Вау, ми!</router-link>
+          <span class="checkout-page__topbar-title">Оформление заказа</span>
+        </div>
+
+        <div class="checkout-page__steps-label" aria-label="Шаг 5 из 5">
+          <span class="checkout-page__steps-current">5</span>
+          <span class="checkout-page__steps-sep">/</span>
+          <span class="checkout-page__steps-total">5</span>
+        </div>
       </div>
     </header>
+
+    <!-- Mobile-only stepper — same 5 steps as .checkout-page__steps-label above, just a fuller
+         visual (desktop keeps the thin "5/5" text instead). This page is always step 5. Already-
+         completed steps (< 5) are clickable — jump straight back to them; the active step isn't
+         (already here). -->
+    <ol class="checkout-page__stepper" aria-label="Шаг 5 из 5: Оплата">
+      <li
+        v-for="step in ORDER_STEPS"
+        :key="step.step"
+        class="checkout-page__stepper-item"
+        :class="{
+          'checkout-page__stepper-item--done': step.step < 5,
+          'checkout-page__stepper-item--active': step.step === 5,
+        }"
+      >
+        <button
+          v-if="step.step < 5"
+          type="button"
+          class="checkout-page__stepper-btn"
+          :aria-label="`Перейти к шагу «${step.label}»`"
+          @click="goToStep(step.step)"
+        >
+          <span class="checkout-page__stepper-node"><v-icon size="10">mdi-check</v-icon></span>
+          <span class="checkout-page__stepper-label">{{ step.label }}</span>
+        </button>
+        <template v-else>
+          <span class="checkout-page__stepper-node">{{ step.step }}</span>
+          <span class="checkout-page__stepper-label">{{ step.label }}</span>
+        </template>
+      </li>
+    </ol>
 
     <main class="checkout-page__main">
       <div v-if="loading" class="checkout-page__loading">
@@ -242,6 +281,30 @@ import type { DeliveryMethod, OrderDetail } from '../types/order.types'
 const route = useRoute()
 const router = useRouter()
 const orderId = computed(() => route.params.orderId as string)
+
+// Mobile stepper labels — same list/pattern as PhotoUploadPage.vue's own ORDER_STEPS (see its doc
+// comment); duplicated per page rather than shared since each page is always exactly one fixed step.
+const ORDER_STEPS = [
+  { step: 1, label: 'Журнал' },
+  { step: 2, label: 'Фото' },
+  { step: 3, label: 'Анкета' },
+  { step: 4, label: 'Проверка' },
+  { step: 5, label: 'Оплата' },
+]
+
+/** The mobile stepper's own click-to-jump (see .checkout-page__stepper) — only ever called for an
+ * already-completed step (< 5 here), never the active one. */
+function goToStep(step: number): void {
+  if (step === 1) {
+    void router.push({ name: 'create-order' })
+  } else if (step === 2) {
+    void router.push({ name: 'order-photo-upload', params: { orderId: orderId.value } })
+  } else if (step === 3) {
+    void router.push({ name: 'order-questionnaire', params: { orderId: orderId.value } })
+  } else if (step === 4) {
+    void router.push({ name: 'order-review', params: { orderId: orderId.value } })
+  }
+}
 
 const order = ref<OrderDetail | null>(null)
 const loading = ref(true)
@@ -537,14 +600,25 @@ function pluralizeDays(n: number): string {
   background: rgba($bg-primary, 0.92);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid $border-light;
+
+  @include mobile-only {
+    height: 44px;
+  }
 }
 
 .checkout-page__topbar-inner {
   height: 100%;
   display: flex;
   align-items: center;
-  gap: $spacing-4;
+  justify-content: space-between;
   @include page-container;
+}
+
+.checkout-page__topbar-left {
+  display: flex;
+  align-items: center;
+  gap: $spacing-4;
+  min-width: 0;
 }
 
 .checkout-page__brand {
@@ -559,6 +633,10 @@ function pluralizeDays(n: number): string {
   &:hover {
     opacity: 0.65;
   }
+
+  @include mobile-only {
+    font-size: $font-size-body-sm;
+  }
 }
 
 .checkout-page__topbar-title {
@@ -567,6 +645,136 @@ function pluralizeDays(n: number): string {
   color: $text-muted;
   padding-left: $spacing-4;
   border-left: 1px solid $border-light;
+  white-space: nowrap;
+
+  @include mobile-only {
+    display: none;
+  }
+}
+
+.checkout-page__steps-label {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  flex-shrink: 0;
+  font-family: $font-family-body;
+  font-size: $font-size-body-sm;
+  color: $text-muted;
+
+  @include mobile-only {
+    font-size: $font-size-caption;
+  }
+}
+
+.checkout-page__steps-current {
+  font-weight: $font-weight-semibold;
+  color: $text-primary;
+}
+
+.checkout-page__steps-sep {
+  margin-inline: 2px;
+}
+
+// ── Mobile stepper — same as QuestionnairePage.vue's own .questionnaire-page__stepper — desktop
+// keeps the thin "5/5" text in the topbar instead. ─────────────────────────────────────────────
+.checkout-page__stepper {
+  display: none;
+
+  @include mobile-only {
+    display: flex;
+    align-items: flex-start;
+    list-style: none;
+    margin: 0;
+    padding: $spacing-2 $spacing-4 6px;
+    background: $bg-primary;
+    border-bottom: 1px solid $border-light;
+  }
+}
+
+.checkout-page__stepper-item {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+
+  &:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    top: 9px;
+    left: calc(50% + 11px);
+    right: calc(-50% + 11px);
+    height: 1px;
+    background: $border-default;
+  }
+
+  &--done:not(:last-child)::after {
+    background: $accent;
+  }
+}
+
+// Wraps a completed step's node+label so it's clickable (see the template) — reset to blend back
+// into the item's own layout, since this is purely an interactivity wrapper, not a visual one.
+.checkout-page__stepper-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  width: 100%;
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+
+  &:hover .checkout-page__stepper-node {
+    transform: scale(1.1);
+  }
+}
+
+.checkout-page__stepper-node {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1.5px solid $border-default;
+  background: $bg-elevated;
+  color: $text-muted;
+  font-size: 9px;
+  font-weight: $font-weight-semibold;
+  transition: transform 150ms ease;
+
+  .checkout-page__stepper-item--done & {
+    border-color: $accent;
+    background: $accent;
+    color: $white;
+  }
+
+  .checkout-page__stepper-item--active & {
+    border-color: $accent;
+    color: $accent;
+  }
+}
+
+.checkout-page__stepper-label {
+  font-size: 9px;
+  color: $text-muted;
+  text-align: center;
+  white-space: nowrap;
+
+  .checkout-page__stepper-item--active & {
+    color: $text-primary;
+    font-weight: $font-weight-semibold;
+  }
+
+  .checkout-page__stepper-item--done & {
+    color: $text-secondary;
+  }
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────

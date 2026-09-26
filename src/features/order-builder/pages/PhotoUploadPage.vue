@@ -30,7 +30,10 @@
     </div>
 
     <!-- Mobile-only stepper — same 5 steps as .photo-upload-page__steps-label above, just a fuller
-         visual (desktop keeps the thin progress bar instead). This page is always step 2. -->
+         visual (desktop keeps the thin progress bar instead). This page is always step 2. Steps
+         behind (< 2) are always clickable; steps ahead are clickable too, but only once
+         `isStepReachable` confirms their own prerequisite content actually exists — so jumping
+         ahead can never land on a broken/empty page. -->
     <ol class="photo-upload-page__stepper" aria-label="Шаг 2 из 5: Фото">
       <li
         v-for="step in ORDER_STEPS"
@@ -39,13 +42,26 @@
         :class="{
           'photo-upload-page__stepper-item--done': step.step < 2,
           'photo-upload-page__stepper-item--active': step.step === 2,
+          'photo-upload-page__stepper-item--reachable': step.step > 2 && isStepReachable(step.step),
         }"
       >
-        <span class="photo-upload-page__stepper-node">
-          <v-icon v-if="step.step < 2" size="10">mdi-check</v-icon>
-          <template v-else>{{ step.step }}</template>
-        </span>
-        <span class="photo-upload-page__stepper-label">{{ step.label }}</span>
+        <button
+          v-if="step.step !== 2 && (step.step < 2 || isStepReachable(step.step))"
+          type="button"
+          class="photo-upload-page__stepper-btn"
+          :aria-label="`Перейти к шагу «${step.label}»`"
+          @click="goToStep(step.step)"
+        >
+          <span class="photo-upload-page__stepper-node">
+            <v-icon v-if="step.step < 2" size="10">mdi-check</v-icon>
+            <template v-else>{{ step.step }}</template>
+          </span>
+          <span class="photo-upload-page__stepper-label">{{ step.label }}</span>
+        </button>
+        <template v-else>
+          <span class="photo-upload-page__stepper-node">{{ step.step }}</span>
+          <span class="photo-upload-page__stepper-label">{{ step.label }}</span>
+        </template>
       </li>
     </ol>
 
@@ -909,6 +925,45 @@ function goToPreviousStep(): void {
   void router.push({ name: 'create-order' })
 }
 
+/** The mobile stepper's own click-to-jump (see .photo-upload-page__stepper) — only ever called for
+ * an already-completed step (< 2 here), never the active/future ones. */
+// Whether every photo slot in the journal is filled — this page's own "done" condition, reused by
+// the mobile stepper (see `isStepReachable`) to decide whether Анкета is safe to jump to directly.
+const photosComplete = computed(() => {
+  const pages = store.order?.journalPages ?? []
+  return pages.length > 0 && !collectPhotoSlotPreview(pages).some((page) => page.slots.some((slot) => !slot.url))
+})
+
+// Whether every required placeholder in the journal (photo AND text/AI-text) is filled — the same
+// client-side check `getSubmitValidationError` runs before checkout, reused here to decide whether
+// Проверка/Оплата are safe to jump to directly.
+const contentComplete = computed(() => store.order != null && store.getSubmitValidationError() === null)
+
+/** Gates the mobile stepper's click-to-jump for a step AHEAD of this one (behind is always
+ * allowed — see the template) — a step only becomes clickable once its own prerequisite content
+ * actually exists, so jumping ahead can never land on a broken/empty page. */
+function isStepReachable(step: number): boolean {
+  if (step === 3) {
+    return photosComplete.value
+  }
+  if (step === 4 || step === 5) {
+    return contentComplete.value
+  }
+  return false
+}
+
+function goToStep(step: number): void {
+  if (step === 1) {
+    void router.push({ name: 'create-order' })
+  } else if (step === 3) {
+    void router.push({ name: 'order-questionnaire', params: { orderId: orderId.value } })
+  } else if (step === 4) {
+    void router.push({ name: 'order-review', params: { orderId: orderId.value } })
+  } else if (step === 5) {
+    void router.push({ name: 'order-checkout', params: { orderId: orderId.value } })
+  }
+}
+
 const incompletePhotosModalOpen = ref(false)
 
 function goToNextStep(): void {
@@ -1040,6 +1095,24 @@ onBeforeUnmount(() => {
   }
 }
 
+// Wraps a completed step's node+label so it's clickable (see the template) — reset to blend back
+// into the item's own layout, since this is purely an interactivity wrapper, not a visual one.
+.photo-upload-page__stepper-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  width: 100%;
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+
+  &:hover .photo-upload-page__stepper-node {
+    transform: scale(1.1);
+  }
+}
+
 .photo-upload-page__stepper-node {
   position: relative;
   z-index: 1;
@@ -1055,6 +1128,7 @@ onBeforeUnmount(() => {
   color: $text-muted;
   font-size: 9px;
   font-weight: $font-weight-semibold;
+  transition: transform 150ms ease;
 
   .photo-upload-page__stepper-item--done & {
     border-color: $accent;
@@ -1062,7 +1136,11 @@ onBeforeUnmount(() => {
     color: $white;
   }
 
-  .photo-upload-page__stepper-item--active & {
+  // Reachable (ahead, but its own content is already ready) gets the same accent outline as
+  // active — not the filled/checkmarked --done treatment, since the step hasn't actually been
+  // visited yet, just unlocked.
+  .photo-upload-page__stepper-item--active &,
+  .photo-upload-page__stepper-item--reachable & {
     border-color: $accent;
     color: $accent;
   }
@@ -1206,7 +1284,7 @@ onBeforeUnmount(() => {
     // 280px was the frame alone, padded up by roughly the toolbar row's own height (~4px+4px
     // padding, ~10px/1.4 line-height, ~1.5px border) plus the $spacing-4 gap above it.
     flex: 0 0 328px;
-    margin-top: $spacing-2;
+    margin-top: $spacing-4;
     padding: $spacing-3;
     border: none;
     border-radius: 16px;
@@ -1370,7 +1448,7 @@ onBeforeUnmount(() => {
 }
 
 .photo-upload-page__intro {
-  margin-bottom: $spacing-6;
+  margin-bottom: $spacing-8;
 
   // Superseded by .photo-upload-page__intro-mobile above the book card — see the template comment.
   @include mobile-only {

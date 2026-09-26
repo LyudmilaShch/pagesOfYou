@@ -25,6 +25,42 @@
       </div>
     </header>
 
+    <!-- Mobile-only stepper — same 5 steps as .journal-review-page__steps-label above, just a
+         fuller visual (desktop keeps the thin "4/5" text instead). This page is always step 4.
+         Steps behind (< 4) are always clickable; Оплата is clickable too, but only once
+         `isStepReachable` confirms the journal's content is actually ready — so jumping ahead can
+         never land on a broken/empty page. -->
+    <ol class="journal-review-page__stepper" aria-label="Шаг 4 из 5: Проверка">
+      <li
+        v-for="step in ORDER_STEPS"
+        :key="step.step"
+        class="journal-review-page__stepper-item"
+        :class="{
+          'journal-review-page__stepper-item--done': step.step < 4,
+          'journal-review-page__stepper-item--active': step.step === 4,
+          'journal-review-page__stepper-item--reachable': step.step > 4 && isStepReachable(step.step),
+        }"
+      >
+        <button
+          v-if="step.step !== 4 && (step.step < 4 || isStepReachable(step.step))"
+          type="button"
+          class="journal-review-page__stepper-btn"
+          :aria-label="`Перейти к шагу «${step.label}»`"
+          @click="goToStep(step.step)"
+        >
+          <span class="journal-review-page__stepper-node">
+            <v-icon v-if="step.step < 4" size="10">mdi-check</v-icon>
+            <template v-else>{{ step.step }}</template>
+          </span>
+          <span class="journal-review-page__stepper-label">{{ step.label }}</span>
+        </button>
+        <template v-else>
+          <span class="journal-review-page__stepper-node">{{ step.step }}</span>
+          <span class="journal-review-page__stepper-label">{{ step.label }}</span>
+        </template>
+      </li>
+    </ol>
+
     <!-- ── Body: the book, centred, at its largest size — no side panel on this step ────────── -->
     <main class="journal-review-page__main">
       <div class="journal-review-page__container">
@@ -171,6 +207,16 @@ const router = useRouter()
 const store = useOrderBuilderStore()
 const authStore = useAuthStore()
 
+// Mobile stepper labels — same list/pattern as PhotoUploadPage.vue's own ORDER_STEPS (see its doc
+// comment); duplicated per page rather than shared since each page is always exactly one fixed step.
+const ORDER_STEPS = [
+  { step: 1, label: 'Журнал' },
+  { step: 2, label: 'Фото' },
+  { step: 3, label: 'Анкета' },
+  { step: 4, label: 'Проверка' },
+  { step: 5, label: 'Оплата' },
+]
+
 const orderId = computed(() => route.params.orderId as string)
 const galleryScope = computed(() => getGalleryScope(store))
 
@@ -224,6 +270,32 @@ const missingPhotoCount = computed(() =>
 
 function goToPreviousStep(): void {
   void router.push({ name: 'order-questionnaire', params: { orderId: orderId.value } })
+}
+
+/** The mobile stepper's own click-to-jump (see .journal-review-page__stepper) — only ever called
+ * for an already-completed step (< 4 here), never the active/future ones. */
+// Whether every required placeholder in the journal (photo AND text/AI-text) is filled — the same
+// client-side check `getSubmitValidationError` runs before checkout, reused here to decide whether
+// Оплата is safe to jump to directly from the mobile stepper.
+const contentComplete = computed(() => store.order != null && store.getSubmitValidationError() === null)
+
+/** Gates the mobile stepper's click-to-jump for a step AHEAD of this one (behind is always
+ * allowed — see the template) — a step only becomes clickable once its own prerequisite content
+ * actually exists, so jumping ahead can never land on a broken/empty page. */
+function isStepReachable(step: number): boolean {
+  return step === 5 && contentComplete.value
+}
+
+function goToStep(step: number): void {
+  if (step === 1) {
+    void router.push({ name: 'create-order' })
+  } else if (step === 2) {
+    void router.push({ name: 'order-photo-upload', params: { orderId: orderId.value } })
+  } else if (step === 3) {
+    void router.push({ name: 'order-questionnaire', params: { orderId: orderId.value } })
+  } else if (step === 5) {
+    void router.push({ name: 'order-checkout', params: { orderId: orderId.value } })
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -563,6 +635,10 @@ onBeforeUnmount(() => {
   background: rgba($bg-primary, 0.92);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid $border-light;
+
+  @include mobile-only {
+    height: 44px;
+  }
 }
 
 .journal-review-page__topbar-inner {
@@ -585,6 +661,10 @@ onBeforeUnmount(() => {
   &:hover {
     opacity: 0.65;
   }
+
+  @include mobile-only {
+    font-size: $font-size-body-sm;
+  }
 }
 
 .journal-review-page__steps-label {
@@ -594,6 +674,10 @@ onBeforeUnmount(() => {
   font-family: $font-family-body;
   font-size: $font-size-body-sm;
   color: $text-muted;
+
+  @include mobile-only {
+    font-size: $font-size-caption;
+  }
 }
 
 .journal-review-page__steps-current {
@@ -603,6 +687,112 @@ onBeforeUnmount(() => {
 
 .journal-review-page__steps-sep {
   margin-inline: 2px;
+}
+
+// ── Mobile stepper — same as QuestionnairePage.vue's own .questionnaire-page__stepper — desktop
+// keeps the thin "4/5" text in the topbar instead. ─────────────────────────────────────────────
+.journal-review-page__stepper {
+  display: none;
+
+  @include mobile-only {
+    display: flex;
+    align-items: flex-start;
+    list-style: none;
+    margin: 0;
+    padding: $spacing-2 $spacing-4 6px;
+    background: $bg-primary;
+    border-bottom: 1px solid $border-light;
+  }
+}
+
+.journal-review-page__stepper-item {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+
+  &:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    top: 9px;
+    left: calc(50% + 11px);
+    right: calc(-50% + 11px);
+    height: 1px;
+    background: $border-default;
+  }
+
+  &--done:not(:last-child)::after {
+    background: $accent;
+  }
+}
+
+// Wraps a completed step's node+label so it's clickable (see the template) — reset to blend back
+// into the item's own layout, since this is purely an interactivity wrapper, not a visual one.
+.journal-review-page__stepper-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  width: 100%;
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+
+  &:hover .journal-review-page__stepper-node {
+    transform: scale(1.1);
+  }
+}
+
+.journal-review-page__stepper-node {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1.5px solid $border-default;
+  background: $bg-elevated;
+  color: $text-muted;
+  font-size: 9px;
+  font-weight: $font-weight-semibold;
+  transition: transform 150ms ease;
+
+  .journal-review-page__stepper-item--done & {
+    border-color: $accent;
+    background: $accent;
+    color: $white;
+  }
+
+  // Reachable (ahead, but its own content is already ready) gets the same accent outline as
+  // active — not the filled/checkmarked --done treatment, since the step hasn't actually been
+  // visited yet, just unlocked.
+  .journal-review-page__stepper-item--active &,
+  .journal-review-page__stepper-item--reachable & {
+    border-color: $accent;
+    color: $accent;
+  }
+}
+
+.journal-review-page__stepper-label {
+  font-size: 9px;
+  color: $text-muted;
+  text-align: center;
+  white-space: nowrap;
+
+  .journal-review-page__stepper-item--active & {
+    color: $text-primary;
+    font-weight: $font-weight-semibold;
+  }
+
+  .journal-review-page__stepper-item--done & {
+    color: $text-secondary;
+  }
 }
 
 .journal-review-page__main {
@@ -636,38 +826,51 @@ onBeforeUnmount(() => {
 }
 
 .journal-review-page__intro {
-  margin-bottom: $spacing-8;
+  margin-bottom: $spacing-12;
   text-align: center;
 
   @include mobile-only {
-    margin-bottom: $spacing-6;
+    margin-bottom: $spacing-8;
   }
 
   @include tablet-up {
     flex-shrink: 0;
-    margin-bottom: $spacing-4;
+    margin-bottom: $spacing-6;
   }
 }
 
+// Superseded by .journal-review-page__stepper on mobile — redundant with it once that's shown
+// (both say "step 4 of 5"), same reasoning as QuestionnairePage.vue's own eyebrow removal.
 .journal-review-page__eyebrow {
   margin: 0 0 $spacing-2;
+
+  @include mobile-only {
+    display: none;
+  }
 }
 
 .journal-review-page__title {
   margin: 0 0 $spacing-3;
 
-  // !important — the "text-h2" utility class on the same <h1> (44px, unconditional) otherwise
-  // wins over this on mobile despite this rule compiling after it (see PhotoUploadPage.vue's own
-  // title rule for the full story).
+  // Same treatment as PhotoUploadPage.vue/QuestionnairePage.vue's own title rule — !important
+  // because the "text-h2" utility class on the same <h1> otherwise wins on mobile despite this
+  // rule compiling after it.
   @include mobile-only {
-    font-size: $font-size-body-lg !important;
-    margin-bottom: $spacing-2 !important;
+    font-size: $font-size-h4 !important;
+    font-weight: $font-weight-bold !important;
+    line-height: 1.15 !important;
+    margin-bottom: $spacing-1 !important;
   }
 }
 
 .journal-review-page__subtitle {
   max-width: 480px;
   margin-inline: auto;
+
+  @include mobile-only {
+    font-size: $font-size-caption !important;
+    line-height: 1.3;
+  }
 }
 
 .journal-review-page__book-wrap {
