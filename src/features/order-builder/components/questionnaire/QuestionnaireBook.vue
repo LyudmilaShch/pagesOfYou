@@ -722,9 +722,21 @@ const ZOOM_PAN_THRESHOLD = 6
 const ZOOM_DOUBLE_TAP_MS = 300
 const ZOOM_DOUBLE_TAP_PX = 24
 
-const zoomLayerStyle = computed(() => ({
-  transform: `translate(${zoomX.value}px, ${zoomY.value}px) scale(${zoomScale.value})`,
-}))
+// No `transform` at all at rest (not even a harmless-looking identity one) — ANY non-`none`
+// transform value promotes this to its own compositing layer, and Safari has a known rendering
+// bug where a *child* with `filter: drop-shadow` (`.questionnaire-book__frame`, always present)
+// sitting inside a transformed/layer-promoted ancestor renders grayed-out — reproducible even
+// while sitting fully at rest (scale 1, no pan), since the bug is triggered by the layer itself
+// existing, not by anything actually animating. Only creating the transform once zoom is genuinely
+// non-default sidesteps it entirely for every visitor who never actually zooms in.
+const zoomLayerStyle = computed(() => {
+  if (zoomScale.value === 1 && zoomX.value === 0 && zoomY.value === 0) {
+    return undefined
+  }
+  return {
+    transform: `translate(${zoomX.value}px, ${zoomY.value}px) scale(${zoomScale.value})`,
+  }
+})
 
 const activeZoomPointers = new Map<number, { x: number; y: number }>()
 let pinchStartDistance = 0
@@ -965,12 +977,31 @@ function handleZoomWheel(event: WheelEvent): void {
   }
   event.preventDefault()
 
-  const scale = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoomScale.value - event.deltaY * WHEEL_ZOOM_SENSITIVITY * zoomScale.value))
-  zoomScale.value = scale
-  const clamped = clampZoomPan(zoomX.value, zoomY.value, scale)
-  zoomX.value = clamped.x
-  zoomY.value = clamped.y
-  if (scale <= ZOOM_MIN) {
+  const prevScale = zoomScale.value
+  const nextScale = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, prevScale - event.deltaY * WHEEL_ZOOM_SENSITIVITY * prevScale))
+  zoomScale.value = nextScale
+
+  const el = perspectiveRef.value
+  if (el && nextScale !== prevScale) {
+    // Keeps whatever content point is currently under the cursor visually fixed under it as the
+    // scale changes, rather than always zooming toward the frame's own center — same "zoom toward
+    // the pointer" behavior as Figma/Google Maps/etc. `ratio` is how much the scale just changed
+    // by; deriving the new pan from it (rather than leaving the old pan untouched) is what makes
+    // the zoom track the cursor instead of drifting back toward center on every tick.
+    const rect = el.getBoundingClientRect()
+    const offsetX = event.clientX - (rect.left + rect.width / 2)
+    const offsetY = event.clientY - (rect.top + rect.height / 2)
+    const ratio = nextScale / prevScale
+    const clamped = clampZoomPan(
+      offsetX * (1 - ratio) + zoomX.value * ratio,
+      offsetY * (1 - ratio) + zoomY.value * ratio,
+      nextScale,
+    )
+    zoomX.value = clamped.x
+    zoomY.value = clamped.y
+  }
+
+  if (nextScale <= ZOOM_MIN) {
     resetZoom()
   }
 }
