@@ -655,6 +655,14 @@ onBeforeUnmount(() => {
 
 .journal-review-page__title {
   margin: 0 0 $spacing-3;
+
+  // !important — the "text-h2" utility class on the same <h1> (44px, unconditional) otherwise
+  // wins over this on mobile despite this rule compiling after it (see PhotoUploadPage.vue's own
+  // title rule for the full story).
+  @include mobile-only {
+    font-size: $font-size-body-lg !important;
+    margin-bottom: $spacing-2 !important;
+  }
 }
 
 .journal-review-page__subtitle {

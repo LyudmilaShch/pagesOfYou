@@ -29,6 +29,26 @@
       <v-progress-linear :model-value="ORDER_STEP_PROGRESS" color="primary" bg-opacity="0.15" height="3" />
     </div>
 
+    <!-- Mobile-only stepper — same 5 steps as .photo-upload-page__steps-label above, just a fuller
+         visual (desktop keeps the thin progress bar instead). This page is always step 2. -->
+    <ol class="photo-upload-page__stepper" aria-label="Шаг 2 из 5: Фото">
+      <li
+        v-for="step in ORDER_STEPS"
+        :key="step.step"
+        class="photo-upload-page__stepper-item"
+        :class="{
+          'photo-upload-page__stepper-item--done': step.step < 2,
+          'photo-upload-page__stepper-item--active': step.step === 2,
+        }"
+      >
+        <span class="photo-upload-page__stepper-node">
+          <v-icon v-if="step.step < 2" size="10">mdi-check</v-icon>
+          <template v-else>{{ step.step }}</template>
+        </span>
+        <span class="photo-upload-page__stepper-label">{{ step.label }}</span>
+      </li>
+    </ol>
+
     <!-- ── Body: 3D spread book (left) + uploader (right) — same split as the anketa step ────── -->
     <div class="photo-upload-page__body">
       <div class="photo-upload-page__body-inner">
@@ -36,14 +56,15 @@
              column stack — the "real" intro further down (inside main) hides on mobile via CSS,
              see .photo-upload-page__intro. -->
         <header class="photo-upload-page__intro-mobile">
-          <h1 class="photo-upload-page__title text-h3">Загрузите фото для журнала</h1>
+          <h1 class="photo-upload-page__title text-h3">Добавьте фотографии в журнал</h1>
           <p class="photo-upload-page__subtitle text-body text-secondary">
-            Для вашего журнала нужно {{ requiredPhotoCount }} фото — столько мест для фото в разворотах
+            Загрузите {{ requiredPhotoCount }} фотографий — мы автоматически расставим их по страницам журнала. Хотите изменить расположение? Перетащите фото из галереи на нужную страницу. 
           </p>
         </header>
 
         <div class="photo-upload-page__book-column" aria-label="Развороты журнала">
           <QuestionnaireBook
+            ref="bookRef"
             :pages="store.order?.journalPages ?? []"
             :canvas-data-by-page-id="canvasDataByPageId"
             :focus-page-id="focusPageId"
@@ -51,13 +72,57 @@
             :fill-by-page-id="EMPTY_FILL_MAP"
             :pending-element-ids="EMPTY_ELEMENT_IDS"
             :drop-enabled="manualPlacementMode"
-            :show-structure-controls="!isMobileViewport"
+            show-structure-controls
+            :hide-nav="isMobileViewport"
+            :fit-height="isMobileViewport"
             crop-enabled
             pick-enabled
             @drop-photo="handleDropPhoto"
             @crop-photo="openCropEditor"
             @pick-photo="openPhotoPicker"
-          />
+            @update:viewing="bookViewing = $event"
+          >
+            <!-- Mobile-only — same round prev/next arrows as the reference design, calling into the
+                 book's own exposed `flip()` (its built-in nav row is hidden via hide-nav above).
+                 Rendered into `nav-overlay` (not a plain sibling here) so they're positioned against
+                 the book's own frame specifically, not the whole mobile card (which also includes
+                 the "Изменить порядок"/"Добавить 4 страницы" toolbar below the frame) — see that
+                 slot's own doc comment in QuestionnaireBook.vue. -->
+            <template #nav-overlay>
+              <button
+                type="button"
+                class="photo-upload-page__book-arrow photo-upload-page__book-arrow--prev"
+                aria-label="Предыдущая страница"
+                :disabled="!bookViewing || bookViewing.index <= 0"
+                @click="bookRef?.flip('prev')"
+              >
+                <v-icon size="18">mdi-chevron-left</v-icon>
+              </button>
+              <button
+                type="button"
+                class="photo-upload-page__book-arrow photo-upload-page__book-arrow--next"
+                aria-label="Следующая страница"
+                :disabled="!bookViewing || bookViewing.index >= bookViewing.total - 1"
+                @click="bookRef?.flip('next')"
+              >
+                <v-icon size="18">mdi-chevron-right</v-icon>
+              </button>
+            </template>
+          </QuestionnaireBook>
+        </div>
+
+        <!-- Mobile-only — replaces the book's own built-in nav row (hidden via hide-nav above). -->
+        <div class="photo-upload-page__book-hint">
+          <span class="photo-upload-page__book-hint-icon" aria-hidden="true">
+            <v-icon size="18">mdi-gesture-swipe-horizontal</v-icon>
+          </span>
+          <p class="photo-upload-page__book-hint-text">
+            Перетащите фото из галереи на страницу журнала. Вы также можете листать журнал и
+            выбрать другую страницу.
+          </p>
+          <span v-if="bookViewing" class="photo-upload-page__book-hint-counter">
+            Страница {{ bookViewing.index + 1 }} из {{ bookViewing.total }}
+          </span>
         </div>
 
         <main class="photo-upload-page__main">
@@ -65,9 +130,9 @@
           <div class="photo-upload-page__container">
             <header class="photo-upload-page__intro">
               <p class="photo-upload-page__eyebrow text-caption text-secondary">Шаг 2 — Фото</p>
-              <h1 class="photo-upload-page__title text-h3">Загрузите фото для журнала</h1>
+              <h1 class="photo-upload-page__title text-h3">Добавьте фотографии в журнал</h1>
               <p class="photo-upload-page__subtitle text-body text-secondary">
-                Для вашего журнала нужно {{ requiredPhotoCount }} фото — столько мест для фото в разворотах
+                Загрузите {{ requiredPhotoCount }} фотографий — мы автоматически расставим их по страницам журнала. Хотите изменить расположение? Перетащите фото из галереи на нужную страницу. 
               </p>
             </header>
 
@@ -108,19 +173,22 @@
               </span>
             </div>
 
-            <div v-if="coverSlots.length > 0 && photos.length > 0" class="photo-upload-page__cover">
-              <h2 class="photo-upload-page__cover-title text-body">Фото на обложке</h2>
-              <div class="photo-upload-page__cover-slots">
-                <div v-for="slot in coverSlots" :key="slot.elementId" class="photo-upload-page__cover-slot">
-                  <div class="photo-upload-page__cover-preview">
-                    <img v-if="slot.url" :src="slot.url" alt="" />
-                    <v-icon v-else :size="isMobileViewport ? 18 : 24" color="grey">mdi-image-outline</v-icon>
-                  </div>
-                  <v-btn variant="outlined" size="small" @click="openCoverPicker(slot.elementId)">
-                    {{ slot.url ? 'Заменить' : 'Выбрать фото' }}
-                  </v-btn>
-                </div>
+            <!-- Mobile-only — replaces .photo-upload-page__stats (desktop, hidden here) with a
+                 title + fill progress bar against `requiredPhotoCount`. -->
+            <div class="photo-upload-page__mobile-stats">
+              <div class="photo-upload-page__mobile-stats-row">
+                <span class="photo-upload-page__mobile-stats-title">Ваши фотографии</span>
+                <span class="photo-upload-page__mobile-stats-count">
+                  {{ photos.length }} из {{ requiredPhotoCount }} загружено
+                </span>
               </div>
+              <v-progress-linear
+                :model-value="requiredPhotoCount > 0 ? (photos.length / requiredPhotoCount) * 100 : 0"
+                color="primary"
+                bg-color="#f1d6de"
+                height="6"
+                rounded
+              />
             </div>
 
             <div v-if="photos.length > 0" class="photo-upload-page__grid-header">
@@ -142,10 +210,11 @@
               <button
                 type="button"
                 class="photo-upload-page__add-tile"
-                aria-label="Добавить фото"
+                aria-label="Добавить ещё фото"
                 @click="fileInputRef?.click()"
               >
-                <v-icon size="20" color="primary">mdi-plus</v-icon>
+                <v-icon size="14" color="primary">mdi-plus</v-icon>
+                <span class="photo-upload-page__add-tile-label">Добавить ещё фото</span>
               </button>
 
               <!-- `display:contents` on desktop (see CSS) keeps these thumbs as direct grid items of
@@ -160,6 +229,7 @@
                   :class="{ 'photo-upload-page__thumb--draggable': manualPlacementMode }"
                   :draggable="manualPlacementMode"
                   @dragstart="handleDragStart($event, photo)"
+                  @pointerdown="handleThumbPointerDown($event, photo)"
                 >
                   <img :src="photo.url" :alt="photo.originalName ?? ''" />
                   <button
@@ -170,7 +240,7 @@
                     :aria-label="`Используется на ${usageByUrl.get(photo.url)?.length} страницах`"
                     @click.stop="handleUsageClick(photo.url)"
                   >
-                    <v-icon size="11">mdi-image-multiple</v-icon>
+                    <v-icon size="9">mdi-image-multiple</v-icon>
                     {{ usageByUrl.get(photo.url)?.length }}
                   </button>
                   <button
@@ -179,19 +249,23 @@
                     aria-label="Удалить фото"
                     @click="removePhoto(photo)"
                   >
-                    <v-icon size="14">mdi-close</v-icon>
+                    <v-icon size="10">mdi-close</v-icon>
                   </button>
-                  <!-- Touch-only drag handle — the thumb itself stays swipeable (to scroll the row);
-                       only this small handle starts a drag, mirroring SpreadReorderDialog.vue's own
-                       touch-compatible drag handle. -->
-                  <span
-                    v-if="isMobileViewport"
-                    class="photo-upload-page__thumb-handle"
-                    aria-hidden="true"
-                    @pointerdown="handleThumbHandlePointerDown($event, photo)"
-                  >
-                    <v-icon size="12" color="white">mdi-drag</v-icon>
-                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="coverSlots.length > 0 && photos.length > 0" class="photo-upload-page__cover">
+              <h2 class="photo-upload-page__cover-title text-body">Фото на обложке</h2>
+              <div class="photo-upload-page__cover-slots">
+                <div v-for="slot in coverSlots" :key="slot.elementId" class="photo-upload-page__cover-slot">
+                  <div class="photo-upload-page__cover-preview">
+                    <img v-if="slot.url" :src="slot.url" alt="" />
+                    <v-icon v-else :size="isMobileViewport ? 18 : 24" color="grey">mdi-image-outline</v-icon>
+                  </div>
+                  <v-btn variant="outlined" size="small" @click="openCoverPicker(slot.elementId)">
+                    {{ slot.url ? 'Заменить' : 'Выбрать фото' }}
+                  </v-btn>
                 </div>
               </div>
             </div>
@@ -204,10 +278,6 @@
 
     <!-- ── Bottom action bar — same chrome as Шаг 1/3: moves between order-creation steps ───── -->
     <footer class="photo-upload-page__actions">
-      <p class="photo-upload-page__stats-mobile">
-        Загруженные фото · {{ photos.length }} из {{ requiredPhotoCount }}
-      </p>
-
       <div class="photo-upload-page__actions-inner">
         <v-btn
           variant="outlined"
@@ -334,6 +404,17 @@ const EMPTY_ELEMENT_IDS: Set<string> = new Set()
 // This is Шаг 2 of 5 — same hardcoded step number as .photo-upload-page__steps-label below.
 const ORDER_STEP_PROGRESS = (2 / 5) * 100
 
+// Mobile stepper labels — mirrors the other 4 order-creation pages' own "Шаг N — ..." eyebrow text
+// (CreateOrderPage.vue/QuestionnairePage.vue/JournalReviewPage.vue/CheckoutPage.vue), just listed
+// together here since this is the only page that renders all 5 at once.
+const ORDER_STEPS = [
+  { step: 1, label: 'Журнал' },
+  { step: 2, label: 'Фото' },
+  { step: 3, label: 'Анкета' },
+  { step: 4, label: 'Проверка' },
+  { step: 5, label: 'Оплата' },
+]
+
 const route = useRoute()
 const router = useRouter()
 const store = useOrderBuilderStore()
@@ -433,6 +514,13 @@ async function handlePickerSelect(url: string): Promise<void> {
 // as QuestionnairePage.vue's own post-answer pulse.
 const focusPageId = ref<string | null>(null)
 const pulsingPageIds = ref<Set<string>>(new Set())
+// Mirrors QuestionnaireBook's own built-in nav state — see `hide-nav`/`update:viewing` on its
+// usage above; only actually read on mobile (.photo-upload-page__book-hint), but harmless to keep
+// updated on desktop too, since the emit fires regardless of `hide-nav`.
+const bookViewing = ref<{ index: number; total: number; label: string } | null>(null)
+// Drives the mobile-only round prev/next arrows via the book's own exposed `flip()` — see
+// .photo-upload-page__book-arrow below.
+const bookRef = ref<InstanceType<typeof QuestionnaireBook> | null>(null)
 let pulseTimer: ReturnType<typeof setTimeout> | null = null
 
 function jumpTo(journalPageId: string): void {
@@ -668,8 +756,10 @@ async function handleDropPhoto(pageId: string, elementId: string, url: string): 
 // timer. A dedicated handle with touch-action: none sidesteps that entirely.
 const touchDrag = ref<{ photo: GalleryPhoto; x: number; y: number } | null>(null)
 
-function handleThumbHandlePointerDown(event: PointerEvent, photo: GalleryPhoto): void {
-  if (event.pointerType === 'mouse') {
+function handleThumbPointerDown(event: PointerEvent, photo: GalleryPhoto): void {
+  // Was gated by a dedicated drag-handle icon rendered only on mobile (`v-if="isMobileViewport"`)
+  // — now the whole thumb starts the drag directly (on request), so this guard replaces that.
+  if (event.pointerType === 'mouse' || !isMobileViewport.value) {
     return
   }
   event.preventDefault()
@@ -885,6 +975,10 @@ onBeforeUnmount(() => {
   background: rgba($bg-primary, 0.92);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid $border-light;
+
+  @include mobile-only {
+    height: 44px;
+  }
 }
 
 .photo-upload-page__topbar-inner {
@@ -899,6 +993,95 @@ onBeforeUnmount(() => {
 // progress — see .photo-upload-page__progress further down for that).
 .photo-upload-page__step-progress {
   flex-shrink: 0;
+
+  // Superseded by .photo-upload-page__stepper below on mobile.
+  @include mobile-only {
+    display: none;
+  }
+}
+
+// ── Mobile stepper — desktop keeps the thin .photo-upload-page__step-progress bar instead ──────
+.photo-upload-page__stepper {
+  display: none;
+
+  @include mobile-only {
+    display: flex;
+    align-items: flex-start;
+    list-style: none;
+    margin: 0;
+    padding: $spacing-2 $spacing-4 6px;
+    background: $bg-primary;
+    border-bottom: 1px solid $border-light;
+  }
+}
+
+.photo-upload-page__stepper-item {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+
+  // Connecting line to the NEXT item, through the middle of the row of nodes — drawn on every
+  // item except the last, sitting behind the node circles (z-index below).
+  &:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    top: 9px;
+    left: calc(50% + 11px);
+    right: calc(-50% + 11px);
+    height: 1px;
+    background: $border-default;
+  }
+
+  &--done:not(:last-child)::after {
+    background: $accent;
+  }
+}
+
+.photo-upload-page__stepper-node {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1.5px solid $border-default;
+  background: $bg-elevated;
+  color: $text-muted;
+  font-size: 9px;
+  font-weight: $font-weight-semibold;
+
+  .photo-upload-page__stepper-item--done & {
+    border-color: $accent;
+    background: $accent;
+    color: $white;
+  }
+
+  .photo-upload-page__stepper-item--active & {
+    border-color: $accent;
+    color: $accent;
+  }
+}
+
+.photo-upload-page__stepper-label {
+  font-size: 9px;
+  color: $text-muted;
+  text-align: center;
+  white-space: nowrap;
+
+  .photo-upload-page__stepper-item--active & {
+    color: $text-primary;
+    font-weight: $font-weight-semibold;
+  }
+
+  .photo-upload-page__stepper-item--done & {
+    color: $text-secondary;
+  }
 }
 
 .photo-upload-page__brand {
@@ -913,6 +1096,10 @@ onBeforeUnmount(() => {
   &:hover {
     opacity: 0.65;
   }
+
+  @include mobile-only {
+    font-size: $font-size-body-sm;
+  }
 }
 
 .photo-upload-page__steps-label {
@@ -922,6 +1109,10 @@ onBeforeUnmount(() => {
   font-family: $font-family-body;
   font-size: $font-size-body-sm;
   color: $text-muted;
+
+  @include mobile-only {
+    font-size: $font-size-caption;
+  }
 }
 
 .photo-upload-page__steps-current {
@@ -952,11 +1143,15 @@ onBeforeUnmount(() => {
   @include mobile-only {
     flex-direction: column;
     align-items: stretch;
+    // The book column below now holds a FIXED size (see .photo-upload-page__book-column) instead
+    // of shrinking to whatever's left — on a short viewport (small phone, landscape, a keyboard
+    // eating screen space, etc.) the column stack no longer fits without the book itself shrinking
+    // away to nothing. Scrolling here instead keeps the book at its intended size always; this is
+    // the scroll container for the whole mobile column stack (not .photo-upload-page__main-scroll,
+    // which only exists for the desktop form column split).
+    flex: 1;
     min-height: 0;
     overflow-y: auto;
-    // Without this, the CSS Overflow spec forces overflow-x to auto too (any axis not `visible`
-    // makes the other one `auto` as well) — exposing .photo-upload-page__main's full-bleed ::after
-    // below as real (but empty) horizontally-scrollable content.
     overflow-x: hidden;
   }
 }
@@ -969,7 +1164,8 @@ onBeforeUnmount(() => {
 
   @include mobile-only {
     display: block;
-    padding-top: $spacing-4;
+    flex-shrink: 0;
+    padding-top: $spacing-2;
   }
 }
 
@@ -995,15 +1191,124 @@ onBeforeUnmount(() => {
   }
 
   @include mobile-only {
-    flex: 0 0 auto;
-    margin-top: $spacing-3;
+    // A FIXED height (flex: 0 0 <n>, not 1/min-height:0 any more) — the book must never shrink
+    // below its intended size just because a short viewport (small phone, landscape, a keyboard
+    // eating screen space…) leaves less room: QuestionnaireBook's `fit-height` mode derives the
+    // frame from whatever height it's actually given, so a shrinking column used to mean a
+    // shrinking, sometimes near-invisible book. Now the ancestor column
+    // (.photo-upload-page__body-inner) scrolls instead when the stack doesn't fit — the book always
+    // renders at this same size, tall screens included (max-height's old job — capping otherwise-
+    // unbounded flex:1 growth — is now just this fixed number directly). 328px is an estimate of
+    // the book's own natural height at a typical phone width (this component has no JS-based
+    // sizing) — may need retuning against a real device. It accounts for both the frame and the
+    // "Изменить порядок"/"Добавить 4 страницы" toolbar row underneath it (see QuestionnaireBook.vue's
+    // `show-structure-controls`, on unconditionally below), which share this one fixed height —
+    // 280px was the frame alone, padded up by roughly the toolbar row's own height (~4px+4px
+    // padding, ~10px/1.4 line-height, ~1.5px border) plus the $spacing-4 gap above it.
+    flex: 0 0 328px;
+    margin-top: $spacing-2;
     padding: $spacing-3;
     border: none;
-    border-radius: $radius-lg;
+    border-radius: 16px;
+    // Paler than $accent-tint (#fbdfe9) — matches the soft blush background behind the book in
+    // the reference design more closely than the more saturated shared accent-tint token does.
+    background: #fdf0f3;
 
     &::before {
       display: none;
     }
+  }
+}
+
+// ── Mobile-only page hint row, right below the book card ────────────────────────────────────
+// Replaces QuestionnaireBook's own built-in prev/next + "N из M" row on mobile (see `hide-nav`
+// on the <QuestionnaireBook> usage below) with this hand-icon hint + pill counter instead —
+// desktop keeps the built-in one, unchanged.
+.photo-upload-page__book-hint {
+  display: none;
+
+  @include mobile-only {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: $spacing-2;
+    margin-top: $spacing-2;
+    padding: $spacing-2;
+    border-radius: $radius-md;
+    background: $bg-tertiary;
+  }
+}
+
+.photo-upload-page__book-hint-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: $accent-tint;
+  color: $accent-deep;
+}
+
+.photo-upload-page__book-hint-text {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.35;
+  color: $text-secondary;
+}
+
+.photo-upload-page__book-hint-counter {
+  flex-shrink: 0;
+  padding: 3px 8px;
+  border-radius: 9999px;
+  background: $bg-elevated;
+  color: $text-secondary;
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+// ── Mobile-only round prev/next arrows over the book, same as the reference design — desktop
+// keeps QuestionnaireBook's own built-in arrows (only hidden on mobile via hide-nav). ───────────
+.photo-upload-page__book-arrow {
+  display: none;
+
+  @include mobile-only {
+    display: flex;
+    position: absolute;
+    top: 50%;
+    z-index: 2;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    transform: translateY(-50%);
+    border: none;
+    border-radius: 50%;
+    background: $bg-elevated;
+    color: $text-primary;
+    box-shadow: 0 2px 8px rgba($black, 0.16);
+    cursor: pointer;
+    transition: opacity 150ms ease;
+
+    &:disabled {
+      opacity: 0.4;
+      cursor: default;
+    }
+  }
+}
+
+.photo-upload-page__book-arrow--prev {
+  @include mobile-only {
+    left: 6px;
+  }
+}
+
+.photo-upload-page__book-arrow--next {
+  @include mobile-only {
+    right: 6px;
   }
 }
 
@@ -1054,7 +1359,7 @@ onBeforeUnmount(() => {
   @include mobile-only {
     height: auto;
     overflow: visible;
-    padding-block: $spacing-4;
+    padding: 0;
   }
 }
 
@@ -1083,8 +1388,15 @@ onBeforeUnmount(() => {
   // Shared with the mobile-only duplicate intro above the book card — the desktop instance never
   // sees this (hidden via .photo-upload-page__intro's own mobile-only display:none).
   @include mobile-only {
-    margin-bottom: $spacing-2;
-    font-size: $font-size-body-lg;
+    margin-bottom: $spacing-1;
+    // Bold + $font-size-h4 (24px) — back near the reference design's own title weight/size after
+    // 10px (an earlier "40% smaller" request) turned out too small once this rule actually started
+    // applying (see the !important note below). !important because the "text-h3" utility class on
+    // the same <h1> (Unbounded, 32px, regular weight, unconditional) otherwise wins on mobile
+    // despite this rule compiling after it.
+    font-size: $font-size-h4 !important;
+    font-weight: $font-weight-bold !important;
+    line-height: 1.15 !important;
   }
 }
 
@@ -1093,7 +1405,12 @@ onBeforeUnmount(() => {
   margin: 0;
 
   @include mobile-only {
-    font-size: $font-size-body-sm;
+    font-size: $font-size-caption !important;
+    line-height: 1.3;
+    // No longer clamped to 2 lines (on request — was cutting the description off). The book card
+    // below still never scrolls off-screen regardless of how tall this ends up: it's `flex: 1` in
+    // a fixed-height column (see .photo-upload-page__book-column), so it just shrinks to absorb
+    // whatever space a longer description takes here instead.
   }
 }
 
@@ -1168,6 +1485,36 @@ onBeforeUnmount(() => {
   color: $text-primary;
 }
 
+// ── Mobile-only "Ваши фотографии" progress — see .photo-upload-page__stats above (desktop) ────
+.photo-upload-page__mobile-stats {
+  display: none;
+
+  @include mobile-only {
+    display: block;
+    margin-top: $spacing-2;
+  }
+}
+
+.photo-upload-page__mobile-stats-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: $spacing-2;
+  margin-bottom: 4px;
+}
+
+.photo-upload-page__mobile-stats-title {
+  font-size: $font-size-caption;
+  font-weight: $font-weight-semibold;
+  color: $text-primary;
+}
+
+.photo-upload-page__mobile-stats-count {
+  font-size: 10px;
+  color: $text-secondary;
+  white-space: nowrap;
+}
+
 // ── Cover photo picker ────────────────────────────────────────────────────────────────────
 .photo-upload-page__cover {
   margin-top: $spacing-4;
@@ -1186,9 +1533,10 @@ onBeforeUnmount(() => {
   font-weight: $font-weight-semibold;
   color: $text-primary;
 
+  // Same size as .photo-upload-page__mobile-stats-title ("Ваши фотографии"), on request.
   @include mobile-only {
     margin-bottom: $spacing-2;
-    font-size: $font-size-body-sm;
+    font-size: $font-size-caption;
   }
 }
 
@@ -1211,7 +1559,13 @@ onBeforeUnmount(() => {
     gap: $spacing-2;
 
     .v-btn {
-      height: 32px;
+      height: 24px;
+      padding-inline: 8px;
+      font-size: 10px;
+
+      :deep(.v-btn__content) {
+        font-size: 10px;
+      }
     }
   }
 }
@@ -1274,9 +1628,9 @@ onBeforeUnmount(() => {
   @include mobile-only {
     display: flex;
     align-items: flex-start;
-    gap: $spacing-2;
-    margin-top: $spacing-3;
-    padding-top: $spacing-3;
+    gap: 6px;
+    margin-top: 6px;
+    padding-top: 6px;
     border-top: 1px solid $border-light;
   }
 }
@@ -1288,23 +1642,33 @@ onBeforeUnmount(() => {
 
   @include mobile-only {
     display: flex;
-    flex: 0 0 72px;
-    width: 72px;
-    height: 72px;
+    flex: 0 0 56px;
+    width: 56px;
+    height: 56px;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    border: 1.5px dashed $border-default;
-    border-radius: $radius-md;
-    background: $bg-tertiary;
+    gap: 2px;
+    padding: 2px;
+    border: 1.5px dashed $accent;
+    border-radius: 0;
+    background: $white;
     cursor: pointer;
     transition: border-color 150ms ease, background 150ms ease;
 
     &:hover,
     &:active {
-      border-color: $accent;
+      border-color: $accent-deep;
       background: $accent-tint;
     }
   }
+}
+
+.photo-upload-page__add-tile-label {
+  font-size: 8px;
+  line-height: 1.15;
+  color: $accent-deep;
+  text-align: center;
 }
 
 // On desktop this is inert (`display: contents` — its .photo-upload-page__thumb children stay
@@ -1330,14 +1694,21 @@ onBeforeUnmount(() => {
   border-radius: $radius-md;
   overflow: hidden;
   background: $bg-muted;
-  // Lets a swipe on the thumb itself keep scrolling the row — dragging a photo out only starts
-  // from the dedicated handle below (touch-action: none there), see handleThumbHandlePointerDown.
+  // Desktop: lets a swipe on the thumb keep scrolling the row (dragging there uses HTML5 DnD via
+  // @dragstart instead, which doesn't need touch-action at all).
   touch-action: pan-x;
 
   @include mobile-only {
-    flex: 0 0 72px;
-    width: 72px;
-    height: 72px;
+    flex: 0 0 56px;
+    width: 56px;
+    height: 56px;
+    // The whole thumb starts a touch-drag directly now (on request — see handleThumbPointerDown;
+    // there used to be a small dedicated drag-handle icon instead, which is what pan-x above was
+    // originally carved out for). `none` is what makes that drag-start reliable — with pan-x here,
+    // the browser can commit the gesture to scrolling the row before our own pointer handling gets
+    // a chance to preventDefault. Trade-off: swiping a photo no longer scrolls the row — only
+    // touching the gaps between thumbs (or the add-tile) does.
+    touch-action: none;
   }
 
   img {
@@ -1358,8 +1729,8 @@ onBeforeUnmount(() => {
 
 .photo-upload-page__thumb-remove {
   position: absolute;
-  top: 4px;
-  right: 4px;
+  top: 3px;
+  right: 3px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1375,6 +1746,11 @@ onBeforeUnmount(() => {
   &:hover {
     background: rgba($black, 0.75);
   }
+
+  @include mobile-only {
+    width: 16px;
+    height: 16px;
+  }
 }
 
 // Shows how many places in the journal already use this photo — click jumps straight there (one
@@ -1382,8 +1758,8 @@ onBeforeUnmount(() => {
 // than twice, as a nudge that the same photo is getting spread pretty thin across the journal.
 .photo-upload-page__thumb-usage {
   position: absolute;
-  bottom: 4px;
-  left: 4px;
+  bottom: 3px;
+  left: 3px;
   display: flex;
   align-items: center;
   gap: 2px;
@@ -1409,23 +1785,12 @@ onBeforeUnmount(() => {
       background: #e5484d;
     }
   }
-}
 
-// Touch-only drag handle — see handleThumbHandlePointerDown. touch-action: none is what makes a
-// touch starting here reliably start a drag instead of the browser claiming it for scrolling the
-// row (unlike the thumb itself, which stays touch-action: pan-x on purpose).
-.photo-upload-page__thumb-handle {
-  position: absolute;
-  bottom: 4px;
-  right: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: rgba($black, 0.55);
-  touch-action: none;
+  @include mobile-only {
+    height: 14px;
+    padding: 0 4px;
+    font-size: 8px;
+  }
 }
 
 // ── Action bar — copied from QuestionnairePage.vue's .questionnaire-page__actions ────────────
@@ -1436,26 +1801,9 @@ onBeforeUnmount(() => {
   backdrop-filter: blur(12px);
   border-top: 1px solid $border-light;
   padding-block: $spacing-4;
-}
-
-// Floats left, right above the bar — see the template comment on .photo-upload-page__intro-mobile
-// for why this line isn't just left up near the title (moved down here on request, mirroring
-// QuestionnairePage.vue's missing-photos badge floating above its own bottom bar).
-.photo-upload-page__stats-mobile {
-  display: none;
 
   @include mobile-only {
-    display: block;
-    @include page-container;
-    max-width: 1360px;
-    margin-inline: auto;
-    position: absolute;
-    bottom: 100%;
-    left: 0;
-    right: 0;
-    margin-bottom: $spacing-2;
-    font-size: $font-size-caption;
-    color: $text-secondary;
+    padding-block: $spacing-2;
   }
 }
 

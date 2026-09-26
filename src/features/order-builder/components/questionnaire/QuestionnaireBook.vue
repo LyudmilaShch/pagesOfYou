@@ -88,9 +88,16 @@
           </div>
         </div>
       </div>
+
+      <!-- For a caller overlaying its own controls directly on the book stage (e.g.
+           PhotoUploadPage.vue's round prev/next arrows) — positioned here, not around the whole
+           component, so `position: absolute; top: 50%` on that content centers against the FRAME's
+           own box specifically (this wrapper only ever holds the frame, unlike the component's own
+           root, which also stacks the toolbar row below it). -->
+      <slot name="nav-overlay" />
     </div>
 
-    <div class="questionnaire-book__nav">
+    <div v-if="!hideNav" class="questionnaire-book__nav">
       <button
         type="button"
         class="questionnaire-book__arrow"
@@ -124,7 +131,8 @@
         @click="reorderDialogOpen = true"
       >
         <v-icon size="16">mdi-swap-horizontal</v-icon>
-        Изменить порядок разворотов
+        <span class="questionnaire-book__btn-label-full">Изменить порядок разворотов</span>
+        <span class="questionnaire-book__btn-label-short">Изменить порядок</span>
       </button>
 
       <button
@@ -134,7 +142,8 @@
         @click="handleAddSpread"
       >
         <v-icon size="16">mdi-plus</v-icon>
-        Добавить 4 страницы
+        <span class="questionnaire-book__btn-label-full">Добавить 4 страницы</span>
+        <span class="questionnaire-book__btn-label-short">4 страницы</span>
       </button>
     </div>
 
@@ -224,6 +233,11 @@ const props = defineProps<{
    * JournalReviewPage.vue instead gives it a fixed-HEIGHT area (so the whole step fits one screen
    * with no scroll on desktop) and needs the frame to shrink to fit that instead. */
   fitHeight?: boolean
+  /** Hides the built-in prev/next arrows + "N из M" counter row below the frame — for a caller
+   * that wants to build its own nav UI around the same position (see the `update:viewing` emit
+   * below) instead, e.g. PhotoUploadPage.vue's mobile layout. Defaults off; every other caller
+   * keeps the built-in nav unchanged. */
+  hideNav?: boolean
 }>()
 
 const showStructureControls = computed(() => props.showStructureControls ?? true)
@@ -241,6 +255,9 @@ const emit = defineEmits<{
   'edit-ai-text': [pageId: string, elementId: string]
   /** The "regenerate" button on an ai-text-placeholder was clicked — same page-context re-emit. */
   'regenerate-ai-text': [pageId: string, elementId: string]
+  /** Mirrors the built-in nav's own "N из M" position — fires whenever it changes, for a caller
+   * using `hideNav` to build its own nav UI (see that prop's own doc comment) from the same state. */
+  'update:viewing': [payload: { index: number; total: number; label: string }]
 }>()
 
 // Real table-of-contents rows for every toc-placeholder in the book — computed once from the
@@ -356,13 +373,37 @@ const frameStyle = computed(() => {
     marginRight: singleSlotSide.value === 'left' ? 'auto' : undefined,
   }
 
-  // Height is the definite dimension here (from the flex parent — see .questionnaire-book's own
-  // `--fit-height` rule below); `aspect-ratio` then derives width from it, the exact mirror of the
-  // normal width-driven case. A lone cover needs no special-cased "50%" here the way the
-  // width-driven branch does: its own PAGE_ASPECT_RATIO is already half of SPREAD_ASPECT_RATIO, so
-  // deriving width from the SAME 100%-height reproduces that same relative size on its own.
+  // A definite `width: 50%/100%` plus `height: auto; max-height: 100%` (tried first) looks like the
+  // same well-supported `img { width: 100%; height: auto; max-height: Xpx }` pattern, but it isn't:
+  // that pattern's "clamped height claws back the width too" behavior is a REPLACED-element sizing
+  // rule (img, video…), which only kicks in when BOTH width and height are `auto` together. Here
+  // width is a definite percentage, not auto, so once something outside (e.g. the toolbar row below
+  // the frame, sharing this same fixed-height column) shrinks the available height enough to hit
+  // max-height, the browser clamps height alone and leaves width untouched — the rendered box's
+  // actual ratio drifts away from `ratio`, and JournalSpreadThumbnail's own contain-fit (correctly
+  // fitting the real page into whatever box it's actually handed) then letterboxes that mismatch as
+  // a visible gap down the sides. `width: auto` on both axes at once was tried instead of this and
+  // made the frame disappear entirely (see below), so neither plain form actually works.
+  //
+  // Container query length units sidestep the whole ambiguity by computing the correct axis
+  // ourselves instead of leaning on the browser to recover it after the fact: `container-type:
+  // size` on `.questionnaire-book__perspective` (below) turns IT into the coordinate space for
+  // `cqw`/`cqh` (100cqw/100cqh = that box's own full width/height in px, regardless of what's
+  // squeezing it), so `min(Wcqw, calc(100cqh * ratio))` picks whichever of "full available width"
+  // or "the width that full available height allows at this ratio" is smaller — the textbook
+  // `object-fit: contain` formula, evaluated up front rather than clamped after the fact. `aspect-
+  // ratio: ratio` then derives height from that already-correct width with nothing left to drift.
+  // The lone-cover case reuses the exact same formula, just scaled by half: PAGE_ASPECT_RATIO is
+  // already half of SPREAD_ASPECT_RATIO, so mirroring the halving on the cqw side too (`50cqw`
+  // instead of `100cqw`) keeps a lone cover sized as "half of what the full spread would be here",
+  // avoiding a visual jump in book size when toggling between a spread and an adjacent lone cover.
   if (props.fitHeight) {
-    return { height: '100%', width: 'auto', maxWidth: '100%', aspectRatio: ratio, ...margins }
+    const widthUnits = isSingleSlotAtRest.value ? 50 : 100
+    return {
+      width: `min(${widthUnits}cqw, calc(100cqh * ${ratio}))`,
+      aspectRatio: ratio,
+      ...margins,
+    }
   }
 
   return { width: isSingleSlotAtRest.value ? '50%' : '100%', aspectRatio: ratio, ...margins }
@@ -458,6 +499,17 @@ const viewingLabel = computed(() => {
   }
   return getJournalPageDisplayName(page, spreadIndex)
 })
+
+// See the `update:viewing` emit's own doc comment — mirrors the built-in nav's own state for a
+// `hideNav` caller building an external one. `immediate` so it arrives on mount too, not just on
+// the first actual page change.
+watch(
+  [viewingIndex, viewingLabel],
+  ([index, label]) => {
+    emit('update:viewing', { index, total: props.pages.length, label })
+  },
+  { immediate: true },
+)
 
 // Only SPREAD slots are reorderable — the cover/back-cover stay pinned at the very start/end (same
 // rule `reorderJournalSpreads`/JournalStructurePanel.vue's drag-and-drop already enforce). Just
@@ -612,6 +664,10 @@ onBeforeUnmount(() => {
   timers.forEach(clearTimeout)
   timers = []
 })
+
+// Lets a `hide-nav` caller (see that prop's own doc comment) drive the same page-turn animation
+// from its own external prev/next buttons instead of the built-in nav row.
+defineExpose({ flip })
 </script>
 
 <style scoped lang="scss">
@@ -634,13 +690,22 @@ onBeforeUnmount(() => {
 .questionnaire-book--fit-height .questionnaire-book__perspective {
   flex: 1;
   min-height: 0;
-  width: auto;
+  // Definite (100%), not auto — this box's own width/height need to be fully resolved from ITS
+  // ancestors (the flex chain above), independent of the frame inside it, both because a percentage
+  // needs a definite containing-block size to resolve against at all, and because `container-type:
+  // size` below requires a size that doesn't itself depend on this container's contents.
+  width: 100%;
   height: 100%;
   display: flex;
   justify-content: center;
+  align-items: center;
+  // Makes `cqw`/`cqh` inside the frame (see `frameStyle`) mean "100% of THIS box's own, already-
+  // resolved width/height" — the coordinate space the frame's contain-fit formula is computed in.
+  container-type: size;
 }
 
 .questionnaire-book__perspective {
+  position: relative;
   width: 100%;
   perspective: 1800px;
 }
@@ -680,15 +745,24 @@ onBeforeUnmount(() => {
   inset: 0;
 }
 
-// White lives here, not on the frame — while a cover is transitioning to/from a spread, one side
-// briefly has no half at all (see `renderedHalves`), and it should show whatever's behind the book
-// (the page's own backdrop) rather than a stray white block where there's genuinely no page yet.
+// No background of its own — a page has its own real background (JournalSpreadThumbnail's own
+// canvas, or the surrounding book-column's pink card where there's none) that should show through
+// cleanly. This used to be a hardcoded white "paper backing": partly so a cover mid-transition
+// to/from a spread (one side briefly has no half at all — see `renderedHalves`) wouldn't show a
+// stray white block, but that's handled by simply not rendering a half there at all, not by this
+// one having a background. The other reason was masking JournalSpreadThumbnail's own letterboxing (it
+// fits the page's real aspect ratio inside whatever box this hands it, "contain"-style, rather than
+// stretching to match — see its own `pageStyle` comment) — a sub-pixel rounding gap between this
+// half's CSS-computed size and that JS-measured inner page reliably left a hairline white gap
+// around the page content, reading as an unwanted white outline once the surrounding card stopped
+// being white itself (see PhotoUploadPage.vue's pink book-column). `.questionnaire-book__frame`'s
+// drop-shadow (not box-shadow) still works fine without this — it follows whatever opaque pixels
+// actually render inside, which is now the page's own content directly, not this box.
 .questionnaire-book__half {
   position: absolute;
   top: 0;
   bottom: 0;
   overflow: hidden;
-  background: $white;
 }
 
 .questionnaire-book__window {
@@ -840,6 +914,31 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   gap: $spacing-3;
+
+  @include mobile-only {
+    // nowrap (not just shorter labels) is what actually guarantees one line — wrap was the
+    // default specifically so these could stack on a truly narrow screen, but the shorter mobile
+    // labels below are meant to always fit side by side instead.
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+}
+
+// Two labels per button (see the template) swapped by viewport, rather than one label shortened
+// everywhere — desktop keeps the fuller, clearer text since it has the room; only mobile needs
+// the compact one to reliably fit both buttons on one line.
+.questionnaire-book__btn-label-short {
+  display: none;
+}
+
+@include mobile-only {
+  .questionnaire-book__btn-label-full {
+    display: none;
+  }
+
+  .questionnaire-book__btn-label-short {
+    display: inline;
+  }
 }
 
 .questionnaire-book__reorder-btn {
@@ -864,6 +963,24 @@ onBeforeUnmount(() => {
     cursor: default;
     opacity: 0.5;
   }
+
+  // Pink-accented pill on white, matching the rest of the mobile book UI (add-tile, hint icons,
+  // etc. — see PhotoUploadPage.vue) instead of the neutral gray this reads as by default.
+  @include mobile-only {
+    gap: 3px;
+    padding: 4px 10px;
+    border-color: $accent;
+    color: $accent-deep;
+    font-size: 10px;
+
+    // v-icon's `size` prop sets width/height/font-size as an inline style — !important is what
+    // lets a plain class selector still shrink it to match this button's now-smaller text.
+    :deep(.v-icon) {
+      width: 12px !important;
+      height: 12px !important;
+      font-size: 12px !important;
+    }
+  }
 }
 
 .questionnaire-book__add-spread {
@@ -887,6 +1004,24 @@ onBeforeUnmount(() => {
   &:disabled {
     cursor: default;
     opacity: 0.5;
+  }
+
+  // Same pink-accented treatment as .questionnaire-book__reorder-btn above, plus a light pink
+  // fill (rather than transparent) — mirrors the "Добавить ещё фото" add-tile's own dashed-pink-
+  // on-white-then-pink-hover styling, so this reads as the same "add" action language.
+  @include mobile-only {
+    gap: 3px;
+    padding: 4px 10px;
+    border-color: $accent;
+    background: $accent-tint;
+    color: $accent-deep;
+    font-size: 10px;
+
+    :deep(.v-icon) {
+      width: 12px !important;
+      height: 12px !important;
+      font-size: 12px !important;
+    }
   }
 }
 </style>

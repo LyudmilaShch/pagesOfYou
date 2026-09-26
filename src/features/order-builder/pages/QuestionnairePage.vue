@@ -261,6 +261,16 @@ const galleryScope = computed(() => getGalleryScope(store))
 // This is Шаг 3 of 5 — same hardcoded step number as .questionnaire-page__steps-label below.
 const ORDER_STEP_PROGRESS = (3 / 5) * 100
 
+// Mobile stepper labels — same list/pattern as PhotoUploadPage.vue's own ORDER_STEPS (see its doc
+// comment); duplicated per page rather than shared since each page is always exactly one fixed step.
+const ORDER_STEPS = [
+  { step: 1, label: 'Журнал' },
+  { step: 2, label: 'Фото' },
+  { step: 3, label: 'Анкета' },
+  { step: 4, label: 'Проверка' },
+  { step: 5, label: 'Оплата' },
+]
+
 // Same threshold as the `mobile-only` SCSS mixin (`$breakpoint-mobile-max: 767px`).
 const isMobileViewport = ref(false)
 let mobileMediaQuery: MediaQueryList | null = null
@@ -1101,6 +1111,14 @@ onUnmounted(() => {
 
 .questionnaire-page__title {
   margin: 0 0 $spacing-3;
+
+  // !important — the "text-h3" utility class on the same <h1> (32px, unconditional) otherwise
+  // wins over this on mobile despite this rule compiling after it (see PhotoUploadPage.vue's own
+  // title rule for the full story).
+  @include mobile-only {
+    font-size: $font-size-body-lg !important;
+    margin-bottom: $spacing-2 !important;
+  }
 }
 
 .questionnaire-page__required {

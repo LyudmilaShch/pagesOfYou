@@ -124,6 +124,8 @@
       @start-new="onResumeStartNew"
       @close="resumeModal.open = false"
     />
+
+    <LoadingModal :model-value="navigatingNext" />
   </div>
 </template>
 
@@ -139,6 +141,7 @@ import { resolveResumeRoute, resumeOrder } from '../utils/resume-order.util'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
 import MagazineTypeCard from '../components/MagazineTypeCard.vue'
 import ResumeDraftModal from '../components/ResumeDraftModal.vue'
+import LoadingModal from '@/components/ui/LoadingModal.vue'
 
 const store = useOrderBuilderStore()
 const authStore = useAuthStore()
@@ -227,12 +230,19 @@ function onResumeStartNew(): void {
   }
 }
 
+// Covers the whole operation, not just `store.isLoadingOrder` (which the button's own :loading
+// already reflects) — that resets to false once startDraft resolves, before the router.push
+// (and its async route-chunk load) below even starts, so it alone would let the loading modal
+// disappear too early, mid-transition.
+const navigatingNext = ref(false)
+
 async function handleNext(): Promise<void> {
   if (!store.selectedMagazineType) {
     return
   }
 
   store.orderError = null
+  navigatingNext.value = true
 
   try {
     await store.startDraft(store.selectedMagazineType.id)
@@ -247,6 +257,8 @@ async function handleNext(): Promise<void> {
     })
   } catch {
     // orderError is set in the store
+  } finally {
+    navigatingNext.value = false
   }
 }
 </script>
@@ -342,6 +354,14 @@ async function handleNext(): Promise<void> {
 
 .create-order__title {
   margin-bottom: $spacing-3;
+
+  // !important — the "text-h2" utility class on the same <h1> (44px, unconditional) otherwise
+  // wins over this on mobile despite this rule compiling after it (see PhotoUploadPage.vue's own
+  // title rule for the full story).
+  @include mobile-only {
+    font-size: $font-size-body-lg !important;
+    margin-bottom: $spacing-2 !important;
+  }
 }
 
 .create-order__subtitle {

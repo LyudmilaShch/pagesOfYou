@@ -447,10 +447,23 @@ function updateScale(): void {
   }
 
   const fit = Math.min(containerWidth / pageWidth.value, containerHeight / pageHeight.value)
+  // The container is always BUILT to the page's exact aspect ratio by the caller (QuestionnaireBook.vue
+  // sizes its half/window boxes off the very same page.constants ratios) — so `fit` should in theory
+  // leave zero letterbox gap on either axis. In practice float rounding still leaves a sub-pixel gap on
+  // whichever axis isn't the binding one. That gap used to be invisible because the surrounding chrome
+  // (the half's own background, the flap's backdrop) was painted the same white as a page's own
+  // background — once those were made transparent (so the real page background/no-background shows
+  // through cleanly instead), the gap became a visible hairline of whatever's behind instead. A tiny
+  // scale-up (imperceptible — a fraction of a percent) makes the page slightly overfill its box instead
+  // of slightly underfilling it, so the excess gets clipped by `overflow: hidden` (see `.spread-thumb`)
+  // rather than leaving a gap for anything behind to show through — closes it for good instead of
+  // needing a matching backdrop color everywhere this renders.
+  const BLEED = 1.002
+  const scaled = fit * BLEED
 
-  scale.value = fit
-  offsetX.value = (containerWidth - pageWidth.value * fit) / 2
-  offsetY.value = (containerHeight - pageHeight.value * fit) / 2
+  scale.value = scaled
+  offsetX.value = (containerWidth - pageWidth.value * scaled) / 2
+  offsetY.value = (containerHeight - pageHeight.value * scaled) / 2
 }
 
 onMounted(() => {
@@ -750,7 +763,9 @@ function shapeStyle(leaf: ShapeElement): Record<string, string> {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: $bg-tertiary;
+  // No background of its own — a page with no custom background set lets whatever's behind this
+  // component (e.g. PhotoUploadPage.vue's pink book-card) show through instead of painting over
+  // it with a fixed color.
 }
 
 .spread-thumb__bg {

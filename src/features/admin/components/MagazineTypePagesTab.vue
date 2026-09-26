@@ -158,6 +158,8 @@
     <v-snackbar v-model="snackbar.show" :color="snackbar.color" location="bottom right" :timeout="3500">
       {{ snackbar.text }}
     </v-snackbar>
+
+    <LoadingModal :model-value="navigatingToEditor" />
   </div>
 </template>
 
@@ -173,6 +175,7 @@ import {
 } from '@/shared/api/admin/magazine-pages.api'
 import { extractApiErrorMessage } from '@/shared/utils/api-error.util'
 import MagazineTypePickerDialog from './MagazineTypePickerDialog.vue'
+import LoadingModal from '@/components/ui/LoadingModal.vue'
 
 const props = defineProps<{
   magazineTypeId: string
@@ -226,11 +229,18 @@ function openEdit(page: AdminMagazinePage): void {
   formDialog.open = true
 }
 
-function openEditor(pageId: string): void {
-  void router.push({
-    name: 'admin-magazine-page-editor',
-    params: { magazineTypeId: props.magazineTypeId, pageId },
-  })
+const navigatingToEditor = ref(false)
+
+async function openEditor(pageId: string): Promise<void> {
+  navigatingToEditor.value = true
+  try {
+    await router.push({
+      name: 'admin-magazine-page-editor',
+      params: { magazineTypeId: props.magazineTypeId, pageId },
+    })
+  } finally {
+    navigatingToEditor.value = false
+  }
 }
 
 function openDelete(page: AdminMagazinePage): void {
@@ -263,7 +273,7 @@ async function submitForm(): Promise<void> {
       isRequired: form.isRequired,
     })
     formDialog.open = false
-    openEditor(created.id)
+    void openEditor(created.id)
   } finally {
     formDialog.submitting = false
   }

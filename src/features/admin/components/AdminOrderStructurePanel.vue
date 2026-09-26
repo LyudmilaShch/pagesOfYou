@@ -38,11 +38,13 @@
     <v-snackbar v-model="snackbar.show" :color="snackbar.color" location="bottom center" :timeout="3000">
       {{ snackbar.text }}
     </v-snackbar>
+
+    <LoadingModal :model-value="navigating" />
   </aside>
 </template>
 
 <script setup lang="ts">
-import { computed, reactive } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import type { CanvasData } from '@/modules/editor/models/canvas-data.model'
@@ -54,6 +56,7 @@ import { materializeCanvasData } from '@/features/order-builder/utils/merge-plac
 import { isFillableElement, isPlaceholderFilled } from '@/features/order-builder/utils/placeholder.utils'
 import { useAdminOrdersStore } from '../stores/orders.store'
 import type { AdminOrderJournalPage } from '@/shared/api/admin/orders.api'
+import LoadingModal from '@/components/ui/LoadingModal.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -142,11 +145,14 @@ async function flushCurrentEditor(): Promise<void> {
   }
 }
 
+const navigating = ref(false)
+
 async function navigateToPage(journalPageId: string): Promise<void> {
   if (journalPageId === activeJournalPageId.value || !store.current) {
     return
   }
 
+  navigating.value = true
   try {
     await flushCurrentEditor()
     await router.push({
@@ -157,6 +163,8 @@ async function navigateToPage(journalPageId: string): Promise<void> {
     snackbar.text = 'Не удалось сохранить страницу'
     snackbar.color = 'error'
     snackbar.show = true
+  } finally {
+    navigating.value = false
   }
 }
 </script>
