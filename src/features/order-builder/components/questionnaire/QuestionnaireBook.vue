@@ -1397,6 +1397,7 @@ defineExpose({ flip })
     gap: 3px;
     padding: 4px 10px;
     border-color: $accent;
+    background: $white;
     color: $accent-deep;
     font-size: 10px;
 

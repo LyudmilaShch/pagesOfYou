@@ -824,7 +824,11 @@ function shapeStyle(leaf: ShapeElement): Record<string, string> {
 }
 
 // Manual placement mode (see `dropEnabled`) — outline instead of border so it never shifts layout.
-.spread-thumb__photo--droppable,
+// Only the EMPTY slot gets this baseline "you can drop here" outline — an already-filled photo can
+// still be dropped onto (replacing it, see `onDrop`), but showing the same dashed outline on it at
+// rest read as "this one's still empty/incomplete" even once a photo was actually placed there.
+// The `--drag-over` highlight below still applies to both while an actual drag is over them, which
+// is feedback enough that a filled slot accepts a drop too, without needing it shown persistently.
 .spread-thumb__photo-empty--droppable {
   outline: 2px dashed rgba($accent, 0.55);
   outline-offset: -2px;
@@ -832,7 +836,8 @@ function shapeStyle(leaf: ShapeElement): Record<string, string> {
 
 .spread-thumb__photo--drag-over,
 .spread-thumb__photo-empty--drag-over {
-  outline-color: $accent;
+  outline: 2px dashed $accent;
+  outline-offset: -2px;
   filter: brightness(0.88);
 }
 

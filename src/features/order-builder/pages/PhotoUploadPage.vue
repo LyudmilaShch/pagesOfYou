@@ -129,7 +129,7 @@
         </div>
 
         <!-- Mobile-only — replaces the book's own built-in nav row (hidden via hide-nav above). -->
-        <div class="photo-upload-page__book-hint">
+        <div v-if="!bookHintDismissed" class="photo-upload-page__book-hint">
           <span class="photo-upload-page__book-hint-icon" aria-hidden="true">
             <v-icon size="18">mdi-gesture-swipe-horizontal</v-icon>
           </span>
@@ -137,9 +137,14 @@
             Перетащите фото из галереи на страницу журнала. Вы также можете листать журнал и
             выбрать другую страницу.
           </p>
-          <span v-if="bookViewing" class="photo-upload-page__book-hint-counter">
-            Страница {{ bookViewing.index + 1 }} из {{ bookViewing.total }}
-          </span>
+          <button
+            type="button"
+            class="photo-upload-page__book-hint-close"
+            aria-label="Закрыть подсказку"
+            @click="bookHintDismissed = true"
+          >
+            <v-icon size="14">mdi-close</v-icon>
+          </button>
         </div>
 
         <main class="photo-upload-page__main">
@@ -538,6 +543,9 @@ const bookViewing = ref<{ index: number; total: number; label: string } | null>(
 // Drives the mobile-only round prev/next arrows via the book's own exposed `flip()` — see
 // .photo-upload-page__book-arrow below.
 const bookRef = ref<InstanceType<typeof QuestionnaireBook> | null>(null)
+// Lets the visitor close .photo-upload-page__book-hint once they've read it — just for this visit
+// (resets on reload), not persisted, since it's a one-line instructional hint, not a setting.
+const bookHintDismissed = ref(false)
 let pulseTimer: ReturnType<typeof setTimeout> | null = null
 
 function jumpTo(journalPageId: string): void {
@@ -1307,12 +1315,15 @@ onBeforeUnmount(() => {
   display: none;
 
   @include mobile-only {
+    position: relative;
     display: flex;
     flex-shrink: 0;
     align-items: center;
     gap: $spacing-2;
     margin-top: $spacing-2;
-    padding: $spacing-2;
+    // Right padding clears .photo-upload-page__book-hint-close, absolutely positioned into the
+    // corner (on request) rather than sitting inline as a fourth item in this row.
+    padding: $spacing-2 $spacing-8 $spacing-2 $spacing-2;
     border-radius: $radius-md;
     background: $bg-tertiary;
   }
@@ -1339,14 +1350,27 @@ onBeforeUnmount(() => {
   color: $text-secondary;
 }
 
-.photo-upload-page__book-hint-counter {
+.photo-upload-page__book-hint-close {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
-  padding: 3px 8px;
-  border-radius: 9999px;
-  background: $bg-elevated;
-  color: $text-secondary;
-  font-size: 9px;
-  white-space: nowrap;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: $text-muted;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+
+  &:hover {
+    background: $bg-elevated;
+    color: $text-secondary;
+  }
 }
 
 // ── Mobile-only round prev/next arrows over the book, same as the reference design — desktop
@@ -1381,13 +1405,15 @@ onBeforeUnmount(() => {
 
 .photo-upload-page__book-arrow--prev {
   @include mobile-only {
-    left: 6px;
+    // Negative — straddles the book's own left edge (on request) rather than sitting inset from
+    // it, so it reads as attached to the page edge itself instead of floating inside the card.
+    left: -6px;
   }
 }
 
 .photo-upload-page__book-arrow--next {
   @include mobile-only {
-    right: 6px;
+    right: -6px;
   }
 }
 
