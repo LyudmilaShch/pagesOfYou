@@ -82,6 +82,7 @@
             :pending-element-ids="EMPTY_ELEMENT_IDS"
             :drop-enabled="false"
             :fit-height="isDesktopViewport"
+            :zoom-enabled="true"
             crop-enabled
             pick-enabled
             ai-text-edit-enabled

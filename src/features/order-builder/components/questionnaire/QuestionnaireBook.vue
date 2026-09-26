@@ -1,89 +1,117 @@
 <template>
   <div class="questionnaire-book" :class="{ 'questionnaire-book--fit-height': fitHeight }">
-    <div class="questionnaire-book__perspective">
+    <div
+      ref="perspectiveRef"
+      class="questionnaire-book__perspective"
+      :class="{
+        'questionnaire-book__perspective--zoomed': zoomScale > 1,
+        'questionnaire-book__perspective--zoom-enabled': zoomEnabled,
+      }"
+    >
+      <!-- Pinch-to-zoom + double-tap (only when `zoomEnabled` — see that prop's doc comment) — a
+           separate transform layer around the frame, not on the frame itself, so it doesn't fight
+           with the frame's own CSS `rotateX` tilt (two independent transforms compose naturally
+           when nested instead of needing to be combined into one string). See `handleZoomPointer*`
+           for the gesture logic. -->
       <div
-        class="questionnaire-book__frame"
-        :class="{ 'questionnaire-book__frame--pulse': viewingPageId && pulsingPageIds.has(viewingPageId) }"
-        :style="frameStyle"
+        ref="zoomLayerRef"
+        class="questionnaire-book__zoom-layer"
+        :class="{
+          'questionnaire-book__zoom-layer--enabled': zoomEnabled,
+          'questionnaire-book__zoom-layer--gesture': zoomGestureActive,
+        }"
+        :style="zoomEnabled ? zoomLayerStyle : undefined"
+        @pointerdown="zoomEnabled && handleZoomPointerDown($event)"
+        @pointermove="zoomEnabled && handleZoomPointerMove($event)"
+        @pointerup="zoomEnabled && handleZoomPointerUp($event)"
+        @pointercancel="zoomEnabled && handleZoomPointerCancel($event)"
+        @click.capture="zoomEnabled && handleZoomClickCapture($event)"
+        @wheel="zoomEnabled && handleZoomWheel($event)"
       >
-        <div class="questionnaire-book__halves">
-          <div
-            v-for="half in renderedHalves"
-            :key="half.key"
-            class="questionnaire-book__half"
-            :style="{ left: half.left, width: half.width }"
-          >
-            <div class="questionnaire-book__window" :data-page-id="half.pageId" :style="{ left: half.windowLeft, width: half.windowWidth }">
-              <JournalSpreadThumbnail
-                v-if="half.canvasData"
-                :canvas-data="half.canvasData"
-                :pending-element-ids="pendingElementIds"
-                :drop-enabled="dropEnabled"
-                :crop-enabled="cropEnabled"
-                :pick-enabled="pickEnabled"
-                :ai-text-edit-enabled="aiTextEditEnabled"
-                :toc-entries="tocEntriesFor(half.pageId)"
-                :visible-half="isSpreadPage(half.pageId) ? half.key : undefined"
-                @drop-photo="(elementId, url) => emit('drop-photo', half.pageId, elementId, url)"
-                @crop-photo="(elementId) => emit('crop-photo', half.pageId, elementId)"
-                @pick-photo="(elementId) => emit('pick-photo', half.pageId, elementId)"
-                @edit-ai-text="(elementId) => emit('edit-ai-text', half.pageId, elementId)"
-                @regenerate-ai-text="(elementId) => emit('regenerate-ai-text', half.pageId, elementId)"
-              />
-            </div>
-          </div>
-
-          <div v-if="leftPageId && rightPageId" class="questionnaire-book__spine" />
-        </div>
-
-        <span
-          v-if="viewingFill && viewingFill.answered > 0 && viewingFill.answered < viewingFill.total"
-          class="questionnaire-book__badge questionnaire-book__badge--partial"
-        >
-          {{ Math.round((viewingFill.answered / viewingFill.total) * 100) }}%
-        </span>
-
-        <v-tooltip v-if="!turning && showStructureControls" location="top" content-class="editor-tooltip--arrow-top">
-          <template #activator="{ props: tooltipProps }">
-            <button
-              v-bind="tooltipProps"
-              type="button"
-              class="questionnaire-book__template-btn"
-              aria-label="Сменить шаблон разворота"
-              @click="openTemplatePicker"
-            >
-              <v-icon size="16">mdi-view-grid-outline</v-icon>
-            </button>
-          </template>
-          Сменить шаблон
-        </v-tooltip>
-
         <div
-          v-if="turning && flapGeometry"
-          class="questionnaire-book__flap"
-          :style="{
-            left: flapGeometry.left,
-            width: flapGeometry.width,
-            transformOrigin: flapGeometry.origin,
-            transform: `rotateY(${turnAngle}deg)`,
-          }"
+          class="questionnaire-book__frame"
+          :class="{ 'questionnaire-book__frame--pulse': viewingPageId && pulsingPageIds.has(viewingPageId) }"
+          :style="frameStyle"
         >
-          <div class="questionnaire-book__flap-face questionnaire-book__flap-face--front">
-            <div v-if="flapFrontWindow" class="questionnaire-book__window" :style="{ left: flapFrontWindow.left, width: flapFrontWindow.width }">
-              <JournalSpreadThumbnail
-                v-if="flapFrontCanvasData"
-                :canvas-data="flapFrontCanvasData"
-                :pending-element-ids="pendingElementIds"
-              />
+          <div class="questionnaire-book__halves">
+            <div
+              v-for="half in renderedHalves"
+              :key="half.key"
+              class="questionnaire-book__half"
+              :style="{ left: half.left, width: half.width }"
+            >
+              <div class="questionnaire-book__window" :data-page-id="half.pageId" :style="{ left: half.windowLeft, width: half.windowWidth }">
+                <JournalSpreadThumbnail
+                  v-if="half.canvasData"
+                  :canvas-data="half.canvasData"
+                  :pending-element-ids="pendingElementIds"
+                  :drop-enabled="dropEnabled"
+                  :crop-enabled="cropEnabled"
+                  :pick-enabled="pickEnabled"
+                  :ai-text-edit-enabled="aiTextEditEnabled"
+                  :toc-entries="tocEntriesFor(half.pageId)"
+                  :visible-half="isSpreadPage(half.pageId) ? half.key : undefined"
+                  @drop-photo="(elementId, url) => emit('drop-photo', half.pageId, elementId, url)"
+                  @crop-photo="(elementId) => emit('crop-photo', half.pageId, elementId)"
+                  @pick-photo="(elementId) => emit('pick-photo', half.pageId, elementId)"
+                  @edit-ai-text="(elementId) => emit('edit-ai-text', half.pageId, elementId)"
+                  @regenerate-ai-text="(elementId) => emit('regenerate-ai-text', half.pageId, elementId)"
+                />
+              </div>
             </div>
+
+            <div v-if="leftPageId && rightPageId" class="questionnaire-book__spine" />
           </div>
-          <div class="questionnaire-book__flap-face questionnaire-book__flap-face--back">
-            <div v-if="flapBackWindow" class="questionnaire-book__window" :style="{ left: flapBackWindow.left, width: flapBackWindow.width }">
-              <JournalSpreadThumbnail
-                v-if="flapBackCanvasData"
-                :canvas-data="flapBackCanvasData"
-                :pending-element-ids="pendingElementIds"
-              />
+
+          <span
+            v-if="viewingFill && viewingFill.answered > 0 && viewingFill.answered < viewingFill.total"
+            class="questionnaire-book__badge questionnaire-book__badge--partial"
+          >
+            {{ Math.round((viewingFill.answered / viewingFill.total) * 100) }}%
+          </span>
+
+          <v-tooltip v-if="!turning && showStructureControls" location="top" content-class="editor-tooltip--arrow-top">
+            <template #activator="{ props: tooltipProps }">
+              <button
+                v-bind="tooltipProps"
+                type="button"
+                class="questionnaire-book__template-btn"
+                aria-label="Сменить шаблон разворота"
+                @click="openTemplatePicker"
+              >
+                <v-icon size="16">mdi-view-grid-outline</v-icon>
+              </button>
+            </template>
+            Сменить шаблон
+          </v-tooltip>
+
+          <div
+            v-if="turning && flapGeometry"
+            class="questionnaire-book__flap"
+            :style="{
+              left: flapGeometry.left,
+              width: flapGeometry.width,
+              transformOrigin: flapGeometry.origin,
+              transform: `rotateY(${turnAngle}deg)`,
+            }"
+          >
+            <div class="questionnaire-book__flap-face questionnaire-book__flap-face--front">
+              <div v-if="flapFrontWindow" class="questionnaire-book__window" :style="{ left: flapFrontWindow.left, width: flapFrontWindow.width }">
+                <JournalSpreadThumbnail
+                  v-if="flapFrontCanvasData"
+                  :canvas-data="flapFrontCanvasData"
+                  :pending-element-ids="pendingElementIds"
+                />
+              </div>
+            </div>
+            <div class="questionnaire-book__flap-face questionnaire-book__flap-face--back">
+              <div v-if="flapBackWindow" class="questionnaire-book__window" :style="{ left: flapBackWindow.left, width: flapBackWindow.width }">
+                <JournalSpreadThumbnail
+                  v-if="flapBackCanvasData"
+                  :canvas-data="flapBackCanvasData"
+                  :pending-element-ids="pendingElementIds"
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -171,7 +199,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 
 import JournalSpreadThumbnail from '@/modules/editor/components/JournalSpreadThumbnail.vue'
 import type { CanvasData } from '@/modules/editor/models/canvas-data.model'
@@ -238,6 +266,12 @@ const props = defineProps<{
    * below) instead, e.g. PhotoUploadPage.vue's mobile layout. Defaults off; every other caller
    * keeps the built-in nav unchanged. */
   hideNav?: boolean
+  /** Lets the visitor pinch-zoom (and double-tap-to-zoom) into the frame, panning around while
+   * zoomed in, without affecting the surrounding page's own scale — for callers where getting a
+   * closer look at a photo/text actually matters (PhotoUploadPage.vue, JournalReviewPage.vue).
+   * Defaults off — QuestionnairePage.vue's book is a small side reference, not something a visitor
+   * needs to inspect closely. See `handleZoomPointerDown` for the gesture implementation. */
+  zoomEnabled?: boolean
 }>()
 
 const showStructureControls = computed(() => props.showStructureControls ?? true)
@@ -660,9 +694,324 @@ async function handleAddSpread(): Promise<void> {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Pinch-to-zoom / double-tap (only wired up when `zoomEnabled` — see its own doc comment)
+// ---------------------------------------------------------------------------
+
+const perspectiveRef = ref<HTMLDivElement | null>(null)
+// Pointer capture (see `handleZoomPointerDown`/`handleZoomPointerMove` below) has to be set on
+// THIS element specifically, not `perspectiveRef` — capturing on an ancestor retargets all
+// subsequent pointer events to THAT ancestor, and since events only bubble upward from wherever
+// they're targeted, they'd stop reaching this element's own `@pointermove`/`@pointerup` listeners
+// the instant capture kicked in (i.e. pinch/pan would silently die on literally the first move).
+const zoomLayerRef = ref<HTMLDivElement | null>(null)
+const zoomScale = ref(1)
+const zoomX = ref(0)
+const zoomY = ref(0)
+// True only while a pinch/pan is actively being tracked — suppresses the CSS transition (see
+// `.questionnaire-book__zoom-layer`) so the transform tracks the finger(s) with zero lag; a
+// double-tap or the release-time snap-back instead WANTS that transition, for a smooth animation.
+const zoomGestureActive = ref(false)
+
+const ZOOM_MIN = 1
+const ZOOM_MAX = 3
+// Below this many px of total pointer movement, a single-finger touch still reads as a tap (so
+// JournalSpreadThumbnail's own tap-to-reveal-crop-buttons keeps working normally) rather than a pan.
+const ZOOM_PAN_THRESHOLD = 6
+// Two releases this close together in time/space count as a double-tap rather than two taps.
+const ZOOM_DOUBLE_TAP_MS = 300
+const ZOOM_DOUBLE_TAP_PX = 24
+
+const zoomLayerStyle = computed(() => ({
+  transform: `translate(${zoomX.value}px, ${zoomY.value}px) scale(${zoomScale.value})`,
+}))
+
+const activeZoomPointers = new Map<number, { x: number; y: number }>()
+let pinchStartDistance = 0
+let pinchStartScale = 1
+// The pinch's own midpoint at gesture start, and the pan offset at that same moment — tracked
+// alongside the distance-based scale above so a single two-finger gesture can zoom AND pan at
+// once (moving both fingers together, not just spreading/pinching them), the same as any other
+// photo viewer's pinch gesture.
+let pinchStartMid: { x: number; y: number } | null = null
+let pinchStartPan: { x: number; y: number } | null = null
+let panOrigin: { x: number; y: number; startX: number; startY: number } | null = null
+let zoomGestureMoved = false
+let lastTapAt = 0
+let lastTapPos = { x: 0, y: 0 }
+// Set right before a gesture's own `pointerup` completes when that gesture shouldn't also act as
+// a tap on whatever photo/text happens to be underneath — a real pinch/pan drag, or specifically
+// the SECOND tap of a recognized double-tap (the first tap's own click still goes through
+// normally, same as any other single tap elsewhere — only the second one, which would otherwise
+// re-toggle whatever the first one just opened, gets suppressed here). Consumed by
+// `handleZoomClickCapture` below, on the capture phase so it runs before the click ever reaches
+// JournalSpreadThumbnail's own tap-to-reveal-crop-buttons handler.
+let suppressNextClick = false
+
+function pointerDistance(a: { x: number; y: number }, b: { x: number; y: number }): number {
+  return Math.hypot(a.x - b.x, a.y - b.y)
+}
+
+function handleZoomClickCapture(event: MouseEvent): void {
+  if (!suppressNextClick) {
+    return
+  }
+  suppressNextClick = false
+  event.stopPropagation()
+  event.preventDefault()
+}
+
+function pointerMidpoint(a: { x: number; y: number }, b: { x: number; y: number }): { x: number; y: number } {
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+}
+
+/** Keeps the visibly zoomed content within the frame's own box on every axis — panning (or a
+ * pinch's own drift) can never drag the book out past its edges into the surrounding page. */
+function clampZoomPan(x: number, y: number, scale: number): { x: number; y: number } {
+  const el = perspectiveRef.value
+  if (!el) {
+    return { x: 0, y: 0 }
+  }
+  const maxX = (el.clientWidth * (scale - 1)) / 2
+  const maxY = (el.clientHeight * (scale - 1)) / 2
+  return {
+    x: Math.min(maxX, Math.max(-maxX, x)),
+    y: Math.min(maxY, Math.max(-maxY, y)),
+  }
+}
+
+function resetZoom(): void {
+  zoomScale.value = 1
+  zoomX.value = 0
+  zoomY.value = 0
+}
+
+function applyDoubleTapZoom(event: PointerEvent): void {
+  if (zoomScale.value > 1) {
+    resetZoom()
+    return
+  }
+
+  zoomScale.value = 2
+  const el = perspectiveRef.value
+  if (!el) {
+    return
+  }
+  // Zooms in centered on wherever the user actually double-tapped, not just the frame's middle.
+  const rect = el.getBoundingClientRect()
+  const offsetX = event.clientX - (rect.left + rect.width / 2)
+  const offsetY = event.clientY - (rect.top + rect.height / 2)
+  const clamped = clampZoomPan(-offsetX, -offsetY, 2)
+  zoomX.value = clamped.x
+  zoomY.value = clamped.y
+}
+
+function handleZoomPointerDown(event: PointerEvent): void {
+  activeZoomPointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
+  zoomGestureMoved = false
+  // Clears any leftover suppression from a PREVIOUS gesture that never actually got a click to
+  // consume it (a real drag/pinch often doesn't produce one at all — browsers already suppress
+  // the synthetic click themselves once movement is significant) — without this, that stale flag
+  // could wrongly swallow this NEXT, unrelated tap's own click instead.
+  suppressNextClick = false
+
+  if (activeZoomPointers.size === 2) {
+    // A second finger just landed — this is unambiguously a pinch, not a tap, so it's safe to
+    // capture both pointers now (capturing on every pointerdown unconditionally would also
+    // retarget a plain tap's eventual click event to this wrapper instead of the photo/button the
+    // user actually tapped — see `handleZoomPointerMove`'s own note for the single-finger case).
+    // Capturing the FIRST finger's id happens here, from the SECOND finger's own pointerdown, not
+    // from that first pointer's own event — some engines throw for that (`InvalidPointerId`-style
+    // rejections vary), so each capture is wrapped individually: a failed capture there would
+    // otherwise abort this whole function before `pinchStartDistance` etc. below ever get set,
+    // silently breaking the pinch itself (a plain tap/pan doesn't hit this branch, so wouldn't
+    // have surfaced the same way).
+    for (const id of activeZoomPointers.keys()) {
+      try {
+        zoomLayerRef.value?.setPointerCapture(id)
+      } catch {
+        // Not fatal — the gesture still works via normal event bubbling as long as the finger
+        // stays over this element, which `touch-action: none` already encourages.
+      }
+    }
+    const [a, b] = [...activeZoomPointers.values()]
+    pinchStartDistance = pointerDistance(a, b)
+    pinchStartScale = zoomScale.value
+    pinchStartMid = pointerMidpoint(a, b)
+    pinchStartPan = { x: zoomX.value, y: zoomY.value }
+    panOrigin = null
+    zoomGestureActive.value = true
+  } else if (activeZoomPointers.size === 1 && zoomScale.value > 1) {
+    panOrigin = { x: event.clientX, y: event.clientY, startX: zoomX.value, startY: zoomY.value }
+  }
+}
+
+function handleZoomPointerMove(event: PointerEvent): void {
+  if (!activeZoomPointers.has(event.pointerId)) {
+    return
+  }
+  activeZoomPointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
+
+  if (activeZoomPointers.size === 2 && pinchStartDistance > 0 && pinchStartMid && pinchStartPan) {
+    const [a, b] = [...activeZoomPointers.values()]
+    const scale = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, pinchStartScale * (pointerDistance(a, b) / pinchStartDistance)))
+    zoomScale.value = scale
+    // The fingers' midpoint moving (not just their distance apart changing) pans the content —
+    // spreading/pinching zooms, dragging both fingers together looks around, same gesture either
+    // combined or in sequence.
+    const mid = pointerMidpoint(a, b)
+    const clamped = clampZoomPan(
+      pinchStartPan.x + (mid.x - pinchStartMid.x),
+      pinchStartPan.y + (mid.y - pinchStartMid.y),
+      scale,
+    )
+    zoomX.value = clamped.x
+    zoomY.value = clamped.y
+    zoomGestureMoved = true
+    suppressNextClick = true
+    event.preventDefault()
+    return
+  }
+
+  if (activeZoomPointers.size === 1 && panOrigin) {
+    const dx = event.clientX - panOrigin.x
+    const dy = event.clientY - panOrigin.y
+    if (!zoomGestureMoved && Math.hypot(dx, dy) < ZOOM_PAN_THRESHOLD) {
+      return
+    }
+    if (!zoomGestureMoved) {
+      // Only starts capturing once real panning is confirmed (past the threshold above) — a plain
+      // tap never captures, so its click still reaches the actual element underneath normally.
+      try {
+        zoomLayerRef.value?.setPointerCapture(event.pointerId)
+      } catch {
+        // Not fatal — see the pinch branch's own note above.
+      }
+      zoomGestureActive.value = true
+    }
+    zoomGestureMoved = true
+    suppressNextClick = true
+    const clamped = clampZoomPan(panOrigin.startX + dx, panOrigin.startY + dy, zoomScale.value)
+    zoomX.value = clamped.x
+    zoomY.value = clamped.y
+    event.preventDefault()
+  }
+}
+
+function finishZoomPointer(event: PointerEvent): void {
+  activeZoomPointers.delete(event.pointerId)
+  if (activeZoomPointers.size < 2) {
+    pinchStartDistance = 0
+    pinchStartMid = null
+    pinchStartPan = null
+  }
+
+  if (activeZoomPointers.size === 1 && zoomScale.value > 1) {
+    // One finger of a pinch just lifted — the remaining one keeps panning without a break
+    // (otherwise the user would have to fully release and re-touch to keep looking around).
+    const [remaining] = activeZoomPointers.values()
+    panOrigin = { x: remaining.x, y: remaining.y, startX: zoomX.value, startY: zoomY.value }
+    return
+  }
+
+  if (activeZoomPointers.size === 0) {
+    panOrigin = null
+    zoomGestureActive.value = false
+    if (zoomScale.value <= ZOOM_MIN) {
+      resetZoom()
+    }
+  }
+}
+
+function handleZoomPointerUp(event: PointerEvent): void {
+  const wasTap = !zoomGestureMoved && activeZoomPointers.size === 1
+  finishZoomPointer(event)
+
+  if (!wasTap) {
+    return
+  }
+  const now = Date.now()
+  const isDoubleTap =
+    now - lastTapAt < ZOOM_DOUBLE_TAP_MS &&
+    pointerDistance(lastTapPos, { x: event.clientX, y: event.clientY }) < ZOOM_DOUBLE_TAP_PX
+  if (isDoubleTap) {
+    suppressNextClick = true
+    applyDoubleTapZoom(event)
+    lastTapAt = 0
+  } else {
+    lastTapAt = now
+    lastTapPos = { x: event.clientX, y: event.clientY }
+  }
+}
+
+function handleZoomPointerCancel(event: PointerEvent): void {
+  finishZoomPointer(event)
+}
+
+// A trackpad pinch (no real touchscreen involved — this is how it shows up when testing in Chrome
+// DevTools' device-emulation mode with a laptop trackpad, and how real desktop/laptop visitors
+// would zoom too) never fires a second `pointerdown` at all — OS-level gesture recognition turns
+// it into a synthetic `wheel` event with `ctrlKey: true` instead (the same event a literal
+// Ctrl+scroll produces), entirely separate from the touch-driven pinch above. Left unhandled, that
+// event's default action is the BROWSER's own page zoom — precisely the "whole window zooms"
+// symptom this exists to prevent for trackpad users specifically.
+const WHEEL_ZOOM_SENSITIVITY = 0.01
+
+function handleZoomWheel(event: WheelEvent): void {
+  if (!event.ctrlKey) {
+    // A plain (non-pinch) wheel/trackpad scroll — leave it alone; only a pinch (or literal
+    // Ctrl+scroll) synthesizes ctrlKey here, and only that should be treated as a zoom gesture.
+    return
+  }
+  event.preventDefault()
+
+  const scale = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoomScale.value - event.deltaY * WHEEL_ZOOM_SENSITIVITY * zoomScale.value))
+  zoomScale.value = scale
+  const clamped = clampZoomPan(zoomX.value, zoomY.value, scale)
+  zoomX.value = clamped.x
+  zoomY.value = clamped.y
+  if (scale <= ZOOM_MIN) {
+    resetZoom()
+  }
+}
+
+// A flip changes which page/spread is on screen — starting the new one zoomed in (at whatever pan
+// offset applied to the OLD one) would be disorienting, so every navigation resets to the default.
+watch(viewingPageId, () => {
+  if (props.zoomEnabled) {
+    resetZoom()
+  }
+})
+
+// Safari (iOS/macOS) recognizes a two-finger pinch through its OWN proprietary `gesturestart`/
+// `gesturechange`/`gestureend` events — a WebKit-only mechanism that predates (and is entirely
+// separate from) both Pointer Events and the standard `touch-action` CSS property. `touch-action:
+// none` (see `.questionnaire-book__perspective--zoom-enabled`) stops the pointermove-driven side of
+// things, but on Safari specifically the page can still zoom itself through THIS other channel
+// unless it's blocked here too — this is the documented reason a pinch can still zoom the whole
+// window instead of just the book despite touch-action being set correctly. Other browsers simply
+// never fire these events, so this listener is a harmless no-op there. Untyped (`Event`, not a
+// `GestureEvent`) since that type isn't part of the standard DOM lib — only `preventDefault()` is
+// actually needed here.
+function preventNativeGestureZoom(event: Event): void {
+  if (props.zoomEnabled) {
+    event.preventDefault()
+  }
+}
+
+onMounted(() => {
+  const el = perspectiveRef.value
+  el?.addEventListener('gesturestart', preventNativeGestureZoom)
+  el?.addEventListener('gesturechange', preventNativeGestureZoom)
+})
+
 onBeforeUnmount(() => {
   timers.forEach(clearTimeout)
   timers = []
+
+  const el = perspectiveRef.value
+  el?.removeEventListener('gesturestart', preventNativeGestureZoom)
+  el?.removeEventListener('gesturechange', preventNativeGestureZoom)
 })
 
 // Lets a `hide-nav` caller (see that prop's own doc comment) drive the same page-turn animation
@@ -708,6 +1057,53 @@ defineExpose({ flip })
   position: relative;
   width: 100%;
   perspective: 1800px;
+}
+
+// Only actually clips while zoomed IN (scale > 1, see the template) — left alone at rest so it
+// never risks clipping `.questionnaire-book__frame`'s own drop-shadow, which is allowed to bleed
+// past the frame's own box (see that rule's comment) and would otherwise get cut off here, since
+// this box is normally sized to match the frame almost exactly.
+.questionnaire-book__perspective--zoomed {
+  overflow: hidden;
+}
+
+// touch-action: none up here, not just on `.questionnaire-book__zoom-layer` inside — a two-finger
+// pinch's own touch-start points don't both have to land inside that tighter inner box (nav-overlay
+// arrows, or just a finger slightly off the frame's own edge, both still sit within this outer
+// box), and if EITHER touch point starts somewhere this doesn't cover, the platform can still claim
+// the whole gesture as its own page-zoom instead of handing it to `handleZoomPointerDown` — exactly
+// the "the whole window zooms instead of just the journal" symptom this exists to prevent. Left off
+// entirely where zoom is never offered (QuestionnairePage.vue), same reasoning as that inner rule.
+.questionnaire-book__perspective--zoom-enabled {
+  touch-action: none;
+}
+
+// Wraps the frame so pinch/pan (see `handleZoomPointerDown` and friends) can transform IT without
+// touching the frame's own `rotateX` tilt — sized to fill this box's parent (`width`/`height:
+// 100%`) so it doesn't change how the frame itself gets sized (percentage height degrades to
+// `auto` here when the parent's own height is itself content-derived — the non-fit-height case —
+// and resolves to a real 100% when fit-height gives the parent a definite height instead).
+.questionnaire-book__zoom-layer {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform-origin: center center;
+  transition: transform 220ms ease;
+}
+
+// touch-action: none only where zoom is actually offered — everywhere else this stays inert, so a
+// caller that never turns zoom on (QuestionnairePage.vue) keeps the platform's own native touch
+// scrolling/pinch behavior over the book unchanged.
+.questionnaire-book__zoom-layer--enabled {
+  touch-action: none;
+}
+
+// No transition while a pinch/pan is actively being tracked — the transform needs to track the
+// finger(s) immediately, not ease toward a stale target a frame behind.
+.questionnaire-book__zoom-layer--gesture {
+  transition: none;
 }
 
 .questionnaire-book__frame {

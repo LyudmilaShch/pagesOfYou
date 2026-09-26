@@ -91,6 +91,7 @@
             show-structure-controls
             :hide-nav="isMobileViewport"
             :fit-height="isMobileViewport"
+            :zoom-enabled="true"
             crop-enabled
             pick-enabled
             @drop-photo="handleDropPhoto"
