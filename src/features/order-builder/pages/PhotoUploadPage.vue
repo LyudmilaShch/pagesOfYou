@@ -260,6 +260,7 @@
                     class="photo-upload-page__thumb-usage"
                     :class="{ 'photo-upload-page__thumb-usage--multi': (usageByUrl.get(photo.url)?.length ?? 0) > 2 }"
                     :aria-label="`Используется на ${usageByUrl.get(photo.url)?.length} страницах`"
+                    @pointerdown.stop
                     @click.stop="handleUsageClick(photo.url)"
                   >
                     <v-icon size="9">mdi-image-multiple</v-icon>
@@ -269,6 +270,7 @@
                     type="button"
                     class="photo-upload-page__thumb-remove"
                     aria-label="Удалить фото"
+                    @pointerdown.stop
                     @click="removePhoto(photo)"
                   >
                     <v-icon size="10">mdi-close</v-icon>
@@ -367,6 +369,7 @@
       :box-height="cropModal.boxHeight"
       :fit-mode="cropModal.fitMode"
       :initial-crop="cropModal.initialCrop"
+      :visible-rect="cropModal.visibleRect"
       :loading="cropModal.saving"
       @close="closeCropEditor"
       @save="handleCropSave"
@@ -402,9 +405,10 @@ import { useRoute, useRouter } from 'vue-router'
 
 import { normalizeCanvasData } from '@/modules/editor/models/canvas-data.model'
 import { isPhotoElement, type PhotoFitMode } from '@/modules/editor/models'
+import { A4_PAGE_HEIGHT, A4_PAGE_WIDTH } from '@/modules/editor/constants/page.constants'
 import { flattenTree } from '@/modules/editor/utils/element-tree.util'
 import { getImageDimensions } from '@/shared/utils/image-dimensions.util'
-import type { PhotoCropState } from '@/modules/editor/utils/photo-crop.util'
+import { computePhotoPageVisibleArea, type PhotoCropState } from '@/modules/editor/utils/photo-crop.util'
 import { photoGalleryApi, type GalleryPhoto } from '../api/photo-gallery.api'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
 import { getGalleryScope } from '../utils/photo-gallery-scope.util'
@@ -784,6 +788,9 @@ const touchDrag = ref<{ photo: GalleryPhoto; x: number; y: number } | null>(null
 function handleThumbPointerDown(event: PointerEvent, photo: GalleryPhoto): void {
   // Was gated by a dedicated drag-handle icon rendered only on mobile (`v-if="isMobileViewport"`)
   // — now the whole thumb starts the drag directly (on request), so this guard replaces that.
+  // The remove/usage buttons overlaid on the thumb stop this event from bubbling to them at all
+  // (`@pointerdown.stop` on each) — otherwise a tap on either would ALSO land here first, kick off
+  // a drag (preventDefault below), and the button's own click would never actually fire.
   if (event.pointerType === 'mouse' || !isMobileViewport.value) {
     return
   }
@@ -845,6 +852,7 @@ const cropModal = reactive<{
   boxHeight: number
   fitMode: PhotoFitMode | undefined
   initialCrop: PhotoCropState
+  visibleRect: { x: number; y: number; width: number; height: number } | null
   saving: boolean
 }>({
   open: false,
@@ -855,6 +863,7 @@ const cropModal = reactive<{
   boxHeight: 0,
   fitMode: undefined,
   initialCrop: { cropX: 0, cropY: 0, imageScale: 1 },
+  visibleRect: null,
   saving: false,
 })
 
@@ -875,12 +884,20 @@ function openCropEditor(journalPageId: string, elementId: string): void {
 
   const existing = page.placeholderValues.find((value) => value.elementId === elementId)?.jsonValue
 
+  const pageWidth = canvas.pageWidth ?? A4_PAGE_WIDTH
+  const pageHeight = canvas.pageHeight ?? A4_PAGE_HEIGHT
+
   cropModal.journalPageId = journalPageId
   cropModal.elementId = elementId
   cropModal.imageUrl = leaf.defaultImageUrl
   cropModal.boxWidth = leaf.size.width
   cropModal.boxHeight = leaf.size.height
   cropModal.fitMode = leaf.fitMode
+  // A full-bleed placeholder's own box can be larger than the page (see JournalSpreadThumbnail's
+  // isOversizedLeaf) — only the part inside the page bounds actually ends up visible/printed, so
+  // the crop editor highlights (and requires covering) that window, not the box's full size.
+  cropModal.visibleRect =
+    computePhotoPageVisibleArea(leaf.position, leaf.size, pageWidth, pageHeight) ?? null
   cropModal.initialCrop = {
     cropX: existing?.cropX ?? 0,
     cropY: existing?.cropY ?? 0,
@@ -1285,14 +1302,17 @@ onBeforeUnmount(() => {
     // shrinking, sometimes near-invisible book. Now the ancestor column
     // (.photo-upload-page__body-inner) scrolls instead when the stack doesn't fit — the book always
     // renders at this same size, tall screens included (max-height's old job — capping otherwise-
-    // unbounded flex:1 growth — is now just this fixed number directly). 328px is an estimate of
-    // the book's own natural height at a typical phone width (this component has no JS-based
-    // sizing) — may need retuning against a real device. It accounts for both the frame and the
-    // "Изменить порядок"/"Добавить 4 страницы" toolbar row underneath it (see QuestionnaireBook.vue's
-    // `show-structure-controls`, on unconditionally below), which share this one fixed height —
-    // 280px was the frame alone, padded up by roughly the toolbar row's own height (~4px+4px
-    // padding, ~10px/1.4 line-height, ~1.5px border) plus the $spacing-4 gap above it.
-    flex: 0 0 328px;
+    // unbounded flex:1 growth — is now just this fixed number directly). An estimate of the book's
+    // own natural height at a typical phone width (this component has no JS-based sizing) — may
+    // need retuning against a real device. It accounts for both the frame and the "Изменить
+    // порядок"/"Добавить 4 страницы" toolbar row underneath it (see QuestionnaireBook.vue's
+    // `show-structure-controls`, on unconditionally below), which share this one fixed height.
+    // At a typical mobile width, the frame itself binds on WIDTH (its height comes out shorter
+    // than whatever's left over for it here) — QuestionnaireBook.vue's own `.questionnaire-book__
+    // zoom-layer` already collects that leftover flush above the frame (on request, so the frame
+    // sits flush against the toolbar instead), so this number is now sized close to the frame's own
+    // actual height + the toolbar + the gaps between them, not padded with the old, larger slack.
+    flex: 0 0 292px;
     margin-top: $spacing-4;
     padding: $spacing-3;
     border: none;
@@ -1459,12 +1479,13 @@ onBeforeUnmount(() => {
   // .photo-upload-page__body-inner is the scroll container on mobile (see .photo-upload-page__main
   // above) — this just becomes a normal block within it instead of a second, nested scroll region.
   // The bottom action bar is a normal flex row below .photo-upload-page__body (not fixed/overlaid),
-  // so — unlike a fixed-footer page — this needs no extra bottom padding to clear it; a large value
-  // here left dead, scrollable empty space below the actual content.
+  // so this doesn't need a large value to CLEAR it (that was the reasoning for `padding: 0` here
+  // before) — but zero still left the content butting straight up against the bar with no breathing
+  // room at all, so a modest bottom value stays just for that.
   @include mobile-only {
     height: auto;
     overflow: visible;
-    padding: 0;
+    padding: 0 0 $spacing-6;
   }
 }
 
@@ -1755,6 +1776,12 @@ onBeforeUnmount(() => {
     justify-content: center;
     gap: 2px;
     padding: 2px;
+    // iOS Safari renders a `<button>` with its own native chrome (rounded corners, subtle
+    // gradient/inset edges) unless this is explicitly turned off — without it, that system
+    // styling was compositing over this element's own left/right border, leaving only the
+    // top/bottom dashes visibly drawn.
+    -webkit-appearance: none;
+    appearance: none;
     border: 1.5px dashed $accent;
     border-radius: 0;
     background: $white;

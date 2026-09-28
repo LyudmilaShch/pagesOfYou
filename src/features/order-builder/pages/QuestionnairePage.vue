@@ -1372,9 +1372,10 @@ onUnmounted(() => {
   // Bottom padding stays modest (not a large fixed value) — .questionnaire-page__actions below is
   // a normal flow footer (position: relative, not fixed/overlay), so this has nothing to clear; an
   // oversized value here would just add dead scrollable space, forcing this to scroll even when the
-  // actual question fields fit the screen without it.
+  // actual question fields fit the screen without it. Same $spacing-6 as every other step's own
+  // content-to-action-bar gap (PhotoUploadPage.vue/JournalReviewPage.vue) — one consistent value.
   @include mobile-only {
-    padding-block: $spacing-8;
+    padding-block: $spacing-8 $spacing-6;
     padding-inline: 0;
   }
 }

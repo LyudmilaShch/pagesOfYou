@@ -13,6 +13,22 @@ export interface PhotoImageLayout {
   height: number
 }
 
+/**
+ * The sub-rect (in the same unscaled box-local space as boxWidth/boxHeight) that "cover" must
+ * actually fill — defaults to the whole box everywhere below. A full-bleed placeholder's own box
+ * can legitimately be bigger than the page (see JournalSpreadThumbnail's isOversizedLeaf), so
+ * "cover the box" is a stricter — and visually wrong — requirement than "cover what's actually
+ * visible on the page": it forces a bigger minimum zoom than necessary and crops away more of the
+ * photo than the user needs. Passing the page-clipped visible rect here instead fixes that,
+ * without changing anything for the (overwhelming majority of) callers that leave it unset.
+ */
+export interface PhotoCoverArea {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
 export interface PhotoKonvaImageLayout {
   x: number
   y: number
@@ -86,6 +102,52 @@ export function getPhotoCropState(photo: Pick<PhotoPlaceholder, 'cropX' | 'cropY
   }
 }
 
+/**
+ * The `PhotoCoverArea` for a placeholder on a page of the given size — the intersection of the
+ * placeholder's own (possibly page-exceeding, full-bleed) box with the page bounds, expressed in
+ * the placeholder's own local coordinates (0,0 = its own top-left). Returns undefined for an
+ * ordinary, fully-on-page placeholder (nothing to restrict — same as omitting `coverArea`
+ * everywhere above) or if the box doesn't overlap the page at all.
+ */
+export function computePhotoPageVisibleArea(
+  position: { x: number; y: number },
+  size: { width: number; height: number },
+  pageWidth: number,
+  pageHeight: number,
+): PhotoCoverArea | undefined {
+  // Same comparison as JournalSpreadThumbnail's isOversizedLeaf, just negated — a box positioned
+  // away from the page's own top-left (the common case for an ordinary, on-page placeholder) has
+  // visibleRight/visibleBottom (absolute, page-clamped coordinates) that don't line up with
+  // size.width/size.height (a raw, position-independent dimension) by coincidence, so comparing
+  // them directly (as an earlier version of this function did) falsely flagged most on-page
+  // placeholders as bleeding — this checks against the box's own edges instead.
+  const isFullyOnPage =
+    position.x >= 0 &&
+    position.y >= 0 &&
+    position.x + size.width <= pageWidth &&
+    position.y + size.height <= pageHeight
+
+  if (isFullyOnPage) {
+    return undefined
+  }
+
+  const visibleLeft = Math.max(position.x, 0)
+  const visibleTop = Math.max(position.y, 0)
+  const visibleRight = Math.min(position.x + size.width, pageWidth)
+  const visibleBottom = Math.min(position.y + size.height, pageHeight)
+
+  if (visibleRight <= visibleLeft || visibleBottom <= visibleTop) {
+    return undefined
+  }
+
+  return {
+    x: visibleLeft - position.x,
+    y: visibleTop - position.y,
+    width: visibleRight - visibleLeft,
+    height: visibleBottom - visibleTop,
+  }
+}
+
 export function computePhotoImageLayout(
   boxWidth: number,
   boxHeight: number,
@@ -93,6 +155,7 @@ export function computePhotoImageLayout(
   imageHeight: number,
   fitMode: PhotoFitMode,
   crop: PhotoCropState,
+  coverArea?: PhotoCoverArea,
 ): PhotoImageLayout | null {
   if (boxWidth <= 0 || boxHeight <= 0 || imageWidth <= 0 || imageHeight <= 0) {
     return null
@@ -107,14 +170,15 @@ export function computePhotoImageLayout(
     }
   }
 
-  const baseScale = Math.max(boxWidth / imageWidth, boxHeight / imageHeight)
+  const area = coverArea ?? { x: 0, y: 0, width: boxWidth, height: boxHeight }
+  const baseScale = Math.max(area.width / imageWidth, area.height / imageHeight)
   const scale = baseScale * crop.imageScale
   const width = imageWidth * scale
   const height = imageHeight * scale
 
   return {
-    x: (boxWidth - width) / 2 + crop.cropX,
-    y: (boxHeight - height) / 2 + crop.cropY,
+    x: area.x + (area.width - width) / 2 + crop.cropX,
+    y: area.y + (area.height - height) / 2 + crop.cropY,
     width,
     height,
   }
@@ -197,6 +261,7 @@ export function clampPhotoCrop(
   imageHeight: number,
   fitMode: PhotoFitMode,
   crop: PhotoCropState,
+  coverArea?: Pick<PhotoCoverArea, 'width' | 'height'>,
 ): PhotoCropState {
   const imageScale = Math.max(
     MIN_PHOTO_IMAGE_SCALE,
@@ -211,16 +276,19 @@ export function clampPhotoCrop(
     }
   }
 
-  const baseScale = Math.max(boxWidth / imageWidth, boxHeight / imageHeight)
+  const areaWidth = coverArea?.width ?? boxWidth
+  const areaHeight = coverArea?.height ?? boxHeight
+  const baseScale = Math.max(areaWidth / imageWidth, areaHeight / imageHeight)
   const scale = baseScale * imageScale
   const width = imageWidth * scale
   const height = imageHeight * scale
 
-  // Keep the image in cover mode: the frame must stay fully filled (no empty gaps).
-  const minCropX = (boxWidth - width) / 2
-  const maxCropX = (width - boxWidth) / 2
-  const minCropY = (boxHeight - height) / 2
-  const maxCropY = (height - boxHeight) / 2
+  // Keep the cover area fully filled (no empty gaps within it) — cropX/cropY are a translation
+  // delta, so their bounds depend only on the area's size, not its offset within the box.
+  const minCropX = (areaWidth - width) / 2
+  const maxCropX = (width - areaWidth) / 2
+  const minCropY = (areaHeight - height) / 2
+  const maxCropY = (height - areaHeight) / 2
 
   return {
     cropX: Math.max(minCropX, Math.min(maxCropX, crop.cropX ?? 0)),
@@ -238,12 +306,21 @@ export function computePhotoCropFromPanDelta(
   crop: PhotoCropState,
   deltaX: number,
   deltaY: number,
+  coverArea?: Pick<PhotoCoverArea, 'width' | 'height'>,
 ): PhotoCropState {
-  return clampPhotoCrop(boxWidth, boxHeight, imageWidth, imageHeight, fitMode, {
-    cropX: crop.cropX + deltaX,
-    cropY: crop.cropY + deltaY,
-    imageScale: crop.imageScale,
-  })
+  return clampPhotoCrop(
+    boxWidth,
+    boxHeight,
+    imageWidth,
+    imageHeight,
+    fitMode,
+    {
+      cropX: crop.cropX + deltaX,
+      cropY: crop.cropY + deltaY,
+      imageScale: crop.imageScale,
+    },
+    coverArea,
+  )
 }
 
 export function pagePointToPhotoLocal(
@@ -281,10 +358,13 @@ export function computePhotoCropZoomAtPoint(
   focalX: number,
   focalY: number,
   scaleDelta: number,
+  coverArea?: PhotoCoverArea,
 ): PhotoCropState {
   if (resolvePhotoRenderFitMode(fitMode) === 'fill') {
     return getPhotoCropState(crop)
   }
+
+  const area = coverArea ?? { x: 0, y: 0, width: boxWidth, height: boxHeight }
 
   const currentLayout = computePhotoImageLayout(
     boxWidth,
@@ -293,6 +373,7 @@ export function computePhotoCropZoomAtPoint(
     imageHeight,
     'cover',
     crop,
+    coverArea,
   )
 
   if (!currentLayout) {
@@ -316,6 +397,7 @@ export function computePhotoCropZoomAtPoint(
       imageHeight,
       fitMode,
       crop,
+      coverArea,
     )
   }
 
@@ -330,6 +412,7 @@ export function computePhotoCropZoomAtPoint(
     imageHeight,
     'cover',
     scaledCrop,
+    coverArea,
   )
 
   if (!nextLayout) {
@@ -340,6 +423,7 @@ export function computePhotoCropZoomAtPoint(
       imageHeight,
       fitMode,
       scaledCrop,
+      coverArea,
     )
   }
 
@@ -354,10 +438,11 @@ export function computePhotoCropZoomAtPoint(
     imageHeight,
     fitMode,
     {
-      cropX: nextX - (boxWidth - nextLayout.width) / 2,
-      cropY: nextY - (boxHeight - nextLayout.height) / 2,
+      cropX: nextX - area.x - (area.width - nextLayout.width) / 2,
+      cropY: nextY - area.y - (area.height - nextLayout.height) / 2,
       imageScale: nextImageScale,
     },
+    coverArea,
   )
 }
 

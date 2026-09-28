@@ -28,10 +28,17 @@
         :class="{
           'spread-thumb__el--actionable': isActionableLeaf(leaf),
           'spread-thumb__el--active': activeElementId === leaf.id,
+          'spread-thumb__el--hovered': hoveredElementId === leaf.id,
+          'spread-thumb__el--oversized': isOversizedLeaf(leaf),
         }"
         :data-element-id="leaf.id"
         :style="elementStyle(leaf)"
-        @click="handleElementTap(leaf)"
+        @click="handleElementTap(leaf, $event)"
+        @mousemove="handleElementMouseMove(leaf, $event)"
+        @mouseleave="handleElementMouseLeave(leaf)"
+        @dragover.prevent="isPhotoElement(leaf) && leaf.defaultImageUrl && onDragOver(leaf.id)"
+        @dragleave="isPhotoElement(leaf) && leaf.defaultImageUrl && onDragLeave(leaf.id)"
+        @drop.prevent="isPhotoElement(leaf) && leaf.defaultImageUrl && onDrop($event, leaf.id)"
       >
         <template v-if="isPhotoElement(leaf) && leaf.defaultImageUrl">
           <img
@@ -44,9 +51,6 @@
             :src="resolveAssetUrl(leaf.defaultImageUrl) ?? leaf.defaultImageUrl"
             :style="photoImageStyle(leaf)"
             alt=""
-            @dragover.prevent="onDragOver(leaf.id)"
-            @dragleave="onDragLeave(leaf.id)"
-            @drop.prevent="onDrop($event, leaf.id)"
           />
           <div v-if="cropEnabled || pickEnabled" class="spread-thumb__photo-actions" :style="actionsCenterStyle(leaf)">
             <v-tooltip v-if="pickEnabled" location="top" content-class="editor-tooltip--arrow-top">
@@ -200,7 +204,12 @@ import { isAiTextElement, isPhotoElement, isShapeElement, isTextElement, isTocEl
 import { flattenTree } from '../utils/element-tree.util'
 import { ensureCustomFontsLoaded } from '../utils/custom-fonts.util'
 import { A4_PAGE_HEIGHT, A4_PAGE_WIDTH } from '../constants/page.constants'
-import { computePhotoImageLayout, getPhotoCropState, resolvePhotoRenderFitMode } from '../utils/photo-crop.util'
+import {
+  computePhotoImageLayout,
+  computePhotoPageVisibleArea,
+  getPhotoCropState,
+  resolvePhotoRenderFitMode,
+} from '../utils/photo-crop.util'
 import {
   getSpreadBackgroundRenderLayers,
   type SpreadBackgroundRenderLayer,
@@ -279,18 +288,120 @@ function isActionableLeaf(leaf: LeafElement): boolean {
   )
 }
 
-// On a device with real hover, the crop/replace/edit-text/regenerate buttons reveal on
-// :hover (see the `@media (hover: hover)` CSS below) and this stays unused. On touch, there's no
-// hover to reveal them with — showing them permanently would clutter the small mobile spread
-// card, so a tap on the element toggles them instead (a second tap on the same element hides them
-// again; tapping a different one switches to it).
+/** Whether this leaf's own `.spread-thumb__el` wrapper needs to actually receive pointer events at
+ * all — every OTHER kind of leaf (plain text, title/subtitle, shape, toc, an ai-text-placeholder
+ * with editing disabled) has no interaction of its own here, so leaving it as a normal (default
+ * `auto`) pointer target only gets in the way: templates routinely stack a caption/title directly
+ * over a photo, and without this, hovering that caption — even though it visually reads as "the
+ * photo" — hit-tests the caption's own (non-interactive) box first and blocks the photo underneath
+ * from ever seeing the hover/click at all. A photo ALWAYS needs to receive events regardless of
+ * `isActionableLeaf` — an EMPTY slot isn't "actionable" by that check (no `defaultImageUrl` yet)
+ * but still needs to catch drag-and-drop and its own pick button. */
+function needsPointerEvents(leaf: LeafElement): boolean {
+  return isPhotoElement(leaf) || isActionableLeaf(leaf)
+}
+
+// On a device with real hover, the crop/replace/edit-text/regenerate buttons reveal via plain
+// `:hover` (or, for a full-bleed leaf, the JS-tracked `--hovered` — see `isOversizedLeaf`/the
+// `@media (hover: hover)` CSS below) and this stays unused. On touch, there's no hover to reveal
+// them with — showing them permanently would clutter the small mobile spread card, so a tap on the
+// element toggles them instead (a second tap on the same element hides them again; tapping a
+// different one switches to it).
 const activeElementId = ref<string | null>(null)
 
-function handleElementTap(leaf: LeafElement): void {
+/** Whether a click/tap actually landed within the visible PAGE area (not just somewhere inside
+ * this leaf's own — possibly much bigger — box). A full-bleed photo (`leaf.size` legitimately
+ * larger than the page, with a negative `leaf.position`, so it visually fills the page edge-to-edge
+ * with no gap) is real, intentional template design — but `.spread-thumb__el`'s own hit-testable
+ * box is sized to that FULL leaf, while only the portion actually overlapping the page is ever
+ * visible (everything past the page edge is meant to be invisible bleed). Ancestor `overflow:
+ * hidden` (`.spread-thumb__page`, `.spread-thumb`, `.questionnaire-book__half`/`__frame`) clips the
+ * PAINT correctly, but — inside `.questionnaire-book__frame`'s `transform-style: preserve-3d`
+ * context specifically — does NOT reliably clip HIT-TESTING the same way, so a click that visually
+ * lands on the clipped-away bleed (which looks like empty space, or a different page entirely)
+ * still reached this leaf's handler. Checking directly against the page's own rect sidesteps that
+ * clipping-context quirk entirely instead of depending on it. */
+function isWithinPageBounds(event: MouseEvent): boolean {
+  const containerRect = containerRef.value?.getBoundingClientRect()
+  if (!containerRect) {
+    return false
+  }
+  const pageLeft = containerRect.left + offsetX.value
+  const pageTop = containerRect.top + offsetY.value
+  const pageRight = pageLeft + pageWidth.value * scale.value
+  const pageBottom = pageTop + pageHeight.value * scale.value
+  return (
+    event.clientX >= pageLeft &&
+    event.clientX <= pageRight &&
+    event.clientY >= pageTop &&
+    event.clientY <= pageBottom
+  )
+}
+
+/** Whether this leaf's OWN declared box (independent of the cursor — just `leaf.position`/`leaf.
+ * size` vs the page) extends past the page at all — a full-bleed photo, basically. Gates the extra
+ * `isWithinPageBounds` checks below to ONLY that rare case: for the overwhelming majority of leaves
+ * (fully on-page, no bleed), the wrapper's own hit-testable box already matches what's visually
+ * there exactly, so the plain, native `:hover`/click handling is already fully correct there — and
+ * more robust than re-deriving the same answer from `getBoundingClientRect` + cursor math on every
+ * `mousemove`, which is what caused hovering a perfectly ordinary photo to sometimes NOT reveal its
+ * buttons (a rect measured a frame late, a sub-pixel rounding mismatch, etc. — narrow but real
+ * failure modes this sidesteps entirely by simply not being in the loop for normal leaves). */
+function isOversizedLeaf(leaf: LeafElement): boolean {
+  return (
+    leaf.position.x < 0 ||
+    leaf.position.y < 0 ||
+    leaf.position.x + leaf.size.width > pageWidth.value ||
+    leaf.position.y + leaf.size.height > pageHeight.value
+  )
+}
+
+/** The `PhotoCoverArea` for this leaf — same page-bounds intersection PhotoUploadPage.vue/
+ * JournalReviewPage.vue compute for PhotoCropModal's `visibleRect` (via the same shared
+ * `computePhotoPageVisibleArea`). Must match exactly, or a saved crop (now stored relative to
+ * that visible area, not the full oversized box — see photo-crop.util.ts's `PhotoCoverArea`)
+ * would render here differently than it looked while cropping. */
+function photoCoverArea(leaf: PhotoPlaceholder) {
+  return computePhotoPageVisibleArea(leaf.position, leaf.size, pageWidth.value, pageHeight.value)
+}
+
+function handleElementTap(leaf: LeafElement, event: MouseEvent): void {
   if (!isActionableLeaf(leaf)) {
     return
   }
+  if (isOversizedLeaf(leaf) && !isWithinPageBounds(event)) {
+    return
+  }
   activeElementId.value = activeElementId.value === leaf.id ? null : leaf.id
+}
+
+// Drives the desktop hover reveal via JS instead of a plain CSS `:hover` (see `.spread-thumb__el--
+// hovered` below) — for the same reason `handleElementTap` above checks `isWithinPageBounds` — but
+// ONLY for a leaf `isOversizedLeaf` flags; every other (ordinary, fully on-page) leaf keeps using
+// plain CSS `:hover` instead, which stays the more robust choice there (see that function's own
+// comment). Tracked continuously on `mousemove` (not just `mouseenter`) because the cursor can
+// cross from the off-page bleed region into the actually-visible page without ever leaving this
+// element's own (oversized) box, which wouldn't re-fire `mouseenter`.
+const hoveredElementId = ref<string | null>(null)
+
+function handleElementMouseMove(leaf: LeafElement, event: MouseEvent): void {
+  if (!isOversizedLeaf(leaf)) {
+    return
+  }
+  const withinBounds = isActionableLeaf(leaf) && isWithinPageBounds(event)
+  if (withinBounds) {
+    if (hoveredElementId.value !== leaf.id) {
+      hoveredElementId.value = leaf.id
+    }
+  } else if (hoveredElementId.value === leaf.id) {
+    hoveredElementId.value = null
+  }
+}
+
+function handleElementMouseLeave(leaf: LeafElement): void {
+  if (hoveredElementId.value === leaf.id) {
+    hoveredElementId.value = null
+  }
 }
 
 // Closes the tap-revealed actions when the user clicks/taps anywhere outside the active element —
@@ -543,6 +654,7 @@ function photoImageStyle(leaf: PhotoPlaceholder): Record<string, string> {
     natural.height,
     resolvePhotoRenderFitMode(leaf.fitMode),
     getPhotoCropState(leaf),
+    photoCoverArea(leaf),
   )
   if (!layout) {
     return fallback
@@ -619,6 +731,10 @@ function elementStyle(leaf: LeafElement): Record<string, string> {
       transform: leaf.rotation ? `rotate(${leaf.rotation}deg)` : '',
       opacity: String(leaf.opacity ?? 1),
       overflow: 'hidden',
+      // See `needsPointerEvents` — a decorative shape never has anything of its own to interact
+      // with, so it shouldn't be able to sit in front of (and block) a photo/actionable element
+      // it happens to overlap.
+      pointerEvents: 'none',
     }
   }
 
@@ -637,6 +753,10 @@ function elementStyle(leaf: LeafElement): Record<string, string> {
     // `textStyle`'s fontFamily), so a glyph can end up a pixel or two taller/wider than the box.
     // Clipping that with overflow:hidden cuts letters/digits off; better to let it spill slightly.
     overflow: isTextElement(leaf) || isAiTextElement(leaf) ? 'visible' : 'hidden',
+    // See `needsPointerEvents` — a non-interactive leaf (plain text, a title/subtitle, a toc, an
+    // ai-text-placeholder with editing off) stepping in front of a photo it happens to overlap
+    // (e.g. a caption sitting over a full-bleed cover) would otherwise steal its hover/click.
+    pointerEvents: needsPointerEvents(leaf) ? 'auto' : 'none',
   }
 }
 
@@ -782,13 +902,26 @@ function shapeStyle(leaf: ShapeElement): Record<string, string> {
   object-fit: cover;
   display: block;
   transition: filter 150ms ease;
+  // A "cover"-fit crop (see `photoImageStyle`) routinely renders this <img> LARGER than its own
+  // slot once the real natural size resolves — that overflow is meant to be invisible, clipped by
+  // the parent `.spread-thumb__el`'s own `overflow: hidden` (see `elementStyle`) — but the browser
+  // still hit-tests the element's own (unclipped) box for pointer events, not the clipped render,
+  // so a tap/click landing in that clipped-away overflow region was still reaching this <img> and
+  // toggling its crop/replace buttons — reading as "these appear even when I didn't click the
+  // photo." Routing pointer events to the parent instead (which IS sized to the real slot) fixes
+  // that; the parent already owns the click/drag handling this <img> used to have directly (see
+  // the template — `handleElementTap`/`onDragOver`/`onDragLeave`/`onDrop` moved up to it).
+  pointer-events: none;
 }
 
 // Darkens on hover (or, on touch, on tap — see `--active`) only where an action is actually
 // offered (crop/replace/pick — see `spread-thumb__el--actionable`) — elsewhere (admin panels, the
 // questionnaire book) hovering a photo shouldn't visibly change anything, since there's no action
-// behind it there.
-.spread-thumb__el--actionable:hover .spread-thumb__photo,
+// behind it there. Plain `:hover` for an ordinary (fully on-page) leaf — the more robust choice
+// there (see `isOversizedLeaf`'s own comment) — and the JS-tracked `--hovered` class only for a
+// full-bleed one, whose hit-testable box can extend past the page edge.
+.spread-thumb__el--actionable:not(.spread-thumb__el--oversized):hover .spread-thumb__photo,
+.spread-thumb__el--hovered.spread-thumb__el--oversized .spread-thumb__photo,
 .spread-thumb__el--active .spread-thumb__photo {
   filter: brightness(0.75);
 }
@@ -884,9 +1017,13 @@ function shapeStyle(leaf: ShapeElement): Record<string, string> {
   pointer-events: auto;
 }
 
-// Same reasoning/pattern as JournalStructurePanel.vue's own drag/template-switch buttons.
+// Same reasoning/pattern as JournalStructurePanel.vue's own drag/template-switch buttons. Plain
+// `:hover` for an ordinary (fully on-page) leaf, `--hovered` (JS-tracked, see
+// `handleElementMouseMove`) only for a full-bleed one — see `isOversizedLeaf`'s own comment for why
+// this splits in two instead of just always using one or the other.
 @media (hover: hover) and (pointer: fine) {
-  .spread-thumb__el--actionable:hover .spread-thumb__photo-actions {
+  .spread-thumb__el--actionable:not(.spread-thumb__el--oversized):hover .spread-thumb__photo-actions,
+  .spread-thumb__el--hovered.spread-thumb__el--oversized .spread-thumb__photo-actions {
     opacity: 1;
     pointer-events: auto;
   }

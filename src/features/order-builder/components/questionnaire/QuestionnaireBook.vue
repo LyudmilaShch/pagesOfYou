@@ -769,6 +769,22 @@ function handleZoomClickCapture(event: MouseEvent): void {
     return
   }
   suppressNextClick = false
+
+  // Real fingers almost never land perfectly still — a few px of incidental movement on an
+  // otherwise ordinary tap routinely crosses `ZOOM_PAN_THRESHOLD` above, marking it "moved" and
+  // landing here even with no deliberate pinch/pan at all. Only actually suppressing when the
+  // click would land ON a photo (the one case that matters — see the original request this was
+  // added for) keeps that fix working without also swallowing every OTHER click that happens to
+  // pass through here — `stopPropagation` on the capture phase kills an event's entire remaining
+  // journey in one go, target's own handler AND every ancestor's bubble-phase listener alike, so
+  // calling it unconditionally here was also blocking JournalSpreadThumbnail's own "tap outside an
+  // active element closes its crop/replace buttons" document-level listener from ever seeing an
+  // ordinary tap that landed anywhere else — reading as those buttons appearing/staying open on
+  // their own, including on taps nowhere near a photo.
+  const target = event.target as HTMLElement | null
+  if (!target?.closest('.spread-thumb__el')) {
+    return
+  }
   event.stopPropagation()
   event.preventDefault()
 }
@@ -1057,6 +1073,10 @@ defineExpose({ flip })
   align-items: center;
   gap: $spacing-4;
   width: 100%;
+
+  @include mobile-only {
+    gap: $spacing-3;
+  }
 }
 
 // Height, not width, is the fixed dimension here — the frame's own `aspect-ratio` (set via
@@ -1082,6 +1102,11 @@ defineExpose({ flip })
   // Makes `cqw`/`cqh` inside the frame (see `frameStyle`) mean "100% of THIS box's own, already-
   // resolved width/height" — the coordinate space the frame's contain-fit formula is computed in.
   container-type: size;
+  // NOT where any leftover vertical slack (frame shorter than this box) actually gets
+  // redistributed, despite appearances — this box's only flex child, `.questionnaire-book__zoom-
+  // layer`, is itself always height:100% (fills this box completely regardless of the frame's own
+  // size inside IT), so align-items here has nothing left to do. See that rule's own mobile-only
+  // override instead.
 }
 
 .questionnaire-book__perspective {
@@ -1122,6 +1147,17 @@ defineExpose({ flip })
   justify-content: center;
   transform-origin: center center;
   transition: transform 220ms ease;
+
+  // On mobile fit-height (see the perspective rule below), this box is height:100% of perspective
+  // while the frame inside it is often shorter (contain-fit binds on width there, not height) —
+  // THIS is the alignment that actually decides where that leftover vertical slack goes (it fills
+  // the whole box regardless of the frame's own size, so a plain `align-items` on the perspective
+  // rule itself has nothing left to redistribute — this is the one that matters). flex-end collects
+  // it above the frame instead of splitting it, so the frame sits flush against the toolbar row
+  // below instead of leaving visible space above it, on request.
+  @include mobile-only {
+    align-items: flex-end;
+  }
 }
 
 // touch-action: none only where zoom is actually offered — everywhere else this stays inert, so a
@@ -1190,6 +1226,11 @@ defineExpose({ flip })
   top: 0;
   bottom: 0;
   overflow: hidden;
+  // overflow:hidden alone doesn't reliably clip hit-testing inside the 3D-transformed
+  // (preserve-3d) frame: the other half's off-screen content (each window is 200% wide)
+  // can still intercept pointer events at points where the two halves visually overlap.
+  // clip-path is spec-guaranteed to also restrict hit-testing, so use it as the real clip.
+  clip-path: inset(0);
 }
 
 .questionnaire-book__window {

@@ -152,6 +152,7 @@
       :box-height="cropModal.boxHeight"
       :fit-mode="cropModal.fitMode"
       :initial-crop="cropModal.initialCrop"
+      :visible-rect="cropModal.visibleRect"
       :loading="cropModal.saving"
       @close="closeCropEditor"
       @save="handleCropSave"
@@ -182,8 +183,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { normalizeCanvasData } from '@/modules/editor/models/canvas-data.model'
 import { isAiTextElement, isPhotoElement } from '@/modules/editor/models'
 import type { AiTextPlaceholder, LengthConstraint, PhotoFitMode } from '@/modules/editor/models'
+import { A4_PAGE_HEIGHT, A4_PAGE_WIDTH } from '@/modules/editor/constants/page.constants'
 import { flattenTree } from '@/modules/editor/utils/element-tree.util'
-import type { PhotoCropState } from '@/modules/editor/utils/photo-crop.util'
+import { computePhotoPageVisibleArea, type PhotoCropState } from '@/modules/editor/utils/photo-crop.util'
 import { useAuthStore } from '@/stores/auth.store'
 import AuthModal from '@/components/auth/AuthModal.vue'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
@@ -312,6 +314,7 @@ const cropModal = reactive<{
   boxHeight: number
   fitMode: PhotoFitMode | undefined
   initialCrop: PhotoCropState
+  visibleRect: { x: number; y: number; width: number; height: number } | null
   saving: boolean
 }>({
   open: false,
@@ -322,6 +325,7 @@ const cropModal = reactive<{
   boxHeight: 0,
   fitMode: undefined,
   initialCrop: { cropX: 0, cropY: 0, imageScale: 1 },
+  visibleRect: null,
   saving: false,
 })
 
@@ -339,12 +343,19 @@ function openCropEditor(journalPageId: string, elementId: string): void {
 
   const existing = page.placeholderValues.find((value) => value.elementId === elementId)?.jsonValue
 
+  const pageWidth = canvas.pageWidth ?? A4_PAGE_WIDTH
+  const pageHeight = canvas.pageHeight ?? A4_PAGE_HEIGHT
+
   cropModal.journalPageId = journalPageId
   cropModal.elementId = elementId
   cropModal.imageUrl = leaf.defaultImageUrl
   cropModal.boxWidth = leaf.size.width
   cropModal.boxHeight = leaf.size.height
   cropModal.fitMode = leaf.fitMode
+  // Same reasoning as PhotoUploadPage.vue's openCropEditor: a full-bleed placeholder's box can be
+  // bigger than the page, so only the part inside the page bounds is actually visible/printed.
+  cropModal.visibleRect =
+    computePhotoPageVisibleArea(leaf.position, leaf.size, pageWidth, pageHeight) ?? null
   cropModal.initialCrop = {
     cropX: existing?.cropX ?? 0,
     cropY: existing?.cropY ?? 0,
@@ -804,7 +815,7 @@ onBeforeUnmount(() => {
   padding-block: $spacing-8;
 
   @include mobile-only {
-    padding-block: $spacing-6 $spacing-4;
+    padding-block: $spacing-6;
   }
 
   @include tablet-up {
