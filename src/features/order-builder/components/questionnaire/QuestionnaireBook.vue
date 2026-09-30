@@ -6,33 +6,60 @@
       :class="{
         'questionnaire-book__perspective--zoomed': zoomScale > 1,
         'questionnaire-book__perspective--zoom-enabled': zoomEnabled,
+        'questionnaire-book__perspective--page-mode': pageModeEnabled,
       }"
     >
-      <!-- Pinch-to-zoom + double-tap (only when `zoomEnabled` — see that prop's doc comment) — a
-           separate transform layer around the frame, not on the frame itself, so it doesn't fight
-           with the frame's own CSS `rotateX` tilt (two independent transforms compose naturally
-           when nested instead of needing to be combined into one string). See `handleZoomPointer*`
-           for the gesture logic. -->
+      <!-- Page mode (mobile, see pageModeBothSidesActive): an OUTER transform layer that enlarges
+           the whole spread and pans it to keep the active half centered — same "camera" idea as
+           pinch-zoom below, just automatic/anchored per half instead of user-driven, and on a
+           SEPARATE layer so the two compose independently (a pinch further in still works normally
+           on top of this). See `pageModeLayerStyle`/`handlePageSwipe*` for the mechanics. -->
       <div
-        ref="zoomLayerRef"
-        class="questionnaire-book__zoom-layer"
+        ref="pageModeLayerRef"
+        class="questionnaire-book__page-mode-layer"
         :class="{
-          'questionnaire-book__zoom-layer--enabled': zoomEnabled,
-          'questionnaire-book__zoom-layer--gesture': zoomGestureActive,
+          'questionnaire-book__page-mode-layer--enabled': pageModeEnabled,
+          'questionnaire-book__page-mode-layer--gesture': swipeGestureActive,
+          'questionnaire-book__page-mode-layer--clipped': pageModeCentered,
         }"
-        :style="zoomEnabled ? zoomLayerStyle : undefined"
-        @pointerdown="zoomEnabled && handleZoomPointerDown($event)"
-        @pointermove="zoomEnabled && handleZoomPointerMove($event)"
-        @pointerup="zoomEnabled && handleZoomPointerUp($event)"
-        @pointercancel="zoomEnabled && handleZoomPointerCancel($event)"
-        @click.capture="zoomEnabled && handleZoomClickCapture($event)"
-        @wheel="zoomEnabled && handleZoomWheel($event)"
+        :style="pageModeLayerStyle"
+        @pointerdown="handlePageSwipePointerDown"
+        @pointermove="handlePageSwipePointerMove"
+        @pointerup="handlePageSwipePointerUp"
+        @pointercancel="handlePageSwipePointerCancel"
       >
+        <!-- Pinch-to-zoom + double-tap (only when `zoomEnabled` — see that prop's doc comment) — a
+             separate transform layer around the frame, not on the frame itself, so it doesn't fight
+             with the frame's own CSS `rotateX` tilt (two independent transforms compose naturally
+             when nested instead of needing to be combined into one string). See
+             `handleZoomPointer*` for the gesture logic — entirely unaware of the page-mode layer
+             wrapping it, its own `zoomScale`/`zoomX`/`zoomY` stay relative to THIS layer's already-
+             enlarged view, exactly like they'd be relative to an un-enlarged one otherwise. -->
         <div
-          class="questionnaire-book__frame"
-          :class="{ 'questionnaire-book__frame--pulse': viewingPageId && pulsingPageIds.has(viewingPageId) }"
-          :style="frameStyle"
+          ref="zoomLayerRef"
+          class="questionnaire-book__zoom-layer"
+          :class="{
+            'questionnaire-book__zoom-layer--enabled': zoomEnabled,
+            'questionnaire-book__zoom-layer--gesture': zoomGestureActive,
+            'questionnaire-book__zoom-layer--page-mode-centered': pageModeCentered,
+          }"
+          :style="zoomEnabled ? zoomLayerStyle : undefined"
+          @pointerdown="zoomEnabled && handleZoomPointerDown($event)"
+          @pointermove="zoomEnabled && handleZoomPointerMove($event)"
+          @pointerup="zoomEnabled && handleZoomPointerUp($event)"
+          @pointercancel="zoomEnabled && handleZoomPointerCancel($event)"
+          @click.capture="(zoomEnabled || pageModeEnabled) && handleZoomClickCapture($event)"
+          @wheel="zoomEnabled && handleZoomWheel($event)"
         >
+          <div
+            ref="frameRef"
+            class="questionnaire-book__frame"
+            :class="{
+              'questionnaire-book__frame--pulse': viewingPageId && pulsingPageIds.has(viewingPageId),
+              'questionnaire-book__frame--page-mode': pageModeCentered,
+            }"
+            :style="frameStyle"
+          >
           <div class="questionnaire-book__halves">
             <div
               v-for="half in renderedHalves"
@@ -77,6 +104,7 @@
                 type="button"
                 class="questionnaire-book__template-btn"
                 aria-label="Сменить шаблон разворота"
+                :style="{ '--page-mode-btn-scale': pageModeButtonScale }"
                 @click="openTemplatePicker"
               >
                 <v-icon size="16">mdi-view-grid-outline</v-icon>
@@ -115,6 +143,7 @@
             </div>
           </div>
         </div>
+      </div>
       </div>
 
       <!-- For a caller overlaying its own controls directly on the book stage (e.g.
@@ -155,37 +184,36 @@
       <button
         type="button"
         class="questionnaire-book__reorder-btn"
-        :disabled="spreadIds.length < 2"
-        @click="reorderDialogOpen = true"
+        @click="spreadManagerOpen = true"
       >
-        <v-icon size="16">mdi-swap-horizontal</v-icon>
-        <span class="questionnaire-book__btn-label-full">Изменить порядок разворотов</span>
-        <span class="questionnaire-book__btn-label-short">Изменить порядок</span>
+        <v-icon size="16">mdi-view-carousel-outline</v-icon>
+        <span class="questionnaire-book__btn-label-full">Управление разворотами</span>
+        <span class="questionnaire-book__btn-label-short">Развороты</span>
       </button>
 
+      <!-- Mobile only — lets a visitor opt out of page mode's auto-enlarged single-page view back
+           into the desktop-style "whole spread at once" layout, and back. -->
       <button
+        v-if="isMobileViewport"
         type="button"
-        class="questionnaire-book__add-spread"
-        :disabled="store.isSaving"
-        @click="handleAddSpread"
+        class="questionnaire-book__view-toggle"
+        :aria-label="spreadViewForced ? 'Показать постранично' : 'Показать разворотом'"
+        @click="toggleViewFormat"
       >
-        <v-icon size="16">mdi-plus</v-icon>
-        <span class="questionnaire-book__btn-label-full">Добавить 4 страницы</span>
-        <span class="questionnaire-book__btn-label-short">4 страницы</span>
+        <v-icon size="16">{{ spreadViewForced ? 'mdi-book-open-page-variant-outline' : 'mdi-book-open-outline' }}</v-icon>
       </button>
     </div>
 
-    <SpreadReorderDialog
-      :open="reorderDialogOpen"
+    <SpreadManagerDialog
+      :open="spreadManagerOpen"
       :pages="pages"
       :canvas-data-by-page-id="canvasDataByPageId"
-      @close="reorderDialogOpen = false"
+      @close="spreadManagerOpen = false"
     />
 
     <JournalTemplatePickerDialog
       :open="templatePicker.open"
       :journal-page="templatePicker.page"
-      :sequence="templatePicker.sequence"
       :templates="store.groupedTemplates"
       :loading="store.isSaving"
       @close="closeTemplatePicker"
@@ -204,6 +232,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import JournalSpreadThumbnail from '@/modules/editor/components/JournalSpreadThumbnail.vue'
 import type { CanvasData } from '@/modules/editor/models/canvas-data.model'
 import type { TocEntry } from '@/modules/editor/models/toc-placeholder.model'
+import { useMobileViewport } from '@/modules/editor/composables/use-mobile-viewport'
 import {
   A4_PAGE_HEIGHT,
   A4_PAGE_WIDTH,
@@ -215,7 +244,7 @@ import type { JournalPage } from '../../types/order.types'
 import type { SetJournalPageTemplatePayload } from '../../api/orders.api'
 import { useOrderBuilderStore } from '../../stores/order-builder.store'
 import JournalTemplatePickerDialog from '../JournalTemplatePickerDialog.vue'
-import SpreadReorderDialog from './SpreadReorderDialog.vue'
+import SpreadManagerDialog from './SpreadManagerDialog.vue'
 
 const store = useOrderBuilderStore()
 
@@ -292,6 +321,12 @@ const emit = defineEmits<{
   /** Mirrors the built-in nav's own "N из M" position — fires whenever it changes, for a caller
    * using `hideNav` to build its own nav UI (see that prop's own doc comment) from the same state. */
   'update:viewing': [payload: { index: number; total: number; label: string }]
+  /** Fires whenever the mobile view-format toggle (`.questionnaire-book__view-toggle`) changes —
+   * `true` once the visitor has manually switched back to the desktop-style "whole spread" layout
+   * (see `spreadViewForced`). A caller that gives page mode extra vertical headroom to enlarge into
+   * (PhotoUploadPage.vue's own taller mobile book-column) can listen for this to shrink back down
+   * again in spread view, where that headroom just sits empty instead of being used for anything. */
+  'update:spread-view': [forced: boolean]
 }>()
 
 // Real table-of-contents rows for every toc-placeholder in the book — computed once from the
@@ -327,6 +362,23 @@ function sidesFor(page: JournalPage | undefined): { left: string | null; right: 
 // starts peeling away (which may mean it becomes empty, e.g. the right side going blank as the last
 // spread turns to the back cover). The far half only catches up once the turning leaf lands, at
 // which point `viewingPageId` settles onto the target too.
+// Page mode (mobile only, see the dedicated section near the bottom of this file): which physical
+// half of the CURRENT spread is shown full-frame instead of both halves side by side. Only
+// meaningful when both `leftPageId`/`rightPageId` are populated (a real spread/TOC) — declared
+// here (not down with the rest of the page-mode logic) since the `focusPageId` watch below needs
+// to set it immediately.
+const isMobileViewport = useMobileViewport()
+// Manual override — the toolbar toggle button (`.questionnaire-book__view-toggle`) below flips
+// this, letting a mobile visitor opt back into the desktop-style "whole spread at once" layout
+// (and back) instead of always getting page mode just because the viewport is narrow.
+const spreadViewForced = ref(false)
+const pageModeEnabled = computed(() => isMobileViewport.value && !spreadViewForced.value)
+function toggleViewFormat(): void {
+  spreadViewForced.value = !spreadViewForced.value
+}
+watch(spreadViewForced, (forced) => emit('update:spread-view', forced), { immediate: true })
+const activeHalfSide = ref<'left' | 'right'>('left')
+
 const viewingPageId = ref<string | null>(props.pages[0]?.id ?? null)
 const initialSides = sidesFor(props.pages[0])
 const leftPageId = ref<string | null>(initialSides.left)
@@ -349,6 +401,7 @@ watch(
       const sides = sidesFor(props.pages.find((p) => p.id === pageId))
       leftPageId.value = sides.left
       rightPageId.value = sides.right
+      activeHalfSide.value = sides.left ? 'left' : 'right'
     }
   },
   { immediate: true },
@@ -388,13 +441,51 @@ interface RenderedHalf {
   canvasData: CanvasData | null
 }
 
+// Page mode (see the dedicated section near the bottom of the file): whether a real spread/TOC
+// (both sides populated) is currently eligible for the enlarged, per-half-centered zoom AND has a
+// same-canvas OTHER half to swipe/pan toward — used only to drive that separate transform layer,
+// NOT the frame's own size/ratio below. The frame itself stays at its normal spread size throughout
+// (including mid-flip) specifically so paging through it never involves a visible shrink/regrow —
+// see `pageModeLayerStyle`'s own comment. `pageModeVisualActive` right below is the broader
+// version (also true for a lone cover, which gets the SAME enlarging transform, just centered in
+// place with no pan — see `pageModeAnchorX`) — this one narrower flag is still needed separately
+// for anything that specifically means "…and there's another half of THIS spread to go to" (the
+// swipe's own same-spread-vs-edge branch, `flip`'s half-aware early return).
+const pageModeBothSidesActive = computed(
+  () => pageModeEnabled.value && !turning.value && Boolean(leftPageId.value) && Boolean(rightPageId.value),
+)
+// Broader than the above — also true for a lone cover (COVER/BACK_COVER), which gets page mode's
+// same enlarging transform (see `pageModeLayerStyle`) despite having no second half to pan toward;
+// `pageModeAnchorX` returns 0 (no pan) whenever `pageModeBothSidesActive` is false, so the cover
+// just scales up in place around its own (already re-centered — see `coverCenteredOnMobile`) box.
+const pageModeVisualActive = computed(
+  () => pageModeEnabled.value && !turning.value && Boolean(leftPageId.value || rightPageId.value),
+)
+
 // Only while at rest on a lone cover does the frame itself shrink to page width — mid-flip it stays
 // full spread width throughout (avoids having to animate the frame's own size in sync with the
 // flap's rotation, which `turning` sidesteps entirely: it snaps to full width the instant a flip
 // starts, and only shrinks back afterwards if the flip actually landed on another lone cover).
+//
+// This half-width layout is DELIBERATELY kept exactly as-is even for a mobile-page-mode cover
+// (unlike an earlier version of this code, which instead widened the FRAME itself to 100 units
+// there): PAGE_ASPECT_RATIO is exactly half of SPREAD_ASPECT_RATIO, so at this same half-width the
+// cover's own computed HEIGHT already lands on exactly the same value a full-width spread's own
+// height would — the reason the size doesn't visibly jump when `turning` (below) forces the frame
+// back to full spread width/ratio for the flap to animate in. Widening the layout box itself to
+// look "full size" broke exactly that equality (a taller/narrower box needs MORE height at 100
+// units than a spread does at its own 100 units), which is what made the turn visibly shrink the
+// book — see `pageModeScale`'s own doc comment for how "looks big" is achieved instead, purely as
+// a transform on top of this SAME, unchanged layout box.
 const isSingleSlotAtRest = computed(() => !turning.value && Boolean(leftPageId.value) !== Boolean(rightPageId.value))
+// On mobile page mode specifically, a lone cover is still centered rather than hugging an edge at
+// half width — this alone (no width change) is enough to match the "reads as centered, not off to
+// one side" ask without touching the layout math above. Desktop (and any other page —
+// QuestionnairePage/JournalReviewPage/MissingPhotosModal) keeps the original edge-hugging "real
+// book" look unchanged.
+const coverCenteredOnMobile = computed(() => pageModeEnabled.value && isSingleSlotAtRest.value)
 const singleSlotSide = computed<'left' | 'right' | null>(() => {
-  if (!isSingleSlotAtRest.value) {
+  if (!isSingleSlotAtRest.value || coverCenteredOnMobile.value) {
     return null
   }
   return leftPageId.value ? 'left' : 'right'
@@ -545,16 +636,28 @@ watch(
   { immediate: true },
 )
 
-// Only SPREAD slots are reorderable — the cover/back-cover stay pinned at the very start/end (same
-// rule `reorderJournalSpreads`/JournalStructurePanel.vue's drag-and-drop already enforce). Just
-// used to gate the "Изменить порядок" button (need at least 2 to reorder) — SpreadReorderDialog
-// does the actual reordering.
-const spreadIds = computed(() => props.pages.filter((page) => page.slotType === 'SPREAD').map((page) => page.id))
-const reorderDialogOpen = ref(false)
+const spreadManagerOpen = ref(false)
 
+/** In page mode (see `pageModeBothSidesActive`), a real spread/TOC's two halves are only shown one at
+ * a time — the FIRST next/prev (from an arrow, or a committed swipe — see the page-mode section
+ * near the bottom) just reveals the OTHER half of the SAME canvas: a plain `activeHalfSide` flip,
+ * no `JournalPage` change, no 3D turn. Only once already at that spread's own edge does this fall
+ * through to a real page turn below — shared by both the built-in arrows AND swipe, so they can
+ * never disagree about where "the other half" is. */
 function flip(direction: 'next' | 'prev'): void {
   if (turning.value) {
     return
+  }
+
+  if (pageModeEnabled.value && leftPageId.value && rightPageId.value) {
+    if (direction === 'next' && activeHalfSide.value === 'left') {
+      activeHalfSide.value = 'right'
+      return
+    }
+    if (direction === 'prev' && activeHalfSide.value === 'right') {
+      activeHalfSide.value = 'left'
+      return
+    }
   }
 
   const targetIndex = viewingIndex.value + (direction === 'next' ? 1 : -1)
@@ -565,6 +668,16 @@ function flip(direction: 'next' | 'prev'): void {
   const currentPage = props.pages[viewingIndex.value]
   const targetPage = props.pages[targetIndex]
   const targetSides = sidesFor(targetPage)
+
+  // Freezes whatever page-mode transform was active right before the turn (see
+  // `pageModeFrozenStyle`'s own doc comment) — captured HERE, before `leftPageId`/`rightPageId`
+  // start changing below, so it reflects the correct pre-turn state regardless of what they
+  // transiently do mid-turn (e.g. one side briefly going null crossing into/out of a lone cover).
+  pageModeFrozenStyle.value = pageModeVisualActive.value
+    ? { transform: `translate(${pageModeX.value}px, 0) scale(${currentPageModeScale()})` }
+    : undefined
+  pageModeFrozenCentered.value = pageModeVisualActive.value
+  pageModeFrozenScale.value = pageModeVisualActive.value ? currentPageModeScale() : 1
 
   turning.value = true
   turnDirection.value = direction
@@ -595,6 +708,14 @@ function flip(direction: 'next' | 'prev'): void {
       viewingPageId.value = targetPage.id
       turning.value = false
       turnAngle.value = 0
+      // Entry side for the landed page's own page-mode half (see `flip`'s own doc comment): arriving
+      // via 'next' lands reading-order-first (left); via 'prev' lands at the tail end (right) — a
+      // lone cover (only one side populated) just uses whichever side that is, regardless.
+      if (targetSides.left && targetSides.right) {
+        activeHalfSide.value = direction === 'next' ? 'left' : 'right'
+      } else {
+        activeHalfSide.value = targetSides.left ? 'left' : 'right'
+      }
     }, 620),
   )
 }
@@ -607,51 +728,28 @@ function notify(text: string, color: 'success' | 'error' = 'success'): void {
   snackbar.show = true
 }
 
+// Own local dialog state for the frame's own "Сменить шаблон" button (the CURRENTLY-viewed page
+// only) — no queue needed here any more: adding spreads (which used to queue a template pick for
+// each of the 2 new ones) now lives entirely in SpreadManagerDialog.vue, which owns its own
+// separate instance of this same picker for that — see its own doc comment on why each consumer
+// manages its own independent state instead of sharing one.
 const templatePicker = reactive<{
   open: boolean
   page: JournalPage | null
-  sequence: { current: number; total: number } | null
-}>({ open: false, page: null, sequence: null })
-
-// Queue of spreads still waiting for a template choice — empty outside the "just added N new
-// spreads" flow (see `handleAddSpread`), so `advanceTemplateQueue` closing the dialog once it's
-// empty also correctly closes a single ad-hoc pick (`openTemplatePicker`) after just one apply.
-const templateQueue = ref<JournalPage[]>([])
-const templateQueueTotal = ref(0)
+}>({ open: false, page: null })
 
 function openTemplatePicker(): void {
   const page = props.pages.find((item) => item.id === viewingPageId.value) ?? null
   if (!page) {
     return
   }
-  templateQueue.value = []
-  templateQueueTotal.value = 0
   templatePicker.page = page
-  templatePicker.sequence = null
   templatePicker.open = true
 }
 
 function closeTemplatePicker(): void {
   templatePicker.open = false
   templatePicker.page = null
-  templatePicker.sequence = null
-  templateQueue.value = []
-  templateQueueTotal.value = 0
-}
-
-/** Pops the next spread off `templateQueue` and reopens the dialog on it, or closes the dialog
- * once the queue (and any single ad-hoc pick) is exhausted. */
-function advanceTemplateQueue(): void {
-  const next = templateQueue.value.shift()
-  if (!next) {
-    closeTemplatePicker()
-    return
-  }
-
-  const current = templateQueueTotal.value - templateQueue.value.length
-  templatePicker.page = next
-  templatePicker.sequence = { current, total: templateQueueTotal.value }
-  templatePicker.open = true
 }
 
 async function handleApplyTemplate(payload: SetJournalPageTemplatePayload): Promise<void> {
@@ -662,35 +760,9 @@ async function handleApplyTemplate(payload: SetJournalPageTemplatePayload): Prom
   try {
     await store.setJournalPageTemplate(templatePicker.page.id, payload)
     notify('Шаблон применён')
-    advanceTemplateQueue()
+    closeTemplatePicker()
   } catch {
     notify(store.orderError ?? 'Не удалось применить шаблон', 'error')
-  }
-}
-
-async function handleAddSpread(): Promise<void> {
-  // Adds 2 spreads (4 pages) at once, both starting on the same auto-picked default template —
-  // see order-builder.store.ts's addJournalSpread doc comment. Diffing spread ids before/after
-  // queues both new spreads through the template picker right away, one after another, instead of
-  // leaving the default silently applied to either.
-  const previousSpreadIds = new Set(
-    (store.order?.journalPages ?? []).filter((page) => page.slotType === 'SPREAD').map((page) => page.id),
-  )
-
-  try {
-    await store.addJournalSpread()
-    notify('4 страницы добавлены')
-
-    const newSpreads = (store.order?.journalPages ?? []).filter(
-      (page) => page.slotType === 'SPREAD' && !previousSpreadIds.has(page.id),
-    )
-    if (newSpreads.length > 0) {
-      templateQueue.value = newSpreads
-      templateQueueTotal.value = newSpreads.length
-      advanceTemplateQueue()
-    }
-  } catch {
-    notify(store.orderError ?? 'Не удалось добавить страницы', 'error')
   }
 }
 
@@ -1030,18 +1102,271 @@ watch(viewingPageId, () => {
   }
 })
 
+// ---------------------------------------------------------------------------
+// Page mode (mobile only — see `pageModeVisualActive`): a real spread/TOC is shown ENLARGED,
+// auto-centered on whichever half is "active" (`activeHalfSide`), so it reads as a big single page
+// with a bit of the OTHER half peeking in at the edge — not a smaller, separately-cropped render
+// (that both looked and behaved like a size change while flipping, which is exactly what this
+// replaced). A lone cover (COVER/BACK_COVER) gets the SAME enlarging transform, just with no pan
+// (already centered by its own layout — see `coverCenteredOnMobile`), since it has no second half
+// to point toward. The frame itself (`frameStyle`/`renderedHalves`) is completely untouched by
+// page mode — same spread, same size, same both-halves-side-by-side layout as ever (and a lone
+// cover keeps its own original half-width layout too, deliberately — see `isSingleSlotAtRest`'s own
+// comment on why its height already matches a spread's); this is purely an extra transform layer
+// (`.questionnaire-book__page-mode-layer`, wrapping the existing pinch-zoom layer — see the
+// template) that enlarges and pans it, exactly like the user's own pinch-zoom already does, just
+// automatic/anchored per half (or centered, for a cover) instead of gesture-driven. A swipe pans
+// this same layer between "centered on left" and "centered on right" within a spread; at the
+// spread's own edge — or from a lone cover, which has no "own edge" to be anywhere but at — it
+// instead hands off to the existing `flip()` 3D turn (see its own doc comment on being half-aware) — and
+// since this layer's scale/pan never resets around that call, the turn plays out at the SAME
+// enlarged size throughout, with no visible shrink/regrow. Independent of `zoomEnabled` — page mode
+// is needed even where pinch-to-zoom is off (QuestionnairePage.vue/MissingPhotosModal.vue) — so
+// these handlers are wired up unconditionally, on their OWN separate layer from `handleZoom*`
+// above, which stays completely unaware page mode exists (its own `zoomScale`/`zoomX`/`zoomY`
+// keep meaning exactly what they always did, just relative to an already-enlarged view).
+// ---------------------------------------------------------------------------
+
+// Upper bound only — tuned by eye as "big enough that the active half clearly dominates the
+// frame, small enough that a real sliver of the other half still shows at the edge" (the actual
+// point of this whole mode), but the REAL scale used (see `currentPageModeScale`) is capped to
+// whatever the frame's own available vertical space allows. Uniform (same X/Y factor) is required
+// — a non-uniform scale (scaleX only) was tried first specifically to dodge that vertical-space
+// limit, but it stretches every photo/line of text in the page out of its own proportions, which
+// reads as far more obviously "wrong" than just not enlarging quite as much would.
+const PAGE_MODE_ZOOM_SCALE_MAX = 1.8
+const PAGE_SWIPE_TAP_THRESHOLD = 6
+// Only applied to the current half's own rubber-band drag right at the spread's own edge (nothing
+// further within it to pan to) — a fraction of the raw finger movement, so it reads as "resisting"
+// rather than tracking 1:1 like the within-spread pan does.
+const PAGE_SWIPE_EDGE_RESISTANCE = 0.35
+const PAGE_SWIPE_DISTANCE_FRACTION = 0.25
+const PAGE_SWIPE_VELOCITY_THRESHOLD = 0.5
+
+const pageModeLayerRef = ref<HTMLDivElement | null>(null)
+const frameRef = ref<HTMLDivElement | null>(null)
+const pageModeX = ref(0)
+const swipeGestureActive = ref(false)
+// Snapshot of the page-mode transform taken the instant a real turn (`flip`'s own non-early-return
+// path) begins — `pageModeLayerStyle` uses this, frozen, for the whole turn instead of its normal
+// reactive computation, since `leftPageId`/`rightPageId` (and so `pageModeBothSidesActive`) pass
+// through transient states mid-turn (e.g. one side briefly null crossing into/out of a lone cover)
+// that would otherwise make the transform flicker off and the book visibly shrink mid-turn.
+const pageModeFrozenStyle = ref<{ transform: string } | undefined>(undefined)
+// Same freeze, for whether the frame sits vertically centered (`--page-mode-centered`, see the
+// template) — without this, the SAME mid-turn `pageModeBothSidesActive` flip that used to blank
+// the scale also flips this back to the frame's plain mobile flex-end alignment, so the book jumps
+// downward mid-turn (its centering point moving) even once the scale itself no longer resets.
+const pageModeFrozenCentered = ref(false)
+const pageModeCentered = computed(() => (turning.value ? pageModeFrozenCentered.value : pageModeVisualActive.value))
+// Same freeze, for the plain NUMBER (not the transform string) — used to counter-scale UI chrome
+// that sits inside the enlarged frame (the "Сменить шаблон" button below) back down to its normal
+// size, since it's a descendant of the transformed layer and would otherwise visually grow right
+// along with the book itself.
+const pageModeFrozenScale = ref(1)
+const pageModeButtonScale = computed(() => {
+  const scale = turning.value ? pageModeFrozenScale.value : pageModeVisualActive.value ? currentPageModeScale() : 1
+  return scale > 1 ? 1 / scale : 1
+})
+
+/** The largest UNIFORM scale that still leaves the frame's full height inside the available
+ * vertical space (`pageModeLayerRef`'s own, unscaled) — usually well under `PAGE_MODE_ZOOM_SCALE_MAX`
+ * is already achievable given how much taller a portrait phone viewport is than a landscape spread,
+ * but this never lets the enlarged frame's height exceed what's actually there, whatever that is. */
+let lastLoggedScaleInputs = ''
+function currentPageModeScale(): number {
+  const container = pageModeLayerRef.value
+  const frame = frameRef.value
+  if (!container || !frame || frame.clientHeight <= 0) {
+    return 1
+  }
+  const maxFit = container.clientHeight / frame.clientHeight
+  const result = Math.max(1, Math.min(PAGE_MODE_ZOOM_SCALE_MAX, maxFit))
+  // TEMP DEBUG
+  const key = `${container.clientWidth}x${container.clientHeight} / ${frame.clientWidth}x${frame.clientHeight}`
+  if (key !== lastLoggedScaleInputs) {
+    lastLoggedScaleInputs = key
+    console.log(
+      `[page-mode-scale] container=${container.clientWidth}x${container.clientHeight} frame=${frame.clientWidth}x${frame.clientHeight} maxFit=${maxFit.toFixed(3)} result=${result.toFixed(3)} fitHeight=${props.fitHeight}`,
+    )
+  }
+  return result
+}
+
+/** The pan (`pageModeX`) that centers `side`'s own half of the current spread in the frame — or,
+ * for a lone cover (`pageModeBothSidesActive` false), just 0: it's already re-centered by its own
+ * layout (see `coverCenteredOnMobile`'s margin removal, not a pan), so the scale in
+ * `pageModeLayerStyle` alone enlarges it in place around that same center, no translate needed.
+ *
+ * For the spread case, CSS composes `transform: translate(tx) scale(S)` as scale-then-translate
+ * (`final = local*S + tx`, scale applied first around the transform-origin, translate a flat
+ * screen-px shift after) — a local point `p0` (the target half's own center, at ∓¼ of the frame's
+ * width from the spread's own center/spine) ends up on screen at `p0*S + tx`; solving that for 0
+ * (dead center) gives `tx = -p0*S`. (An EARLIER version of this used `p0*(1-S)` instead, by wrongly
+ * pattern-matching `applyDoubleTapZoom`'s own `zoomX = -offsetX` — that one only works out to the
+ * same thing at S=2, not in general, and being off by the extra `+p0` term cut off the far edge of
+ * whichever half was active instead of centering it.) */
+function pageModeAnchorX(side: 'left' | 'right'): number {
+  if (!pageModeBothSidesActive.value) {
+    return 0
+  }
+  const frameWidth = pageModeLayerRef.value?.clientWidth || 0
+  const localCenter = (frameWidth / 4) * (side === 'left' ? -1 : 1)
+  return -localCenter * currentPageModeScale()
+}
+
+const pageModeLayerStyle = computed(() => {
+  if (turning.value) {
+    return pageModeFrozenStyle.value
+  }
+  if (!pageModeVisualActive.value) {
+    return undefined
+  }
+  return { transform: `translate(${pageModeX.value}px, 0) scale(${currentPageModeScale()})` }
+})
+
+let swipePointerId: number | null = null
+let swipeStartX = 0
+let swipeStartTime = 0
+let swipeStartAnchorX = 0
+let swipeRawDx = 0
+let swipeMoved = false
+let swipeDirection: 'next' | 'prev' | null = null
+
+function handlePageSwipePointerDown(event: PointerEvent): void {
+  if (swipePointerId !== null) {
+    // A second finger just landed mid-swipe — a pinch (or accidental multi-touch), not a swipe;
+    // back off entirely instead of silently retargeting to it (handleZoomPointerDown above takes
+    // over from here when zoomEnabled).
+    swipePointerId = null
+    swipeGestureActive.value = false
+    pageModeX.value = pageModeAnchorX(activeHalfSide.value)
+    return
+  }
+  // Only starts a page-mode pan when at this layer's own rest scale — once the user has pinched
+  // in FURTHER (zoomScale > 1, tracked entirely by the separate, inner zoom layer), a single-finger
+  // drag instead pans WITHIN that closer view (handleZoomPointerMove's own zoomScale > 1 branch).
+  // `pageModeVisualActive` (not the narrower `pageModeBothSidesActive`) so a swipe CAN start on a
+  // lone cover too — it just has nowhere within itself to pan to (see `hasSameSpreadTarget` below),
+  // so it always takes the rubber-band-then-flip path.
+  if (!pageModeVisualActive.value || zoomScale.value !== 1) {
+    return
+  }
+  // Clears any leftover suppression from a previous gesture that never got a click to consume it —
+  // same reasoning as handleZoomPointerDown's own identical line.
+  suppressNextClick = false
+  swipePointerId = event.pointerId
+  swipeStartX = event.clientX
+  swipeStartTime = performance.now()
+  swipeStartAnchorX = pageModeAnchorX(activeHalfSide.value)
+  swipeMoved = false
+  swipeRawDx = 0
+  swipeDirection = null
+}
+
+function handlePageSwipePointerMove(event: PointerEvent): void {
+  if (swipePointerId === null || swipePointerId !== event.pointerId) {
+    return
+  }
+  swipeRawDx = event.clientX - swipeStartX
+  if (!swipeMoved && Math.abs(swipeRawDx) < PAGE_SWIPE_TAP_THRESHOLD) {
+    return
+  }
+  if (!swipeMoved) {
+    swipeMoved = true
+    swipeGestureActive.value = true
+    suppressNextClick = true
+    try {
+      pageModeLayerRef.value?.setPointerCapture(event.pointerId)
+    } catch {
+      // Not fatal — the gesture still works via normal event bubbling as long as the finger stays
+      // over this element (the page-mode touch-action: none modifiers below already help with that).
+    }
+  }
+  const direction: 'next' | 'prev' = swipeRawDx < 0 ? 'next' : 'prev'
+  swipeDirection = direction
+  const hasSameSpreadTarget =
+    pageModeBothSidesActive.value &&
+    ((direction === 'next' && activeHalfSide.value === 'left') || (direction === 'prev' && activeHalfSide.value === 'right'))
+  const dx = hasSameSpreadTarget ? swipeRawDx : swipeRawDx * PAGE_SWIPE_EDGE_RESISTANCE
+  pageModeX.value = swipeStartAnchorX + dx
+  event.preventDefault()
+}
+
+function handlePageSwipePointerUp(event: PointerEvent): void {
+  if (swipePointerId === null || swipePointerId !== event.pointerId) {
+    return
+  }
+  swipePointerId = null
+  swipeGestureActive.value = false
+
+  if (!swipeMoved || !swipeDirection) {
+    pageModeX.value = pageModeAnchorX(activeHalfSide.value)
+    return
+  }
+
+  const elapsedMs = Math.max(1, performance.now() - swipeStartTime)
+  const velocity = Math.abs(swipeRawDx) / elapsedMs
+  const frameWidth = perspectiveRef.value?.clientWidth || 1
+  const distanceFraction = Math.abs(swipeRawDx) / frameWidth
+  const committed = distanceFraction >= PAGE_SWIPE_DISTANCE_FRACTION || velocity >= PAGE_SWIPE_VELOCITY_THRESHOLD
+
+  if (!committed) {
+    pageModeX.value = pageModeAnchorX(activeHalfSide.value)
+    return
+  }
+
+  // `flip` (see its own doc comment) updates `activeHalfSide` SYNCHRONOUSLY when it's just
+  // revealing the other half of THIS spread — comparing before/after tells the two cases apart
+  // without duplicating that logic here.
+  const sideBefore = activeHalfSide.value
+  flip(swipeDirection)
+
+  if (activeHalfSide.value !== sideBefore) {
+    // Same-spread toggle already landed — pan to the new anchor right away.
+    pageModeX.value = pageModeAnchorX(activeHalfSide.value)
+  } else {
+    // A real page turn is now in flight (`activeHalfSide` only updates once flip's own 620ms turn
+    // lands — see its doc comment) — settle the rubber-band back to the pre-drag anchor for now;
+    // the `watch` below picks up the eventual `activeHalfSide` change and pans to the NEW spread's
+    // entry anchor once it actually happens, so the "camera" never jumps ahead of the content.
+    pageModeX.value = pageModeAnchorX(sideBefore)
+  }
+}
+
+function handlePageSwipePointerCancel(event: PointerEvent): void {
+  if (swipePointerId === null || swipePointerId !== event.pointerId) {
+    return
+  }
+  swipePointerId = null
+  swipeGestureActive.value = false
+  pageModeX.value = pageModeAnchorX(activeHalfSide.value)
+}
+
+// Keeps the pan anchored on whatever `flip`/the arrows/the `focusPageId` jump just settled
+// `activeHalfSide` on — covers every way it can change, not just the swipe release above (e.g. the
+// built-in arrow buttons, or landing on a lone cover, which still gets page mode's enlarging
+// transform — just centered/pan-less, see `pageModeAnchorX`). Runs immediately too, but
+// `pageModeLayerRef` isn't mounted yet at that point (frameWidth reads 0) — `onMounted` below
+// recomputes it once the real size is available.
+watch([activeHalfSide, pageModeVisualActive], () => {
+  if (!swipeGestureActive.value) {
+    pageModeX.value = pageModeAnchorX(activeHalfSide.value)
+  }
+}, { immediate: true })
+
 // Safari (iOS/macOS) recognizes a two-finger pinch through its OWN proprietary `gesturestart`/
 // `gesturechange`/`gestureend` events — a WebKit-only mechanism that predates (and is entirely
 // separate from) both Pointer Events and the standard `touch-action` CSS property. `touch-action:
-// none` (see `.questionnaire-book__perspective--zoom-enabled`) stops the pointermove-driven side of
-// things, but on Safari specifically the page can still zoom itself through THIS other channel
-// unless it's blocked here too — this is the documented reason a pinch can still zoom the whole
-// window instead of just the book despite touch-action being set correctly. Other browsers simply
-// never fire these events, so this listener is a harmless no-op there. Untyped (`Event`, not a
-// `GestureEvent`) since that type isn't part of the standard DOM lib — only `preventDefault()` is
-// actually needed here.
+// none` (see `.questionnaire-book__perspective--zoom-enabled`/`--page-mode`) stops the
+// pointermove-driven side of things, but on Safari specifically the page can still zoom itself
+// through THIS other channel unless it's blocked here too — this is the documented reason a pinch
+// can still zoom the whole window instead of just the book despite touch-action being set
+// correctly. Other browsers simply never fire these events, so this listener is a harmless no-op
+// there. Untyped (`Event`, not a `GestureEvent`) since that type isn't part of the standard DOM
+// lib — only `preventDefault()` is actually needed here.
 function preventNativeGestureZoom(event: Event): void {
-  if (props.zoomEnabled) {
+  if (props.zoomEnabled || pageModeEnabled.value) {
     event.preventDefault()
   }
 }
@@ -1050,11 +1375,17 @@ onMounted(() => {
   const el = perspectiveRef.value
   el?.addEventListener('gesturestart', preventNativeGestureZoom)
   el?.addEventListener('gesturechange', preventNativeGestureZoom)
+
+  // The `watch([activeHalfSide, pageModeVisualActive], ...)` above already ran once (immediate)
+  // before `pageModeLayerRef` existed, so its frameWidth read as 0 — now that it's actually
+  // mounted, recompute for real.
+  pageModeX.value = pageModeAnchorX(activeHalfSide.value)
 })
 
 onBeforeUnmount(() => {
   timers.forEach(clearTimeout)
   timers = []
+  swipePointerId = null
 
   const el = perspectiveRef.value
   el?.removeEventListener('gesturestart', preventNativeGestureZoom)
@@ -1115,10 +1446,16 @@ defineExpose({ flip })
   perspective: 1800px;
 }
 
-// Only actually clips while zoomed IN (scale > 1, see the template) — left alone at rest so it
+// Only actually clips while zoomed IN (scale > 1, from a manual pinch) — left alone at rest so it
 // never risks clipping `.questionnaire-book__frame`'s own drop-shadow, which is allowed to bleed
 // past the frame's own box (see that rule's comment) and would otherwise get cut off here, since
-// this box is normally sized to match the frame almost exactly.
+// this box is normally sized to match the frame almost exactly. Page mode's OWN enlargement is
+// deliberately NOT clipped here any more — this box is also the containing block for `nav-overlay`
+// (PhotoUploadPage.vue's round prev/next arrows, positioned to straddle the frame's own edge on
+// purpose), and page mode is active for the entire time a spread is shown on mobile, not just
+// during an occasional manual pinch, so clipping it here was clipping those arrows too, constantly.
+// See `.questionnaire-book__page-mode-layer--clipped` instead, which only contains the actually-
+// enlarged content, not the arrows.
 .questionnaire-book__perspective--zoomed {
   overflow: hidden;
 }
@@ -1132,6 +1469,52 @@ defineExpose({ flip })
 // entirely where zoom is never offered (QuestionnairePage.vue), same reasoning as that inner rule.
 .questionnaire-book__perspective--zoom-enabled {
   touch-action: none;
+}
+
+// Same reasoning as the zoom-enabled rule above, for page-mode swipe instead — needed even where
+// zoom is off (QuestionnairePage.vue/MissingPhotosModal.vue), since page mode itself is independent
+// of `zoomEnabled` (see handlePageSwipePointerDown's own doc comment).
+.questionnaire-book__perspective--page-mode {
+  touch-action: none;
+}
+
+// The OUTER of the two independent transform layers (see the template's own comment) — enlarges
+// and pans the whole spread to keep the active half centered in page mode. Same base layout as
+// `.questionnaire-book__zoom-layer` below (which it wraps): sized to fill its parent, flex-centers
+// it. No mobile flex-end override here (unlike zoom-layer below) — its only child (zoom-layer)
+// always has an explicit height:100%, which makes align-items on THIS box a no-op either way; the
+// one that actually matters for where the frame ends up is zoom-layer's own, right below.
+.questionnaire-book__page-mode-layer {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform-origin: center center;
+  transition: transform 260ms ease;
+}
+
+// touch-action: none only where page mode is actually active — everywhere else this stays inert,
+// same reasoning as `.questionnaire-book__zoom-layer--enabled` below.
+.questionnaire-book__page-mode-layer--enabled {
+  touch-action: none;
+}
+
+// No transition while a page-mode swipe is actively being tracked — same reasoning as
+// `.questionnaire-book__zoom-layer--gesture` below, the transform needs to track the finger
+// immediately, not ease toward a stale target a frame behind.
+.questionnaire-book__page-mode-layer--gesture {
+  transition: none;
+}
+
+// Clips the enlarged frame to THIS box's own edges while page mode's own scale is actually active
+// (see `pageModeCentered`, already frozen/stable through a turn — same reasoning applies here so
+// this doesn't flicker off mid-turn either). Deliberately on this inner layer, not
+// `.questionnaire-book__perspective` (see that rule's own updated comment) — this box only wraps
+// the actually-enlarged content, not `nav-overlay`'s prev/next arrows, which sit outside it as
+// perspective's own children and are positioned to straddle the frame's own edge on purpose.
+.questionnaire-book__page-mode-layer--clipped {
+  overflow: hidden;
 }
 
 // Wraps the frame so pinch/pan (see `handleZoomPointerDown` and friends) can transform IT without
@@ -1154,9 +1537,23 @@ defineExpose({ flip })
   // the whole box regardless of the frame's own size, so a plain `align-items` on the perspective
   // rule itself has nothing left to redistribute — this is the one that matters). flex-end collects
   // it above the frame instead of splitting it, so the frame sits flush against the toolbar row
-  // below instead of leaving visible space above it, on request.
+  // below instead of leaving visible space above it, on request. Overridden back to centered
+  // whenever page mode's own scale is active — see `--centered` right below.
   @include mobile-only {
     align-items: flex-end;
+  }
+}
+
+// Page mode's own enlarging transform (on `.questionnaire-book__page-mode-layer`, wrapping this
+// box) scales around THIS box's own vertical center — flex-end above would leave the frame sitting
+// at the BOTTOM of the leftover vertical slack instead, well below that center, so scaling would
+// grow it asymmetrically (as if anchored near its bottom edge, not its middle) rather than evenly
+// in both directions. Re-centering here whenever that scale is actually active keeps the two
+// aligned, so a page's own leftover vertical room (see `currentPageModeScale`) is what actually
+// gets consumed by the enlargement, split evenly above/below, instead of sitting unused above it.
+.questionnaire-book__zoom-layer--page-mode-centered {
+  @include mobile-only {
+    align-items: center;
   }
 }
 
@@ -1185,6 +1582,21 @@ defineExpose({ flip })
   // room to animate across without being clipped); a plain box-shadow would cast a shadow-tinted
   // rectangle over that empty side too. A drop-shadow only ever hugs whatever's actually there.
   filter: drop-shadow(0 24px 60px rgba(0, 0, 0, 0.14));
+}
+
+// Turned off while page mode's own transform is active (see `.questionnaire-book__page-mode-layer`
+// in the template) — for two reasons. Visually, the whole point there is the book filling most of
+// the screen, where a decorative shadow scaled up right along with it (a CSS filter on a
+// transformed element scales with it) reads as an odd, oversized smudge rather than the subtle lift
+// it's meant to be at the frame's normal, smaller size. More importantly, it also sidesteps a real
+// Safari bug: a `filter: drop-shadow` child sitting inside a transformed ancestor renders GRAYED
+// OUT on that browser (see `zoomLayerStyle`'s own doc comment on the exact same bug, which is why
+// pinch-zoom's transform only ever gets created once genuinely zoomed in) — page mode's own
+// transform is active for essentially the entire time a page is shown on mobile, unlike pinch-zoom,
+// so there was no equivalent "just don't create the transform until needed" escape hatch available
+// here; dropping the filter itself instead does the job just as well.
+.questionnaire-book__frame--page-mode {
+  filter: none;
 }
 
 .questionnaire-book__frame--pulse {
@@ -1302,10 +1714,51 @@ defineExpose({ flip })
   cursor: pointer;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
   transition: background 0.15s ease, transform 0.15s ease;
+  // Counter-scales this button back to its normal size against page mode's own enlargement of its
+  // ancestor (`--page-mode-btn-scale`, set inline — see `pageModeButtonScale`'s own doc comment) —
+  // 1 (a no-op) outside page mode, where the custom property is never set. Anchored at the same
+  // corner this button is already pinned to (bottom right), so shrinking it back down doesn't also
+  // drag it away from that corner.
+  transform: scale(var(--page-mode-btn-scale, 1));
+  transform-origin: bottom right;
 
   &:hover {
     background: $white;
-    transform: scale(1.06);
+    transform: scale(calc(var(--page-mode-btn-scale, 1) * 1.06));
+  }
+}
+
+// Mirrors .questionnaire-book__template-btn exactly, just pinned to the opposite (bottom-left)
+// corner so the two buttons never collide.
+// Lives in the toolbar row below the frame (not overlaid on it like .questionnaire-book__template-
+// btn) — only ever rendered on mobile (v-if="isMobileViewport" in the template) — so unlike that
+// one, this needs no page-mode counter-scale (see `pageModeButtonScale`'s own comment): it sits
+// outside the enlarged transform layer entirely, never grows with it in the first place. A small
+// circle (matching that same button's shape) rather than a labeled pill like its two toolbar
+// neighbors — pink-accented to match the rest of the mobile book UI, same as their own mobile-only
+// look (see .questionnaire-book__reorder-btn's own comment).
+.questionnaire-book__view-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border: 1px solid $accent;
+  border-radius: 50%;
+  background: $white;
+  color: $accent-deep;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+
+  &:hover {
+    border-color: $accent-deep;
+  }
+
+  :deep(.v-icon) {
+    width: 14px !important;
+    height: 14px !important;
+    font-size: 14px !important;
   }
 }
 
@@ -1452,45 +1905,4 @@ defineExpose({ flip })
   }
 }
 
-.questionnaire-book__add-spread {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: $spacing-1 $spacing-3;
-  border: 1px dashed $border-default;
-  border-radius: 999px;
-  background: transparent;
-  color: $text-secondary;
-  font-size: $font-size-body-sm;
-  cursor: pointer;
-  transition: border-color 0.15s ease, color 0.15s ease;
-
-  &:hover:not(:disabled) {
-    border-color: $accent;
-    color: $accent;
-  }
-
-  &:disabled {
-    cursor: default;
-    opacity: 0.5;
-  }
-
-  // Same pink-accented treatment as .questionnaire-book__reorder-btn above, plus a light pink
-  // fill (rather than transparent) — mirrors the "Добавить ещё фото" add-tile's own dashed-pink-
-  // on-white-then-pink-hover styling, so this reads as the same "add" action language.
-  @include mobile-only {
-    gap: 3px;
-    padding: 4px 10px;
-    border-color: $accent;
-    background: $accent-tint;
-    color: $accent-deep;
-    font-size: 10px;
-
-    :deep(.v-icon) {
-      width: 12px !important;
-      height: 12px !important;
-      font-size: 12px !important;
-    }
-  }
-}
 </style>

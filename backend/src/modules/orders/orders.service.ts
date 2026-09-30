@@ -40,6 +40,7 @@ import {
 import type { ApplyPromoCodeDto } from './dto/apply-promo-code.dto';
 import type { CalculateDeliveryDto } from './dto/calculate-delivery.dto';
 import type { CreateDraftOrderDto, CreateOrderJournalPageDto } from './dto/create-draft-order.dto';
+import type { RemoveJournalSpreadsDto } from './dto/remove-journal-spreads.dto';
 import type { ReorderJournalSpreadsDto } from './dto/reorder-journal-spreads.dto';
 import type { SaveJournalPageCanvasDto } from './dto/save-journal-page-canvas.dto';
 import type { SetJournalPageTemplateDto } from './dto/set-journal-page-template.dto';
@@ -1060,6 +1061,56 @@ export class OrdersService {
         }),
       ),
     );
+
+    return this.findOne(orderId, userId);
+  }
+
+  /** Mirrors `addJournalSpread`'s own "always in pairs" rule in reverse — 4 pages (1 print
+   * signature) per removal, never a lone page — and keeps `MIN_JOURNAL_SPREADS` as a floor the
+   * same way that method's own doc comment explains it exists. */
+  async removeJournalSpreads(orderId: string, userId: string, dto: RemoveJournalSpreadsDto) {
+    const order = await this.getOwnedOrderOrThrow(orderId, userId, ORDER_INCLUDE);
+
+    if (order.status !== OrderStatus.DRAFT) {
+      throw new BadRequestException('Only draft orders can be edited.');
+    }
+
+    if (dto.spreadIds.length === 0 || dto.spreadIds.length % 2 !== 0) {
+      throw new BadRequestException('Spreads can only be removed in pairs (4 pages at a time).');
+    }
+
+    const spreads = order.journalPages.filter((page) => page.slotType === PageType.SPREAD);
+    const spreadIdSet = new Set(spreads.map((page) => page.id));
+    const removeIdSet = new Set(dto.spreadIds);
+
+    for (const id of removeIdSet) {
+      if (!spreadIdSet.has(id)) {
+        throw new BadRequestException(`Journal spread "${id}" not found in this order.`);
+      }
+    }
+
+    const remainingSpreadCount = spreads.length - removeIdSet.size;
+    if (remainingSpreadCount < MIN_JOURNAL_SPREADS) {
+      throw new BadRequestException(
+        `A journal must keep at least ${MIN_JOURNAL_SPREADS} spreads.`,
+      );
+    }
+
+    const remainingPages = order.journalPages
+      .filter((page) => !removeIdSet.has(page.id))
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+    const totalPrice = calculateJournalPrice(order.magazineType, remainingSpreadCount);
+
+    await this.prisma.$transaction([
+      this.prisma.journalPage.deleteMany({ where: { id: { in: [...removeIdSet] } } }),
+      ...remainingPages.map((page, index) =>
+        this.prisma.journalPage.update({
+          where: { id: page.id },
+          data: { sortOrder: index },
+        }),
+      ),
+      this.prisma.order.update({ where: { id: orderId }, data: { totalPrice } }),
+    ]);
 
     return this.findOne(orderId, userId);
   }

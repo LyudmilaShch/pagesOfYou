@@ -686,6 +686,55 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     }
   }
 
+  /** Mirrors `applyLocalAddSpread`'s own doc comment in reverse — spreads only ever leave in
+   * pairs (4 pages), same print-signature reasoning; the caller (SpreadManagerDialog.vue) is what
+   * actually enforces the even-count/minimum-count rules before calling this at all. */
+  function applyLocalRemoveSpread(spreadIds: string[]): void {
+    if (!order.value) {
+      return
+    }
+
+    const removeIdSet = new Set(spreadIds)
+    const nextPages = order.value.journalPages.filter((page) => !removeIdSet.has(page.id))
+    order.value.journalPages = nextPages.map((page, index) => ({
+      ...page,
+      sortOrder: index,
+    }))
+
+    if (selectedMagazineType.value) {
+      order.value.totalPrice = String(
+        calculateJournalPrice(selectedMagazineType.value, countSpreadSlots(order.value.journalPages)),
+      )
+    }
+
+    if (isLocalDraft.value) {
+      saveLocalDraft(order.value.magazineTypeId, order.value)
+    }
+  }
+
+  async function removeJournalSpread(spreadIds: string[]): Promise<void> {
+    if (!order.value) {
+      return
+    }
+
+    isSaving.value = true
+    orderError.value = null
+
+    try {
+      if (isLocalDraft.value) {
+        applyLocalRemoveSpread(spreadIds)
+        return
+      }
+
+      order.value = await ordersApi.removeJournalSpreads(order.value.id, spreadIds)
+    } catch {
+      orderError.value = 'Не удалось удалить развороты.'
+      throw new Error(orderError.value)
+    } finally {
+      isSaving.value = false
+    }
+  }
+
   function collectMissingRequiredPlaceholders(): Array<{
     journalPageId: string
     pageName: string
@@ -924,6 +973,7 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     regenerateAiText,
     addJournalSpread,
     reorderJournalSpreads,
+    removeJournalSpread,
     getSubmitValidationError,
     collectIncompletePages,
     convertLocalDraftToOrder,

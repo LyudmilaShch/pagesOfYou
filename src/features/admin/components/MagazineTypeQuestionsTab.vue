@@ -321,7 +321,7 @@ async function onDrop(targetId: string): Promise<void> {
 // Native HTML5 drag-and-drop (draggable/@dragstart/@dragover/@drop above) only fires from a
 // mouse — most mobile browsers never start a native drag from a touch gesture at all. This is a
 // parallel, Pointer Events-based path for touch/pen input on the drag handle — mirrors
-// SpreadReorderDialog.vue's own touch-compatible drag.
+// SpreadManagerDialog.vue's own touch-compatible drag.
 function findRowIdAt(clientX: number, clientY: number): string | null {
   const el = document.elementFromPoint(clientX, clientY)
   const row = el ? (el.closest('[data-question-id]') as HTMLElement | null) : null

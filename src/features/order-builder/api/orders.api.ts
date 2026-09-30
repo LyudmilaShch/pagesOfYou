@@ -156,6 +156,14 @@ export const ordersApi = {
     return data.data
   },
 
+  async removeJournalSpreads(orderId: string, spreadIds: string[]): Promise<OrderDetail> {
+    const { data } = await http.delete<BackendResponse<OrderDetail>>(
+      `/orders/${orderId}/journal-spreads`,
+      { data: { spreadIds } },
+    )
+    return data.data
+  },
+
   async setJournalPageTemplate(
     orderId: string,
     journalPageId: string,

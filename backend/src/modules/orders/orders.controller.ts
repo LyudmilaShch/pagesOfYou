@@ -7,6 +7,7 @@ import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { ApplyPromoCodeDto } from './dto/apply-promo-code.dto';
 import { CalculateDeliveryDto } from './dto/calculate-delivery.dto';
 import { CreateDraftOrderDto } from './dto/create-draft-order.dto';
+import { RemoveJournalSpreadsDto } from './dto/remove-journal-spreads.dto';
 import { ReorderJournalSpreadsDto } from './dto/reorder-journal-spreads.dto';
 import { SaveJournalPageCanvasDto } from './dto/save-journal-page-canvas.dto';
 import { SetJournalPageTemplateDto } from './dto/set-journal-page-template.dto';
@@ -108,6 +109,16 @@ export class OrdersController {
   @ApiOperation({ summary: 'Add a spread slot before the back cover' })
   addJournalSpread(@CurrentUser() user: JwtPayload, @Param('orderId') orderId: string) {
     return this.ordersService.addJournalSpread(orderId, user.sub);
+  }
+
+  @Delete(':orderId/journal-spreads')
+  @ApiOperation({ summary: 'Remove spread slots (must be an even count, 4 pages per print signature)' })
+  removeJournalSpreads(
+    @CurrentUser() user: JwtPayload,
+    @Param('orderId') orderId: string,
+    @Body() body: RemoveJournalSpreadsDto,
+  ) {
+    return this.ordersService.removeJournalSpreads(orderId, user.sub, body);
   }
 
   @Patch(':orderId/journal-spreads/reorder')

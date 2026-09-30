@@ -78,7 +78,11 @@
           </p>
         </header>
 
-        <div class="photo-upload-page__book-column" aria-label="Развороты журнала">
+        <div
+          class="photo-upload-page__book-column"
+          :class="{ 'photo-upload-page__book-column--spread-view': isSpreadView }"
+          aria-label="Развороты журнала"
+        >
           <QuestionnaireBook
             ref="bookRef"
             :pages="store.order?.journalPages ?? []"
@@ -98,6 +102,7 @@
             @crop-photo="openCropEditor"
             @pick-photo="openPhotoPicker"
             @update:viewing="bookViewing = $event"
+            @update:spread-view="isSpreadView = $event"
           >
             <!-- Mobile-only — same round prev/next arrows as the reference design, calling into the
                  book's own exposed `flip()` (its built-in nav row is hidden via hide-nav above).
@@ -547,6 +552,10 @@ const bookViewing = ref<{ index: number; total: number; label: string } | null>(
 // Drives the mobile-only round prev/next arrows via the book's own exposed `flip()` — see
 // .photo-upload-page__book-arrow below.
 const bookRef = ref<InstanceType<typeof QuestionnaireBook> | null>(null)
+// Mirrors QuestionnaireBook's own mobile view-format toggle — see .photo-upload-page__book-column
+// --spread-view below, which shrinks the column back down when there's no page-mode enlargement
+// left to use its extra height for.
+const isSpreadView = ref(false)
 // Lets the visitor close .photo-upload-page__book-hint once they've read it — just for this visit
 // (resets on reload), not persisted, since it's a one-line instructional hint, not a setting.
 const bookHintDismissed = ref(false)
@@ -776,7 +785,7 @@ async function handleDropPhoto(pageId: string, elementId: string, url: string): 
 // Native HTML5 DnD (draggable/@dragstart/@dragover/@drop, see handleDragStart above and
 // JournalSpreadThumbnail.vue's own drop handling) never fires from a touch gesture — most mobile
 // browsers don't start a native drag from touch at all. This is a parallel Pointer Events path,
-// mirroring SpreadReorderDialog.vue's own touch-compatible drag handle: a small handle icon on
+// mirroring SpreadManagerDialog.vue's own touch-compatible drag handle: a small handle icon on
 // each thumb starts the drag immediately on touch (touch-action: none, see CSS), while the rest
 // of the thumb keeps its default touch-action so swiping it still scrolls the row. An earlier
 // version tried to disambiguate "scroll" from "drag" on the whole thumb via a long-press timer —
@@ -1302,21 +1311,27 @@ onBeforeUnmount(() => {
     // shrinking, sometimes near-invisible book. Now the ancestor column
     // (.photo-upload-page__body-inner) scrolls instead when the stack doesn't fit — the book always
     // renders at this same size, tall screens included (max-height's old job — capping otherwise-
-    // unbounded flex:1 growth — is now just this fixed number directly). An estimate of the book's
-    // own natural height at a typical phone width (this component has no JS-based sizing) — may
-    // need retuning against a real device. It accounts for both the frame and the "Изменить
-    // порядок"/"Добавить 4 страницы" toolbar row underneath it (see QuestionnaireBook.vue's
-    // `show-structure-controls`, on unconditionally below), which share this one fixed height.
-    // At a typical mobile width, the frame itself binds on WIDTH (its height comes out shorter
-    // than whatever's left over for it here) — QuestionnaireBook.vue's own `.questionnaire-book__
-    // zoom-layer` already collects that leftover flush above the frame (on request, so the frame
-    // sits flush against the toolbar instead), so this number is now sized close to the frame's own
-    // actual height + the toolbar + the gaps between them, not padded with the old, larger slack.
-    flex: 0 0 292px;
+    // unbounded flex:1 growth — is now just this fixed number directly).
+    //
+    // Deliberately bigger than the frame's own natural size (≈292px, frame + the "Изменить
+    // порядок"/"Добавить 4 страницы" toolbar row + gaps — see QuestionnaireBook.vue's
+    // `show-structure-controls`) would need on its own: on mobile, a real spread binds on WIDTH
+    // here (comes out shorter than the column's own height), and QuestionnaireBook's page mode
+    // (`currentPageModeScale`) enlarges INTO exactly that leftover vertical room to make the active
+    // half of a spread readably big while swiping — with no slack here, there's nothing for it to
+    // enlarge into. ~170px of headroom over the frame's own natural size gets it close to its own
+    // 1.8x cap; may need retuning against a real device.
+    flex: 0 0 460px;
     margin-top: $spacing-4;
     padding: $spacing-3;
     border: none;
     border-radius: 16px;
+    // QuestionnaireBook's own page-mode clip (`.questionnaire-book__page-mode-layer--clipped`)
+    // bounds the enlarged frame to ITS OWN box, which should match this card's inner content area
+    // — but this is the actual visual boundary that matters (the rounded pink card itself), so it
+    // gets its own belt-and-suspenders clip too rather than relying on that inner one being exactly
+    // right in every case.
+    overflow: hidden;
     // Paler than $accent-tint (#fbdfe9) — matches the soft blush background behind the book in
     // the reference design more closely than the more saturated shared accent-tint token does.
     background: #fdf0f3;
@@ -1324,6 +1339,17 @@ onBeforeUnmount(() => {
     &::before {
       display: none;
     }
+  }
+}
+
+// Spread view (the visitor manually toggled page mode's enlargement off — see QuestionnaireBook's
+// own view-toggle button and `update:spread-view`) has no use for the extra ~170px of headroom
+// above — nothing enlarges into it there — so the column shrinks back down to the frame + toolbar's
+// own natural size instead of leaving it as dead space. Only takes effect on mobile (this whole
+// fixed-size treatment is itself mobile-only — see the rule above).
+.photo-upload-page__book-column--spread-view {
+  @include mobile-only {
+    flex: 0 0 292px;
   }
 }
 
