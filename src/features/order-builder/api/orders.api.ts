@@ -8,6 +8,7 @@ import type {
   PaginatedOrders,
   PlaceholderInput,
   QuestionAnswerInput,
+  TrashedJournalPage,
 } from '../types/order.types'
 import type { JournalSlotType, JournalSpreadLayout } from '../constants/journal.constants'
 
@@ -160,6 +161,20 @@ export const ordersApi = {
     const { data } = await http.delete<BackendResponse<OrderDetail>>(
       `/orders/${orderId}/journal-spreads`,
       { data: { spreadIds } },
+    )
+    return data.data
+  },
+
+  async restoreJournalSpread(orderId: string, spreadId: string): Promise<OrderDetail> {
+    const { data } = await http.post<BackendResponse<OrderDetail>>(
+      `/orders/${orderId}/journal-spreads/${spreadId}/restore`,
+    )
+    return data.data
+  },
+
+  async fetchTrashedJournalSpreads(orderId: string): Promise<TrashedJournalPage[]> {
+    const { data } = await http.get<BackendResponse<TrashedJournalPage[]>>(
+      `/orders/${orderId}/journal-spreads/trash`,
     )
     return data.data
   },

@@ -112,13 +112,29 @@ export class OrdersController {
   }
 
   @Delete(':orderId/journal-spreads')
-  @ApiOperation({ summary: 'Remove spread slots (must be an even count, 4 pages per print signature)' })
+  @ApiOperation({ summary: 'Move spread slots to the recycle bin (restorable via .../restore)' })
   removeJournalSpreads(
     @CurrentUser() user: JwtPayload,
     @Param('orderId') orderId: string,
     @Body() body: RemoveJournalSpreadsDto,
   ) {
     return this.ordersService.removeJournalSpreads(orderId, user.sub, body);
+  }
+
+  @Post(':orderId/journal-spreads/:spreadId/restore')
+  @ApiOperation({ summary: 'Restore a trashed spread back into the journal' })
+  restoreJournalSpread(
+    @CurrentUser() user: JwtPayload,
+    @Param('orderId') orderId: string,
+    @Param('spreadId') spreadId: string,
+  ) {
+    return this.ordersService.restoreJournalSpread(orderId, user.sub, spreadId);
+  }
+
+  @Get(':orderId/journal-spreads/trash')
+  @ApiOperation({ summary: 'List soft-deleted spreads still recoverable for this order' })
+  listTrashedJournalSpreads(@CurrentUser() user: JwtPayload, @Param('orderId') orderId: string) {
+    return this.ordersService.listTrashedJournalSpreads(orderId, user.sub);
   }
 
   @Patch(':orderId/journal-spreads/reorder')

@@ -1,12 +1,12 @@
 <template>
-  <BaseModal v-model="open" :labelledby="titleId">
+  <BaseModal v-model="open" :labelledby="titleId" narrow>
     <div class="confirm-modal">
       <div class="confirm-modal__icon" :class="`confirm-modal__icon--${confirmColor}`" aria-hidden="true">
         <v-icon size="28" :color="confirmColor">{{ icon }}</v-icon>
       </div>
 
       <h2 :id="titleId" class="confirm-modal__title">{{ title }}</h2>
-      <p class="confirm-modal__text">{{ message }}</p>
+      <p v-if="message" class="confirm-modal__text">{{ message }}</p>
 
       <div class="confirm-modal__actions">
         <v-btn
@@ -41,7 +41,7 @@ const props = withDefaults(
   defineProps<{
     modelValue: boolean
     title: string
-    message: string
+    message?: string
     confirmLabel?: string
     cancelLabel?: string
     /** Vuetify color name for the icon/confirm button. Defaults to 'primary' — this app's theme

@@ -112,8 +112,8 @@
           </v-tooltip>
         </div>
 
-        <div v-else-if="isTextElement(leaf)" class="spread-thumb__text" :style="textStyle(leaf)">
-          {{ leaf.defaultText }}
+        <div v-else-if="isTextElement(leaf)" class="spread-thumb__text">
+          <div class="spread-thumb__text-inner" :style="textInnerStyle(leaf)">{{ leaf.defaultText }}</div>
         </div>
 
         <div
@@ -133,8 +133,8 @@
           </div>
         </div>
         <template v-else-if="isAiTextElement(leaf)">
-          <div class="spread-thumb__text" :style="textStyle(leaf)">
-            {{ leaf.previewPlaceholderText }}
+          <div class="spread-thumb__text">
+            <div class="spread-thumb__text-inner" :style="textInnerStyle(leaf)">{{ leaf.previewPlaceholderText }}</div>
           </div>
           <div v-if="aiTextEditEnabled" class="spread-thumb__photo-actions">
             <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
@@ -585,7 +585,7 @@ onMounted(() => {
   }
   // Only the advanced per-element editor pages called this before — this component also renders
   // text outside any of them now (the questionnaire/photo-upload book preview), so a custom admin
-  // font referenced by `textStyle()`'s `fontFamily` would otherwise never actually get registered
+  // font referenced by `textInnerStyle()`'s `fontFamily` would otherwise never actually get registered
   // via the FontFace API there, silently falling back to the browser default. Safe to call
   // redundantly — later callers reuse the same in-flight/resolved promise.
   void ensureCustomFontsLoaded()
@@ -705,7 +705,9 @@ function actionsCenterStyle(leaf: PhotoPlaceholder): Record<string, string> | un
 
 /** Same color the real generated text will render in (`leaf.color`) — not a fixed neutral tone —
  * so the "Генерируем текст" label reads as a preview of what's coming, not a generic system
- * notice. Font size scales with the page the same way `textStyle` does for real text. */
+ * notice. Font size scales directly with the page here (unlike `textInnerStyle`'s transform-based
+ * approach for real text) since this is a short, fixed system label, not content whose wrapping
+ * needs to match the full-size view exactly. */
 function shimmerLabelStyle(leaf: AiTextPlaceholder): Record<string, string> {
   return {
     color: leaf.color,
@@ -738,6 +740,8 @@ function elementStyle(leaf: LeafElement): Record<string, string> {
     }
   }
 
+  const isText = isTextElement(leaf) || isAiTextElement(leaf)
+
   return {
     position: 'absolute',
     left: `${leaf.position.x * scale.value}px`,
@@ -748,11 +752,13 @@ function elementStyle(leaf: LeafElement): Record<string, string> {
     opacity: String(leaf.opacity ?? 1),
     // Text boxes are sized to fit their content with almost no slack (TEXT_BOX_PADDING is 0 — see
     // text-auto-size.util.ts, which sizes the box from Konva's own text measurement plus a bare
-    // 2px buffer). The browser's native text layout doesn't measure identically to Konva's
-    // (different metrics entirely, more so now that the real font actually loads — see
-    // `textStyle`'s fontFamily), so a glyph can end up a pixel or two taller/wider than the box.
-    // Clipping that with overflow:hidden cuts letters/digits off; better to let it spill slightly.
-    overflow: isTextElement(leaf) || isAiTextElement(leaf) ? 'visible' : 'hidden',
+    // 2px buffer). `textInnerStyle` below lays the text out at its natural, unscaled font size —
+    // same text layout the editor/book itself produces, at any thumbnail size — and then visually
+    // shrinks the whole already-wrapped result to fit here via `transform: scale`, so this only
+    // ever needs to absorb the same "pixel or two" glyph/box mismatch the editor view already
+    // lives with just fine, never a small-thumbnail-specific one. Clipping that with
+    // overflow:hidden would cut letters/digits off; better to let it spill slightly, same as there.
+    overflow: isText ? 'visible' : 'hidden',
     // See `needsPointerEvents` — a non-interactive leaf (plain text, a title/subtitle, a toc, an
     // ai-text-placeholder with editing off) stepping in front of a photo it happens to overlap
     // (e.g. a caption sitting over a full-bleed cover) would otherwise steal its hover/click.
@@ -760,13 +766,25 @@ function elementStyle(leaf: LeafElement): Record<string, string> {
   }
 }
 
-function textStyle(leaf: TextPlaceholder | AiTextPlaceholder): Record<string, string> {
+/** Lays the text out at its natural (unscaled) size — exactly like the full editor/book view
+ * does — inside a box sized to `leaf.size` in the same natural units, then visually scales that
+ * whole already-laid-out result down to fit the (already-scaled) outer `.spread-thumb__el` box via
+ * `transform`. This is what makes a tiny thumbnail (SpreadManagerDialog.vue's grid, an admin list,
+ * …) wrap text IDENTICALLY to the full-size view: the browser's text layout is never actually run
+ * at a tiny font size (where hinting/rounding stops behaving proportionally to large sizes — the
+ * previous approach, scaling `font-size` directly, fought exactly that losing battle with ever-
+ * larger fudge factors) — it only ever lays text out at one true size and shrinks the *result*. */
+function textInnerStyle(leaf: TextPlaceholder | AiTextPlaceholder): Record<string, string> {
   return {
+    width: `${leaf.size.width}px`,
+    height: `${leaf.size.height}px`,
+    transform: `scale(${scale.value})`,
+    transformOrigin: 'top left',
     display: 'flex',
     alignItems: leaf.verticalAlign === 'top' ? 'flex-start' : leaf.verticalAlign === 'bottom' ? 'flex-end' : 'center',
     justifyContent: leaf.textAlign === 'left' ? 'flex-start' : leaf.textAlign === 'right' ? 'flex-end' : 'center',
     fontFamily: leaf.fontFamily,
-    fontSize: `${leaf.fontSize * scale.value}px`,
+    fontSize: `${leaf.fontSize}px`,
     fontWeight: String(leaf.fontWeight ?? 400),
     fontStyle: leaf.fontItalic ? 'italic' : 'normal',
     color: leaf.color,

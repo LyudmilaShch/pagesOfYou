@@ -679,6 +679,10 @@ model JournalPage {
   /// Снимок страницы на момент создания
   pageSnapshot Json?
 
+  /// Мягкое удаление — развороты перемещаются в корзину (SpreadManagerDialog.vue) вместо
+  /// безвозвратного удаления, чтобы фото и ответы (placeholderValues) можно было восстановить.
+  deletedAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -688,6 +692,7 @@ model JournalPage {
   placeholderValues PlaceholderValue[]
 
   @@index([orderId, sortOrder])
+  @@index([orderId, deletedAt])
   @@index([magazinePageId])
   @@index([rightMagazinePageId])
   @@map("journal_pages")

@@ -15,7 +15,13 @@ import { useAuthStore } from '@/stores/auth.store'
 import { MIN_JOURNAL_SPREADS } from '../constants/journal.constants'
 import { normalizeCanvasData, type CanvasData } from '@/modules/editor/models/canvas-data.model'
 import type { MagazineType } from '../types/magazine-type'
-import type { JournalPage, OrderDetail, PlaceholderInput, QuestionAnswerInput } from '../types/order.types'
+import type {
+  JournalPage,
+  OrderDetail,
+  PlaceholderInput,
+  QuestionAnswerInput,
+  TrashedJournalPage,
+} from '../types/order.types'
 import {
   buildInitialJournalSlots,
   buildJournalPageSnapshot,
@@ -47,6 +53,10 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
   const isSaving = ref(false)
   const isSubmitting = ref(false)
   const orderError = ref<string | null>(null)
+  // SpreadManagerDialog.vue's recycle bin for a local-draft journal — mirrors the real order's
+  // server-side trash (`deletedAt` on JournalPage) but has to live here instead, since a local
+  // draft has no backend row yet. Only ever populated/read while `isLocalDraft` is true.
+  const trashedJournalPages = ref<TrashedJournalPage[]>([])
 
   const groupedTemplates = computed(() => groupTemplatesByPageType(templateCatalog.value))
 
@@ -206,6 +216,7 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
         promoCode: null,
         discountAmount: null,
       }
+      trashedJournalPages.value = []
 
       saveLocalDraft(magazineTypeId, order.value)
     } catch (err: unknown) {
@@ -233,6 +244,7 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
       const { magazineType } = await loadTemplatesForMagazineType(stored.magazineTypeId)
       selectedMagazineType.value = magazineType
       order.value = stored.order
+      trashedJournalPages.value = stored.trash ?? []
     } catch {
       if (!orderError.value) {
         orderError.value = 'Не удалось восстановить черновик.'
@@ -320,7 +332,7 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     }
 
     if (isLocalDraft.value) {
-      saveLocalDraft(order.value.magazineTypeId, order.value)
+      saveLocalDraft(order.value.magazineTypeId, order.value, trashedJournalPages.value)
     }
   }
 
@@ -368,7 +380,7 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     }
 
     if (isLocalDraft.value) {
-      saveLocalDraft(order.value.magazineTypeId, order.value)
+      saveLocalDraft(order.value.magazineTypeId, order.value, trashedJournalPages.value)
     }
   }
 
@@ -425,7 +437,7 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     }
 
     order.value.questionAnswers = [...byKey.values()]
-    saveLocalDraft(order.value.magazineTypeId, order.value)
+    saveLocalDraft(order.value.magazineTypeId, order.value, trashedJournalPages.value)
   }
 
   async function saveQuestionnaireAnswers(answers: QuestionAnswerInput[]): Promise<void> {
@@ -486,7 +498,7 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
       placeholderValues: [...byElementId.values()],
     }
 
-    saveLocalDraft(order.value.magazineTypeId, order.value)
+    saveLocalDraft(order.value.magazineTypeId, order.value, trashedJournalPages.value)
   }
 
   /** Direct placeholder write — the advanced editor's simple-fill mode, and now also the photo
@@ -558,8 +570,10 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     }
   }
 
-  /** Adds 2 spreads (= 4 pages) at once, never 1 — printing requires page counts in multiples of
-   * 4 (signature/tetrad binding), mirrors `OrdersService.addJournalSpread` on the backend. */
+  /** Adds a single spread — mirrors `OrdersService.addJournalSpread` on the backend. Printing
+   * still requires the final page count to be a multiple of 4, but that's no longer enforced
+   * per-action: SpreadManagerDialog.vue allows free one-at-a-time add/remove and only checks the
+   * total when the user closes the manager. */
   function applyLocalAddSpread(): void {
     if (!order.value) {
       return
@@ -582,7 +596,7 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
 
     const pageSnapshot = buildJournalPageSnapshot('SPREAD', spreadDefault.layoutMode, primary, right ?? null)
 
-    const SPREADS_PER_ADD = 2
+    const SPREADS_PER_ADD = 1
     const newPages: JournalPage[] = Array.from({ length: SPREADS_PER_ADD }, (_, i) => ({
       id: `local-spread-${Date.now()}-${i}`,
       sortOrder: insertAt + i,
@@ -608,7 +622,7 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     }
 
     if (isLocalDraft.value) {
-      saveLocalDraft(order.value.magazineTypeId, order.value)
+      saveLocalDraft(order.value.magazineTypeId, order.value, trashedJournalPages.value)
     }
   }
 
@@ -659,7 +673,7 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     }))
 
     if (isLocalDraft.value) {
-      saveLocalDraft(order.value.magazineTypeId, order.value)
+      saveLocalDraft(order.value.magazineTypeId, order.value, trashedJournalPages.value)
     }
   }
 
@@ -686,20 +700,28 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     }
   }
 
-  /** Mirrors `applyLocalAddSpread`'s own doc comment in reverse — spreads only ever leave in
-   * pairs (4 pages), same print-signature reasoning; the caller (SpreadManagerDialog.vue) is what
-   * actually enforces the even-count/minimum-count rules before calling this at all. */
+  /** Mirrors `OrdersService.removeJournalSpreads`'s soft-delete on the backend — moves spreads
+   * into `trashedJournalPages` (most recently removed first, matching the backend's `deletedAt
+   * desc` trash ordering) instead of discarding them, so `applyLocalRestoreSpread` can bring them
+   * back with their photos/answers intact. */
   function applyLocalRemoveSpread(spreadIds: string[]): void {
     if (!order.value) {
       return
     }
 
     const removeIdSet = new Set(spreadIds)
+    const removedPages = order.value.journalPages.filter((page) => removeIdSet.has(page.id))
     const nextPages = order.value.journalPages.filter((page) => !removeIdSet.has(page.id))
     order.value.journalPages = nextPages.map((page, index) => ({
       ...page,
       sortOrder: index,
     }))
+
+    const deletedAt = new Date().toISOString()
+    trashedJournalPages.value = [
+      ...removedPages.map((page) => ({ ...page, deletedAt })),
+      ...trashedJournalPages.value,
+    ]
 
     if (selectedMagazineType.value) {
       order.value.totalPrice = String(
@@ -708,7 +730,7 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     }
 
     if (isLocalDraft.value) {
-      saveLocalDraft(order.value.magazineTypeId, order.value)
+      saveLocalDraft(order.value.magazineTypeId, order.value, trashedJournalPages.value)
     }
   }
 
@@ -733,6 +755,79 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     } finally {
       isSaving.value = false
     }
+  }
+
+  /** Mirrors `OrdersService.restoreJournalSpread` — re-inserts right before the back cover (same
+   * insertion point `applyLocalAddSpread` uses), not the spread's original position. */
+  function applyLocalRestoreSpread(spreadId: string): void {
+    if (!order.value) {
+      return
+    }
+
+    const trashIndex = trashedJournalPages.value.findIndex((page) => page.id === spreadId)
+    if (trashIndex === -1) {
+      return
+    }
+
+    // `TrashedJournalPage` is a `JournalPage` plus `deletedAt` — restoring just drops it back into
+    // `journalPages` as-is; the extra field is harmless there (structurally still a `JournalPage`).
+    const restoredPage = trashedJournalPages.value[trashIndex]
+    trashedJournalPages.value = trashedJournalPages.value.filter((page) => page.id !== spreadId)
+
+    const backCoverIndex = order.value.journalPages.findIndex((page) => page.slotType === 'BACK_COVER')
+    const insertAt = backCoverIndex === -1 ? order.value.journalPages.length : backCoverIndex
+
+    const nextPages = [...order.value.journalPages]
+    nextPages.splice(insertAt, 0, restoredPage)
+    order.value.journalPages = nextPages.map((page, index) => ({
+      ...page,
+      sortOrder: index,
+    }))
+
+    if (selectedMagazineType.value) {
+      order.value.totalPrice = String(
+        calculateJournalPrice(selectedMagazineType.value, countSpreadSlots(order.value.journalPages)),
+      )
+    }
+
+    if (isLocalDraft.value) {
+      saveLocalDraft(order.value.magazineTypeId, order.value, trashedJournalPages.value)
+    }
+  }
+
+  async function restoreJournalSpread(spreadId: string): Promise<void> {
+    if (!order.value) {
+      return
+    }
+
+    isSaving.value = true
+    orderError.value = null
+
+    try {
+      if (isLocalDraft.value) {
+        applyLocalRestoreSpread(spreadId)
+        return
+      }
+
+      order.value = await ordersApi.restoreJournalSpread(order.value.id, spreadId)
+    } catch {
+      orderError.value = 'Не удалось восстановить разворот.'
+      throw new Error(orderError.value)
+    } finally {
+      isSaving.value = false
+    }
+  }
+
+  async function fetchTrashedJournalSpreads(): Promise<TrashedJournalPage[]> {
+    if (!order.value) {
+      return []
+    }
+
+    if (isLocalDraft.value) {
+      return trashedJournalPages.value
+    }
+
+    return ordersApi.fetchTrashedJournalSpreads(order.value.id)
   }
 
   function collectMissingRequiredPlaceholders(): Array<{
@@ -974,6 +1069,9 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     addJournalSpread,
     reorderJournalSpreads,
     removeJournalSpread,
+    trashedJournalPages,
+    restoreJournalSpread,
+    fetchTrashedJournalSpreads,
     getSubmitValidationError,
     collectIncompletePages,
     convertLocalDraftToOrder,

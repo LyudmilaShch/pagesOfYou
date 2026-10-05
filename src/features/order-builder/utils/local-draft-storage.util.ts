@@ -1,4 +1,4 @@
-import type { OrderDetail } from '../types/order.types'
+import type { OrderDetail, TrashedJournalPage } from '../types/order.types'
 
 const STORAGE_KEY = 'pagesOfYou.localDraft'
 /** Bump whenever `OrderDetail`/`JournalPage` shape changes in a way that could make an older
@@ -11,6 +11,10 @@ export interface StoredLocalDraft {
   schemaVersion: number
   magazineTypeId: string
   order: OrderDetail
+  /** SpreadManagerDialog.vue's recycle bin, for a draft that isn't a real backend order yet —
+   * optional so older stored snapshots (saved before trash existed) still load fine, just with an
+   * empty bin, instead of being discarded outright. */
+  trash?: TrashedJournalPage[]
   savedAt: string
 }
 
@@ -18,11 +22,12 @@ export interface StoredLocalDraft {
  * `isLocalDraft` local-draft functions) — this mirrors it into a single localStorage slot so it
  * survives a reload/reopen for a while. One slot per browser: a guest only ever has one active
  * local draft at a time (a second "Начать новый" simply overwrites it). */
-export function saveLocalDraft(magazineTypeId: string, order: OrderDetail): void {
+export function saveLocalDraft(magazineTypeId: string, order: OrderDetail, trash: TrashedJournalPage[] = []): void {
   const stored: StoredLocalDraft = {
     schemaVersion: SCHEMA_VERSION,
     magazineTypeId,
     order,
+    trash,
     savedAt: new Date().toISOString(),
   }
 

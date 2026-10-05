@@ -68,6 +68,12 @@ export interface JournalPage {
   placeholderValues: PlaceholderValue[]
 }
 
+/** A spread sitting in SpreadManagerDialog.vue's recycle bin — same shape as `JournalPage`, plus
+ * when it was removed (shown as the trash list's sort key, most recent first). */
+export interface TrashedJournalPage extends JournalPage {
+  deletedAt: string
+}
+
 export type DeliveryMethod = 'PICKUP_POINT' | 'COURIER'
 
 export interface OrderDetail {

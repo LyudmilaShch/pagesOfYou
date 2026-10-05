@@ -75,6 +75,12 @@ const ORDER_INCLUDE = {
     select: { code: true },
   },
   journalPages: {
+    // Trashed spreads (SpreadManagerDialog.vue's recycle bin) stay in the table — excluding them
+    // here is what keeps every consumer of ORDER_INCLUDE (findOne, addJournalSpread,
+    // removeJournalSpreads, reorderJournalSpreads, restoreJournalSpread) seeing only the active
+    // journal without each needing its own filter. Trash itself is read separately, via
+    // listTrashedJournalSpreads's own direct (non-ORDER_INCLUDE) query.
+    where: { deletedAt: null },
     orderBy: { sortOrder: 'asc' as const },
     include: {
       magazinePage: {
@@ -935,8 +941,10 @@ export class OrdersService {
     return this.withResolvedAssets(submitted);
   }
 
-  /** Adds 2 spreads (= 4 pages) at once, never 1 — printing requires page counts in multiples of
-   * 4 (signature/tetrad binding), so the journal's page count must stay even in spreads too. */
+  /** Adds a single spread — printing still requires the final page count to be a multiple of 4,
+   * but that's no longer enforced per-action here: SpreadManagerDialog.vue allows free one-at-a-
+   * time add/remove and only checks the total (via `countSpreadSlots`, must stay odd) when the
+   * user closes the manager, surfacing a banner/error if it doesn't add up yet. */
   async addJournalSpread(orderId: string, userId: string) {
     const order = await this.getOwnedOrderOrThrow(orderId, userId, ORDER_INCLUDE);
 
@@ -965,7 +973,7 @@ export class OrdersService {
         ? order.journalPages.length
         : order.journalPages[backCoverIndex].sortOrder;
 
-    const SPREADS_PER_ADD = 2;
+    const SPREADS_PER_ADD = 1;
     const newSpreadCount = countSpreadSlots(order.journalPages) + SPREADS_PER_ADD;
     const totalPrice = calculateJournalPrice(order.magazineType, newSpreadCount);
 
@@ -1065,9 +1073,11 @@ export class OrdersService {
     return this.findOne(orderId, userId);
   }
 
-  /** Mirrors `addJournalSpread`'s own "always in pairs" rule in reverse — 4 pages (1 print
-   * signature) per removal, never a lone page — and keeps `MIN_JOURNAL_SPREADS` as a floor the
-   * same way that method's own doc comment explains it exists. */
+  /** Soft-deletes spreads (moves them to SpreadManagerDialog.vue's recycle bin, restorable via
+   * `restoreJournalSpread`) — any non-empty count is accepted now, not just pairs; printing's
+   * multiple-of-4 requirement is no longer enforced per-action, only when the manager is closed
+   * (see `addJournalSpread`'s own updated doc comment). `MIN_JOURNAL_SPREADS` stays an absolute
+   * floor regardless. */
   async removeJournalSpreads(orderId: string, userId: string, dto: RemoveJournalSpreadsDto) {
     const order = await this.getOwnedOrderOrThrow(orderId, userId, ORDER_INCLUDE);
 
@@ -1075,8 +1085,8 @@ export class OrdersService {
       throw new BadRequestException('Only draft orders can be edited.');
     }
 
-    if (dto.spreadIds.length === 0 || dto.spreadIds.length % 2 !== 0) {
-      throw new BadRequestException('Spreads can only be removed in pairs (4 pages at a time).');
+    if (dto.spreadIds.length === 0) {
+      throw new BadRequestException('No spreads to remove.');
     }
 
     const spreads = order.journalPages.filter((page) => page.slotType === PageType.SPREAD);
@@ -1102,7 +1112,10 @@ export class OrdersService {
     const totalPrice = calculateJournalPrice(order.magazineType, remainingSpreadCount);
 
     await this.prisma.$transaction([
-      this.prisma.journalPage.deleteMany({ where: { id: { in: [...removeIdSet] } } }),
+      this.prisma.journalPage.updateMany({
+        where: { id: { in: [...removeIdSet] } },
+        data: { deletedAt: new Date() },
+      }),
       ...remainingPages.map((page, index) =>
         this.prisma.journalPage.update({
           where: { id: page.id },
@@ -1113,6 +1126,65 @@ export class OrdersService {
     ]);
 
     return this.findOne(orderId, userId);
+  }
+
+  /** Re-inserts a trashed spread at the end of the journal (right before the back cover) — same
+   * insertion point `addJournalSpread` uses, not its original position, since other spreads may
+   * have shifted since it was removed. `pageSnapshot`/`placeholderValues` were never touched by
+   * the soft-delete, so photos/answers come back exactly as they were. */
+  async restoreJournalSpread(orderId: string, userId: string, spreadId: string) {
+    const order = await this.getOwnedOrderOrThrow(orderId, userId, ORDER_INCLUDE);
+
+    if (order.status !== OrderStatus.DRAFT) {
+      throw new BadRequestException('Only draft orders can be edited.');
+    }
+
+    const trashedPage = await this.prisma.journalPage.findFirst({
+      where: { id: spreadId, orderId, deletedAt: { not: null } },
+    });
+    if (!trashedPage) {
+      throw new BadRequestException(`Trashed journal spread "${spreadId}" not found.`);
+    }
+
+    const backCoverIndex = order.journalPages.findIndex(
+      (page) => page.slotType === PageType.BACK_COVER,
+    );
+    const insertSortOrder =
+      backCoverIndex === -1 ? order.journalPages.length : order.journalPages[backCoverIndex].sortOrder;
+    const newSpreadCount = countSpreadSlots(order.journalPages) + 1;
+    const totalPrice = calculateJournalPrice(order.magazineType, newSpreadCount);
+
+    await this.prisma.$transaction([
+      this.prisma.journalPage.updateMany({
+        where: { orderId, deletedAt: null, sortOrder: { gte: insertSortOrder } },
+        data: { sortOrder: { increment: 1 } },
+      }),
+      this.prisma.journalPage.update({
+        where: { id: spreadId },
+        data: { deletedAt: null, sortOrder: insertSortOrder },
+      }),
+      this.prisma.order.update({ where: { id: orderId }, data: { totalPrice } }),
+    ]);
+
+    return this.findOne(orderId, userId);
+  }
+
+  /** Spreads currently in the recycle bin for this order — read directly rather than through
+   * `ORDER_INCLUDE` (which excludes them by design, see its own comment). Access is gated on
+   * order ownership the same way every other order method is, but unlike edits, viewing the trash
+   * isn't restricted to DRAFT orders — there's no harm in letting it be inspected regardless. */
+  async listTrashedJournalSpreads(orderId: string, userId: string) {
+    await this.getOwnedOrderOrThrow(orderId, userId, ORDER_INCLUDE);
+
+    return this.prisma.journalPage.findMany({
+      where: { orderId, deletedAt: { not: null }, slotType: PageType.SPREAD },
+      include: {
+        magazinePage: { select: MAGAZINE_PAGE_SUMMARY },
+        rightMagazinePage: { select: MAGAZINE_PAGE_SUMMARY },
+        placeholderValues: true,
+      },
+      orderBy: { deletedAt: 'desc' },
+    });
   }
 
   async setJournalPageTemplate(
