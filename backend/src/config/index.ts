@@ -6,3 +6,4 @@ export * from './otp.config';
 export * from './yandex-storage.config';
 export * from './cdek.config';
 export * from './yandex-gpt.config';
+export * from './pdf-export.config';

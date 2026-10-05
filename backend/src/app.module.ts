@@ -9,6 +9,7 @@ import {
   databaseConfig,
   jwtConfig,
   otpConfig,
+  pdfExportConfig,
   yandexGptConfig,
   yandexStorageConfig,
 } from './config';
@@ -50,6 +51,7 @@ import { HealthModule } from './modules/health/health.module';
         yandexStorageConfig,
         cdekConfig,
         yandexGptConfig,
+        pdfExportConfig,
       ],
       cache: true,
     }),

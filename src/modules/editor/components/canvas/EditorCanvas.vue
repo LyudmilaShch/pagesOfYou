@@ -8,12 +8,12 @@
     @dragleave="handlePhotoDragLeave"
     @drop.prevent="handlePhotoDrop"
   >
-    <div v-if="store.previewMode" class="editor-canvas__preview-banner">
+    <div v-if="store.previewMode && !props.chromeless" class="editor-canvas__preview-banner">
       <v-icon size="16">mdi-eye-outline</v-icon>
       Режим превью — так страницу увидит пользователь
     </div>
 
-    <div v-if="store.groupEditingBreadcrumb.length > 0" class="editor-canvas__breadcrumb">
+    <div v-if="!props.chromeless && store.groupEditingBreadcrumb.length > 0" class="editor-canvas__breadcrumb">
       <button type="button" class="editor-canvas__breadcrumb-item" @click="store.exitGroupEditingToRoot()">
         Страница
       </button>
@@ -36,7 +36,7 @@
       </template>
     </div>
 
-    <div v-if="!isMobileViewport" class="editor-canvas__toolbar">
+    <div v-if="!isMobileViewport && !props.chromeless" class="editor-canvas__toolbar">
       <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
         <template #activator="{ props: tooltipProps }">
           <v-btn
@@ -216,7 +216,13 @@
               />
             </v-group>
 
-            <v-line :config="spreadFoldLineConfig" />
+            <!-- A real feature of the bound book (where the pages meet), so unlike the grid
+                 lines above it stays visible in ordinary previewMode — only chromeless (the PDF
+                 export's screenshot route) hides it, since the export now splits a spread into
+                 two separate A4 pages rather than keeping it as one wide spread page (see
+                 PdfExportService.buildPdf), and a centre dash on an otherwise-whole A4 page would
+                 just be a stray mark with no shared meaning. -->
+            <v-line v-if="!props.chromeless" :config="spreadFoldLineConfig" />
           </template>
 
           <template v-else>
@@ -410,6 +416,13 @@ import { MIN_TEXT_BOX_WIDTH } from '../../constants/text.constants'
 import { getTextMaxWidth } from '../../utils/text-auto-size.util'
 import { isTextPlaceholderType } from '../../utils/normalize-text-placeholder.util'
 import type { PageElement } from '../../models'
+
+// Only ever true for AdminOrderPrintPage.vue's headless-screenshot route (see its own doc comment)
+// — hides the toolbar/breadcrumb/preview-banner chrome below so a Puppeteer screenshot is just the
+// page itself, nothing else. Everything else about this component (stage setup, element rendering,
+// font/image loading) stays exactly as-is — no separate renderer, so the PDF export is guaranteed
+// to match whatever the editor itself draws.
+const props = withDefaults(defineProps<{ chromeless?: boolean }>(), { chromeless: false })
 
 const store = useEditorStore()
 const isMobileViewport = useMobileViewport()
@@ -610,6 +623,16 @@ function maybePlaySpreadIntro(): void {
 watch(() => isMobileViewport.value && store.isSpreadPage, maybePlaySpreadIntro)
 
 const fitScale = computed(() => {
+  // chromeless (the PDF export's screenshot route — see AdminOrderPrintPage.vue) sizes its
+  // container to the page's own exact dimensions and needs scale === 1 with zero letterboxing:
+  // the 48px "breathing room" below is a deliberate interactive-editor UX choice (keeps the page
+  // from crowding the window edges while editing) that has no business in an export. Skipping it
+  // here, rather than passing a 0 width container down, keeps this one true-to-size case explicit
+  // instead of relying on it falling out of the general-purpose math by coincidence.
+  if (props.chromeless) {
+    return Math.min(stageSize.value.width / layoutPageWidth.value, stageSize.value.height / store.pageHeight)
+  }
+
   if (isMobileViewport.value && store.isSpreadPage) {
     return animatedSpreadScale.value
   }

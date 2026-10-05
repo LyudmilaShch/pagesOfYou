@@ -191,4 +191,15 @@ export const adminOrdersApi = {
     )
     return withResolvedJournalPage(data.data)
   },
+
+  // Raw PDF bytes, not the usual { success, data } envelope — the backend route bypasses it
+  // deliberately (see AdminOrdersController.exportPdf's own comment). Can take a while (several
+  // full-resolution page screenshots + a Ghostscript CMYK pass), hence the longer timeout.
+  async exportPdf(orderId: string): Promise<Blob> {
+    const { data } = await adminHttp.get<Blob>(`/admin/orders/${orderId}/export-pdf`, {
+      responseType: 'blob',
+      timeout: 180_000,
+    })
+    return data
+  },
 }

@@ -9,9 +9,15 @@
           </router-link>
           <h1 class="od-page__title">Заказ №{{ shortId }}</h1>
         </div>
-        <v-chip v-if="order" :color="STATUS_COLORS[order.status]" size="small" variant="tonal" label>
-          {{ STATUS_LABELS[order.status] }}
-        </v-chip>
+        <div v-if="order" class="od-page__header-actions">
+          <v-btn variant="outlined" size="small" :loading="exportingPdf" @click="handleExportPdf">
+            <v-icon size="16" start>mdi-file-pdf-box</v-icon>
+            Скачать PDF
+          </v-btn>
+          <v-chip :color="STATUS_COLORS[order.status]" size="small" variant="tonal" label>
+            {{ STATUS_LABELS[order.status] }}
+          </v-chip>
+        </div>
       </header>
 
       <div v-if="store.loadingCurrent" class="od-page__loading">
@@ -112,14 +118,18 @@
         </v-card>
       </template>
     </div>
+
+    <v-snackbar v-model="showExportError" color="error" location="bottom center" :timeout="4000">
+      {{ exportError }}
+    </v-snackbar>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAdminOrdersStore } from '../stores/orders.store'
-import type { AdminOrderJournalPage, AdminOrderStatus } from '@/shared/api/admin/orders.api'
+import { adminOrdersApi, type AdminOrderJournalPage, type AdminOrderStatus } from '@/shared/api/admin/orders.api'
 import type { CanvasData } from '@/modules/editor/models/canvas-data.model'
 import { normalizeCanvasData } from '@/modules/editor/models/canvas-data.model'
 import { materializeCanvasData } from '@/features/order-builder/utils/merge-placeholder-element.util'
@@ -135,6 +145,43 @@ const shortId = computed(() => orderId.slice(0, 8))
 onMounted(() => {
   void store.loadOrder(orderId)
 })
+
+const exportingPdf = ref(false)
+const exportError = ref<string | null>(null)
+const showExportError = computed({
+  get: () => exportError.value !== null,
+  set: (value: boolean) => {
+    if (!value) {
+      exportError.value = null
+    }
+  },
+})
+
+/** Renders every journal page through the real editor (Puppeteer, server-side — see
+ * PdfExportService) and converts it to print-ready CMYK, so this can take a while on a long
+ * journal; the button's own `:loading` is the only feedback needed while it does. */
+async function handleExportPdf(): Promise<void> {
+  if (exportingPdf.value) {
+    return
+  }
+
+  exportingPdf.value = true
+  exportError.value = null
+
+  try {
+    const blob = await adminOrdersApi.exportPdf(orderId)
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `order-${shortId.value}.pdf`
+    link.click()
+    URL.revokeObjectURL(url)
+  } catch {
+    exportError.value = 'Не удалось сформировать PDF.'
+  } finally {
+    exportingPdf.value = false
+  }
+}
 
 /** Bakes saved placeholder-value diffs into the page's own document — same materialization the
  * advanced editor uses — so the thumbnail reflects what the customer actually placed, not just
@@ -217,6 +264,12 @@ function formatPrice(value: string | null): string {
   justify-content: space-between;
   flex-wrap: wrap;
   gap: $spacing-4;
+}
+
+.od-page__header-actions {
+  display: flex;
+  align-items: center;
+  gap: $spacing-3;
 }
 
 .od-page__back {

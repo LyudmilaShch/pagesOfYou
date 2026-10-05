@@ -176,6 +176,7 @@ import { useEditorStore } from '../../store/editor.store'
 
 import { getPlaceholderDisplayText, getPlaceholderPhotoUrl, isPhotoPlaceholderElement, isTextPlaceholderElement } from '../../utils/placeholder-display.util'
 import { loadHtmlImage } from '../../utils/load-image.util'
+import { trackImageLoad } from '../../utils/image-loading-tracker.util'
 import { computeSmartGuidesSnap } from '../../utils/smart-guides.util'
 import { getTextMaxWidth } from '../../utils/text-auto-size.util'
 import {
@@ -904,7 +905,7 @@ watch(
     }
 
     try {
-      loadedImage.value = await loadHtmlImage(url)
+      loadedImage.value = await trackImageLoad(loadHtmlImage(url))
       if (loadedImage.value && props.element.type === 'photo-placeholder') {
         store.registerPhotoImageDimensions(props.element.id, {
           width: loadedImage.value.naturalWidth,
@@ -929,7 +930,7 @@ watch(
     }
 
     try {
-      loadedFrameImage.value = await loadHtmlImage(url)
+      loadedFrameImage.value = await trackImageLoad(loadHtmlImage(url))
       outerGroupRef.value?.getNode()?.getLayer()?.batchDraw()
     } catch {
       loadedFrameImage.value = null

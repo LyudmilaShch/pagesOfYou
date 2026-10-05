@@ -38,6 +38,17 @@ export const routes: RouteRecordRaw[] = [
     ],
   },
   {
+    // Headless-screenshot-only route — opened exclusively by the backend's own Puppeteer export
+    // (see backend/src/modules/pdf-export/pdf-export.service.ts), authenticated via a one-off
+    // export token in the query string rather than a logged-in admin session, so this
+    // deliberately has no `requiresAdmin` meta (the normal guard would redirect straight to
+    // /admin/login, since Puppeteer never has that session). No AdminLayout wrapper either — just
+    // the bare page, full viewport, nothing else (see AdminOrderPrintPage.vue's own doc comment).
+    path: '/admin/orders/:orderId/print/:journalPageId',
+    name: 'admin-order-print',
+    component: () => import('@/features/admin/pages/AdminOrderPrintPage.vue'),
+  },
+  {
     path: '/admin',
     component: () => import('@/features/admin/layouts/AdminLayout.vue'),
     meta: { requiresAdmin: true },

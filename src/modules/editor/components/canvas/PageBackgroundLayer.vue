@@ -24,6 +24,7 @@ import {
 } from '../../models/page-background.model'
 import { computePageBackgroundImageKonvaConfig } from '../../utils/page-background-image.util'
 import { loadHtmlImage } from '../../utils/load-image.util'
+import { trackImageLoad } from '../../utils/image-loading-tracker.util'
 import { resolveAssetUrl } from '@/shared/config/assets'
 
 const props = withDefaults(
@@ -103,7 +104,7 @@ async function loadBackgroundImage(): Promise<void> {
   const url = resolveAssetUrl(rawUrl) ?? rawUrl
 
   try {
-    const image = await loadHtmlImage(url)
+    const image = await trackImageLoad(loadHtmlImage(url))
     if (token === loadToken) {
       loadedImage.value = image
     }
