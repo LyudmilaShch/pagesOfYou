@@ -65,7 +65,7 @@ export class AdminOrdersController {
 
   // Bypasses the global TransformInterceptor's { success, data } JSON envelope via a raw @Res() —
   // this sends actual PDF bytes, not JSON. See PdfExportService's own doc comments for the full
-  // Puppeteer → pdf-lib → Ghostscript pipeline this drives.
+  // Puppeteer → sharp (RGB→CMYK) → pdf-lib pipeline this drives.
   @Get(':id/export-pdf')
   @ApiOperation({ summary: 'Export the order journal as a print-ready CMYK PDF' })
   @ApiParam({ name: 'id', description: 'Prisma cuid' })
@@ -75,8 +75,7 @@ export class AdminOrdersController {
     @Res() res: Response,
   ): Promise<void> {
     const order = await this.service.findOne(id);
-    const rgbPdf = await this.pdfExportService.buildPdf(order, admin);
-    const cmykPdf = await this.pdfExportService.convertToCmyk(rgbPdf);
+    const cmykPdf = await this.pdfExportService.buildPdf(order, admin);
 
     res.set({
       'Content-Type': 'application/pdf',

@@ -728,11 +728,20 @@ const smartGuidesGroupConfig = computed(() => ({
 }))
 
 const pageOffset = computed(() => {
+  // chromeless (the PDF export's screenshot route) must always use the plain centered formula
+  // below, never the mobile anchoring — `isMobileViewport` reacts to real viewport WIDTH, and a
+  // single A4 page's own viewport (595px) is narrower than the 767px mobile breakpoint, so a
+  // cover/TOC/back-cover export was tripping the "phone" path by width alone despite running in
+  // a headless Chrome tab, not on an actual phone. With fitScale already exactly 1 in chromeless
+  // mode (see its own doc comment), this formula resolves to 0 either way — no gap, no fixed
+  // mobile padding pushing the page down from the top.
+  const isMobileLayout = !props.chromeless && isMobileViewport.value
+
   // On mobile with a spread, x tracks the animated pan (intro zoom + side navigation) computed
   // above — the full two-page spread is wider than the screen at focus scale, so centering it
   // would push the active side off-screen instead of showing it in full.
   const x =
-    isMobileViewport.value && store.isSpreadPage
+    isMobileLayout && store.isSpreadPage
       ? animatedSpreadX.value
       : (stageSize.value.width - layoutPageWidth.value * pageScale.value) / 2
 
@@ -740,7 +749,7 @@ const pageOffset = computed(() => {
   // page's aspect ratio doesn't match the available area, centering splits the leftover space
   // evenly above and below, which reads as a large, wasteful gap under the header. Pinning it to
   // a small fixed top padding lets any leftover space fall below the page instead.
-  const y = isMobileViewport.value
+  const y = isMobileLayout
     ? MOBILE_VERTICAL_PADDING
     : (stageSize.value.height - store.pageHeight * pageScale.value) / 2
 

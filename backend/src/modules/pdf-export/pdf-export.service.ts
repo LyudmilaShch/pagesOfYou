@@ -1,16 +1,22 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { execFile } from 'child_process';
 import { promises as fs } from 'fs';
-import * as os from 'os';
-import * as path from 'path';
-import { promisify } from 'util';
 import puppeteer, { type Browser, type BrowserContext, type Page } from 'puppeteer';
+import type SharpType from 'sharp';
 import { PDFDocument } from 'pdf-lib';
 import type { AdminJwtPayload } from '../admin-auth/interfaces/admin-jwt-payload.interface';
 
-const execFileAsync = promisify(execFile);
+// Plain require(), not `import sharp from 'sharp'` — sharp's published types (`dist/index.d.mts`)
+// describe it as an ESM module with a `default` export, so under this project's tsconfig (no
+// `esModuleInterop`) a normal default-import statement gets every one of its usages rewritten to a
+// `.default` access at runtime — but sharp's actual CommonJS build (`dist/index.cjs`) exports the
+// function directly, with no `.default` wrapper of its own (unlike e.g. puppeteer, which does
+// carry one), so that access is `undefined`. A plain `require()` call is never subject to that
+// import-statement rewriting, so it gets the real thing; `import type` supplies the type for it
+// separately, with zero runtime effect.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const sharp: typeof SharpType = require('sharp');
 
 /** Mirrors `src/modules/editor/constants/page.constants.ts` on the frontend — "logical editor
  * units" there are literally PDF points (72 DPI), so these double as both the print-view's CSS
@@ -28,6 +34,7 @@ export interface OrderForPdfExport {
 export class PdfExportService implements OnModuleDestroy {
   private readonly logger = new Logger(PdfExportService.name);
   private browserPromise: Promise<Browser> | null = null;
+  private iccProfileWarned = false;
 
   constructor(
     private readonly jwtService: JwtService,
@@ -88,19 +95,46 @@ export class PdfExportService implements OnModuleDestroy {
     return page;
   }
 
+  /** Converts a screenshot to a real 4-channel CMYK JPEG via sharp/libvips — with a configured ICC
+   * profile (see pdf-export.config.ts), the conversion follows that profile's actual print gamut
+   * mapping; without one (unset, or the file is missing — it has to be sourced and placed
+   * manually, it isn't something this code can generate), libvips' own built-in generic CMYK
+   * conversion still runs, so the output is still genuine CMYK, just without a specific
+   * press/paper's calibration. `pdf-lib`'s JPEG embedder (see `addImagePage`) auto-detects a
+   * 4-channel JPEG and marks the PDF image DeviceCMYK on its own — no separate whole-PDF
+   * conversion pass needed, unlike the Ghostscript approach this replaced. */
+  private async toCmykJpeg(png: Buffer): Promise<Buffer> {
+    const iccProfilePath = this.config.get<string>('pdfExport.iccProfilePath');
+    const hasIccProfile = iccProfilePath ? await fileExists(iccProfilePath) : false;
+    if (iccProfilePath && !hasIccProfile && !this.iccProfileWarned) {
+      this.iccProfileWarned = true;
+      this.logger.warn(`Configured ICC profile not found at "${iccProfilePath}" — converting without it.`);
+    }
+
+    let pipeline = sharp(png).toColorspace('cmyk');
+    if (hasIccProfile) {
+      pipeline = pipeline.withIccProfile(iccProfilePath as string);
+    }
+
+    // chromaSubsampling 4:4:4 (no subsampling) — the default 4:2:0 softens fine detail, which
+    // matters more here than usual: these JPEGs ARE the print file, not an intermediate preview.
+    return pipeline.jpeg({ quality: 95, chromaSubsampling: '4:4:4' }).toBuffer();
+  }
+
   private async addImagePage(pdfDoc: PDFDocument, png: Buffer, width: number, height: number): Promise<void> {
-    const image = await pdfDoc.embedPng(png);
+    const cmykJpeg = await this.toCmykJpeg(png);
+    const image = await pdfDoc.embedJpg(cmykJpeg);
     const pdfPage = pdfDoc.addPage([width, height]);
     pdfPage.drawImage(image, { x: 0, y: 0, width, height });
   }
 
   /** Renders every journal page (cover, TOC, each spread, back cover — the full book, unlike
    * SpreadManagerDialog.vue which only ever touches SPREAD slots) through the real editor canvas
-   * and assembles the screenshots into one RGB PDF. A SPREAD slot renders once at its full
-   * (double-wide) size — same as the editor shows it — but becomes TWO separate A4 pages in the
-   * PDF, one per physical leaf (cropped via Puppeteer's own `clip`, not a second navigation),
-   * matching how the book is actually printed/bound rather than the editor's own side-by-side
-   * convenience view. Every PDF page therefore ends up the same A4 size. */
+   * and assembles the screenshots into one print-ready CMYK PDF (see `toCmykJpeg`). A SPREAD slot
+   * renders once at its full (double-wide) size — same as the editor shows it — but becomes TWO
+   * separate A4 pages in the PDF, one per physical leaf (cropped via Puppeteer's own `clip`, not a
+   * second navigation), matching how the book is actually printed/bound rather than the editor's
+   * own side-by-side convenience view. Every PDF page therefore ends up the same A4 size. */
   async buildPdf(order: OrderForPdfExport, admin: AdminJwtPayload): Promise<Buffer> {
     const frontendUrl = this.config.get<string>('app.frontendUrl');
     const token = this.mintExportToken(admin);
@@ -149,64 +183,6 @@ export class PdfExportService implements OnModuleDestroy {
       return Buffer.from(bytes);
     } finally {
       await context.close();
-    }
-  }
-
-  /** Ghostscript subprocess — converts the assembled RGB PDF to real DeviceCMYK. With a configured
-   * ICC profile (see pdf-export.config.ts), the conversion follows that profile's actual print
-   * gamut mapping; without one (profile unset or file missing — it has to be sourced and placed
-   * manually, it isn't something this code can generate), Ghostscript's own default RGB→CMYK
-   * conversion still runs — the output is still genuine DeviceCMYK, just without a specific
-   * press/paper's calibration. */
-  async convertToCmyk(pdfBuffer: Buffer): Promise<Buffer> {
-    const ghostscriptBin = this.config.get<string>('pdfExport.ghostscriptBin') ?? 'gs';
-    const iccProfilePath = this.config.get<string>('pdfExport.iccProfilePath');
-
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pdf-export-'));
-    const inputPath = path.join(tmpDir, 'input.pdf');
-    const outputPath = path.join(tmpDir, 'output.pdf');
-
-    try {
-      await fs.writeFile(inputPath, pdfBuffer);
-
-      const hasIccProfile = iccProfilePath ? await fileExists(iccProfilePath) : false;
-      if (iccProfilePath && !hasIccProfile) {
-        this.logger.warn(`Configured ICC profile not found at "${iccProfilePath}" — converting without it.`);
-      }
-
-      const args = [
-        '-dSAFER',
-        '-dBATCH',
-        '-dNOPAUSE',
-        '-sDEVICE=pdfwrite',
-        '-sColorConversionStrategy=CMYK',
-        '-sProcessColorModel=DeviceCMYK',
-        ...(hasIccProfile ? [`-sOutputICCProfile=${iccProfilePath}`] : []),
-        `-sOutputFile=${outputPath}`,
-        inputPath,
-      ];
-
-      try {
-        await execFileAsync(ghostscriptBin, args);
-      } catch (error: unknown) {
-        // ENOENT specifically — the binary itself isn't installed/on PATH (e.g. a dev machine
-        // without Ghostscript) — degrade to the RGB PDF rather than failing the whole export, so
-        // the rest of the pipeline (Puppeteer rendering, pdf-lib assembly) stays testable without
-        // it. Any OTHER Ghostscript failure (a genuinely malformed PDF, a bad ICC profile, …) still
-        // throws, since silently shipping a broken "CMYK" file would be worse than failing loudly.
-        if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') {
-          this.logger.warn(
-            `Ghostscript ("${ghostscriptBin}") not found — returning the PDF as RGB, not CMYK. ` +
-              'Install Ghostscript (see .env.example\'s PDF_EXPORT_GHOSTSCRIPT_BIN) for real print-ready output.',
-          );
-          return pdfBuffer;
-        }
-        throw error;
-      }
-
-      return await fs.readFile(outputPath);
-    } finally {
-      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
     }
   }
 }
