@@ -79,9 +79,12 @@
             :focus-page-id="focusPageId"
             :pulsing-page-ids="pulsingPageIds"
             :fill-by-page-id="fillByPageId"
-            :pending-element-ids="pendingAiElementIds"
+            :pending-element-ids="generatingAiElementIds"
+            :awaiting-element-ids-by-page-id="aiMarkers.awaitingByPageId"
             :drop-enabled="false"
             ai-text-edit-enabled
+            :text-issue-messages-by-page-id="aiMarkers.messagesByPageId"
+            :ai-usage="store.aiUsage"
             @edit-ai-text="openAiTextEditor"
             @regenerate-ai-text="handleRegenerateAiText"
           />
@@ -117,6 +120,14 @@
         <main class="questionnaire-page__main">
           <div class="questionnaire-page__main-scroll">
           <div class="questionnaire-page__container">
+            <AiLimitNotice
+              v-if="store.isAiFillCapReached"
+              :is-guest="isGuest"
+              :unwritten-count="aiMarkers.unwrittenCount"
+              class="questionnaire-page__ai-limit"
+              @login="loginForMoreAi"
+            />
+
             <div v-if="currentStep" :key="currentStep.journalPageId" class="questionnaire-page__question">
               <header class="questionnaire-page__intro">
                 <p class="questionnaire-page__eyebrow text-caption text-secondary">Шаг 3 — Анкета</p>
@@ -201,6 +212,21 @@
                   />
                 </div>
               </div>
+
+              <!-- An answer on this step changed, but a text it feeds has no automatic updates left
+                   — said here, next to the answer, since on mobile there's no book to flag it in. -->
+              <p v-if="currentStepFeedsOutdatedText" class="questionnaire-page__ai-outdated text-body-sm">
+                <v-icon size="16">mdi-information-outline</v-icon>
+                <span v-if="isGuest">
+                  Текст по этим ответам уже обновлялся и больше не обновится сам.
+                  <button type="button" class="questionnaire-page__inline-link" @click="openAuthModal(AUTH_MESSAGE_MORE_AI)">
+                    Войдите</button>, чтобы обновить его, или поправьте текст на шаге «Проверка».
+                </span>
+                <span v-else>
+                  Лимит перегенераций на сегодня исчерпан — текст по этим ответам останется прежним.
+                  Его можно поправить вручную на шаге «Проверка».
+                </span>
+              </p>
 
               <!-- Own controls for stepping between pages of the questionnaire — separate from the
                    bottom bar's Назад/Продолжить, which move between the order-creation steps. Round
@@ -291,10 +317,19 @@
       {{ submitErrorMessage }}
     </v-snackbar>
 
+    <v-snackbar :model-value="finishingMessage !== null" :timeout="-1" location="bottom">
+      <div class="d-flex align-center ga-3">
+        <v-progress-circular indeterminate size="18" width="2" />
+        {{ finishingMessage }}
+      </div>
+    </v-snackbar>
+
     <AiTextEditModal
       :open="aiTextEditModal.open"
       :initial-text="aiTextEditModal.initialText"
       :length-constraint="aiTextEditModal.lengthConstraint"
+      :element="aiTextEditModal.element"
+      :fit-context="aiTextEditModal.fitContext"
       :loading="aiTextEditModal.saving"
       @close="closeAiTextEditor"
       @save="saveAiTextEdit"
@@ -305,6 +340,15 @@
       @close="missingPhotosModalOpen = false"
       @continue="continueAfterPhotosFilled"
     />
+
+    <AuthPromptModal
+      :open="authModal.prompt"
+      :message="authModal.message"
+      @login="showAuthForm"
+      @close="closeAuthModal"
+    />
+
+    <AuthModal :open="authModal.form" @success="handleAuthSuccess" @close="closeAuthModal" />
   </div>
 </template>
 
@@ -336,11 +380,19 @@ import QuestionImageField from '../components/questionnaire/QuestionImageField.v
 import QuestionGalleryField from '../components/questionnaire/QuestionGalleryField.vue'
 import QuestionnaireBook from '../components/questionnaire/QuestionnaireBook.vue'
 import AiTextEditModal from '../components/AiTextEditModal.vue'
+import { buildAiTextFitContext } from '../utils/ai-text-overflow.util'
+import type { AiTextFitContext } from '@/modules/editor/utils/ai-text-capacity.util'
 import MissingPhotosModal from '../components/MissingPhotosModal.vue'
 import { collectPhotoSlotPreview, countEmptyPhotoSlots } from '../utils/missing-photos.util'
+import AiLimitNotice from '../components/AiLimitNotice.vue'
+import AuthModal from '@/components/auth/AuthModal.vue'
+import AuthPromptModal from '@/components/auth/AuthPromptModal.vue'
+import { answerMapOf, buildAiTextMarkers } from '../utils/draft-ai-texts.util'
+import { useAuthStore } from '@/stores/auth.store'
 
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
 const store = useOrderBuilderStore()
 
 const orderId = computed(() => route.params.orderId as string)
@@ -463,17 +515,13 @@ function scheduleFlush(): void {
   }, AUTOSAVE_DEBOUNCE_MS)
 }
 
-// Question keys with an edit that hasn't yet round-tripped through a completed save — i.e. still
-// dirty (debounce hasn't fired) OR mid-flush (request in flight). Marked the INSTANT the user
-// types (in `markDirty`, below), not just once a flush actually starts, so an ai-text-placeholder
-// fed by the key starts shimmering (see `pendingAiElementIds`) right away — there's no live preview
-// for AI text the way there is for a plain field, so this is the only feedback the user gets before
-// the (possibly several-second) generation actually lands.
-const pendingQuestionKeys = reactive(new Set<string>())
+// Question keys edited since the last AI generation run — handed to it as "changed" (only matters
+// for texts written before answers were fingerprinted; see questionAiTextStatuses).
+const changedSinceGeneration = new Set<string>()
 
 function markDirty(key: string): void {
   dirtyKeys.add(key)
-  pendingQuestionKeys.add(key)
+  changedSinceGeneration.add(key)
   scheduleFlush()
 }
 
@@ -484,17 +532,113 @@ function markDirty(key: string): void {
 // `store.order`, only catches up once that save lands).
 const pendingOverlayByKey = reactive<Record<string, LocalAnswer>>({})
 
-// ai-text-placeholder element ids currently shimmering — derived from `pendingQuestionKeys` rather
-// than tracked directly, so it updates live as the user types (not just once a flush starts).
-const pendingAiElementIds = computed<Set<string>>(() => {
-  const ids = new Set<string>()
-  for (const key of pendingQuestionKeys) {
-    for (const entry of flow.value.aiTextElementsByQuestionKey.get(key) ?? []) {
-      ids.add(entry.elementId)
+// ---------------------------------------------------------------------------
+// AI text generation — runs when a step is LEFT (Далее/Пропустить/Назад/finish), never while
+// typing: while on a step the customer can rework an answer for free, and the book marks the texts
+// it'll write ("напишем после «Далее»"). See `requestAiGeneration`.
+// ---------------------------------------------------------------------------
+
+const isGuest = computed(() => store.aiUsage?.isGuest ?? !authStore.isAuthenticated)
+
+/** ai-text ids mid-generation — the book's shimmer. */
+const generatingAiElementIds = ref<Set<string>>(new Set())
+
+// The answers as typed (not only as saved), so a text's "awaiting" badge appears the moment its
+// last question gets an answer.
+const liveAnswerMap = computed(
+  () => new Map(Object.entries(answers).map(([key, value]) => [key, value.textValue] as const)),
+)
+
+const aiMarkers = computed(() =>
+  buildAiTextMarkers(store.order?.journalPages ?? [], liveAnswerMap.value, store.aiUsage, isGuest.value, {
+    includeJournal: false,
+    excludeIds: generatingAiElementIds.value,
+  }),
+)
+
+const currentStepFeedsOutdatedText = computed(() =>
+  Boolean(currentStep.value?.questions.some((question) => aiMarkers.value.outdatedQuestionKeys.has(question.key))),
+)
+
+// One run at a time, in order — a run started while another is in flight waits for it, so two
+// runs never write the same text at once.
+let generationQueue: Promise<void> = Promise.resolve()
+
+/** Saves pending answers, then writes every AI text that's due — the ones `aiMarkers` shows as
+ * awaiting. Resolves once that run is done (never rejects). */
+function requestAiGeneration(): Promise<void> {
+  const run = async (): Promise<void> => {
+    await flushAnswers().catch(() => undefined)
+    const order = store.order
+    if (!order) {
+      return
+    }
+    const due = buildAiTextMarkers(order.journalPages, answerMapOf(order.questionAnswers), store.aiUsage, isGuest.value, {
+      includeJournal: false,
+    }).awaitingByPageId
+    const changedKeys = [...changedSinceGeneration]
+    changedSinceGeneration.clear()
+    if (due.size === 0 && changedKeys.length === 0) {
+      return
+    }
+
+    const ids = [...due.values()].flatMap((set) => [...set])
+    generatingAiElementIds.value = new Set([...generatingAiElementIds.value, ...ids])
+    try {
+      await store.generateAiTextsForAnswers(changedKeys)
+    } finally {
+      const rest = new Set(generatingAiElementIds.value)
+      ids.forEach((id) => rest.delete(id))
+      generatingAiElementIds.value = rest
     }
   }
-  return ids
-})
+  generationQueue = generationQueue.then(run, run)
+  return generationQueue
+}
+
+// Sign-in prompt — a guest's 🔄 (regeneration needs an account), or more generations at the cap.
+// Draft generation is counted per account as soon as the request carries a token, so after
+// signing in a fresh count is all it takes; a 🔄 that asked for it then just goes ahead.
+const AUTH_MESSAGE_REGENERATE = 'Чтобы сгенерировать другой вариант текста, войдите в аккаунт'
+const AUTH_MESSAGE_MORE_AI = 'Войдите, чтобы получить больше ИИ-генераций'
+
+// First a short notice with the reason and "Войти" (`prompt`), then the regular sign-in form (`form`).
+const authModal = reactive<{
+  prompt: boolean
+  form: boolean
+  message: string
+  regenerate: { journalPageId: string; elementId: string } | null
+}>({ prompt: false, form: false, message: AUTH_MESSAGE_MORE_AI, regenerate: null })
+
+function openAuthModal(message: string, regenerate: { journalPageId: string; elementId: string } | null = null): void {
+  authModal.message = message
+  authModal.regenerate = regenerate
+  authModal.prompt = true
+}
+
+function showAuthForm(): void {
+  authModal.prompt = false
+  authModal.form = true
+}
+
+function closeAuthModal(): void {
+  authModal.prompt = false
+  authModal.form = false
+  authModal.regenerate = null
+}
+
+function loginForMoreAi(): void {
+  openAuthModal(AUTH_MESSAGE_MORE_AI)
+}
+
+async function handleAuthSuccess(): Promise<void> {
+  const regenerate = authModal.regenerate
+  closeAuthModal()
+  await store.refreshAiUsage()
+  if (regenerate) {
+    await handleRegenerateAiText(regenerate.journalPageId, regenerate.elementId)
+  }
+}
 
 function setTextValue(key: string, value: string): void {
   answers[key] = { textValue: value, jsonValue: answers[key]?.jsonValue ?? null }
@@ -514,10 +658,10 @@ function setGalleryUrls(key: string, urls: string[]): void {
   markDirty(key)
 }
 
-/** Awaited by callers that need the save (and any AI generation it triggers server-side) to be
- * actually finished before acting on the result — e.g. navigating to the editor to look at the
- * filled-in template. `handleBeforeUnload` is the one caller that can't await (the browser is
- * already closing), so it fires this without awaiting — best-effort there, same as before. */
+/** Awaited by callers that need the save to be actually finished before acting on the result —
+ * e.g. `requestAiGeneration`, which generates from the saved answers. `handleBeforeUnload` is the
+ * one caller that can't await (the browser is already closing), so it fires this without
+ * awaiting — best-effort there, same as before. */
 async function flushAnswers(): Promise<void> {
   if (autosaveTimer) {
     clearTimeout(autosaveTimer)
@@ -538,12 +682,11 @@ async function flushAnswers(): Promise<void> {
   await store.saveQuestionnaireAnswers(payload)
 
   // The base layer (sourced from the just-refreshed store.order) now reflects these keys, so the
-  // overlay/shimmer is no longer needed for them — UNLESS a fresher edit re-dirtied the same key
-  // while this save was in flight, in which case leave both for THAT flush's own completion to clear.
+  // overlay is no longer needed for them — UNLESS a fresher edit re-dirtied the same key while
+  // this save was in flight, in which case leave it for THAT flush's own completion to clear.
   for (const key of flushedKeys) {
     if (!dirtyKeys.has(key)) {
       delete pendingOverlayByKey[key]
-      pendingQuestionKeys.delete(key)
     }
   }
 }
@@ -733,7 +876,14 @@ const canvasDataByPageId = computed(() => {
 const pulsingPageIds = ref<Set<string>>(new Set())
 let pulseTimer: ReturnType<typeof setTimeout> | null = null
 let focusOverrideTimer: ReturnType<typeof setTimeout> | null = null
-const FOCUS_OVERRIDE_MS = 1800
+// Each hold gets its own token, so a stale "release" (an earlier hold's generation finishing late)
+// can't cut a newer hold short.
+let focusHoldToken = 0
+// How long the book waits on the page just answered for its text to arrive, at most — past that it
+// turns to the next step's page anyway and the text simply appears there later.
+const FOCUS_HOLD_MAX_MS = 6000
+// How long the freshly written text stays in view before the book turns on.
+const TEXT_REVEAL_MS = 900
 
 function pulse(pageIds: Iterable<string>): void {
   if (pulseTimer) {
@@ -753,6 +903,38 @@ function advance(): void {
   }
 }
 
+/** Leaving a step writes its AI texts. When the step's own pages have texts about to be written,
+ * the book stays on the page just answered while they're generated, shows the result for a beat,
+ * then turns to the next step's page — so each answer visibly turns into text in the journal. The
+ * questionnaire itself moves on immediately; nothing here waits for the generation. */
+function leaveStep(): void {
+  const step = currentStep.value
+  const awaiting = aiMarkers.value.awaitingByPageId
+  const holdPageId = step
+    ? [step.journalPageId, ...currentAffectedPageIds.value].find((pageId) => awaiting.has(pageId))
+    : undefined
+
+  const generation = requestAiGeneration()
+  if (holdPageId) {
+    holdFocusUntil(holdPageId, generation)
+  } else {
+    clearFocusOverride()
+  }
+}
+
+function holdFocusUntil(pageId: string, done: Promise<void>): void {
+  clearFocusOverride()
+  const token = focusHoldToken
+  focusOverridePageId.value = pageId
+  const release = () => {
+    if (token === focusHoldToken) {
+      clearFocusOverride()
+    }
+  }
+  focusOverrideTimer = setTimeout(release, FOCUS_HOLD_MAX_MS)
+  void done.then(() => setTimeout(release, TEXT_REVEAL_MS))
+}
+
 function goNext(): void {
   const step = currentStep.value
   const wasAnswered = Boolean(
@@ -761,31 +943,12 @@ function goNext(): void {
   if (wasAnswered) {
     pulse(currentAffectedPageIds.value)
   }
-  void flushAnswers()
-
-  // Hold the book on the page just answered a beat longer than usual specifically when one of its
-  // questions feeds an AI-text block — that block has no live-while-typing preview (see
-  // canvasDataByPageId's overlay, which skips ai-text-placeholder on purpose), so the pulse/shimmer
-  // here is the ONLY confirmation the answer did something; jumping to the next step's page in the
-  // same instant (the normal, unheld behaviour) would hide it before the user ever sees it.
-  const feedsAiText = Boolean(
-    step && step.questions.some((question) => flow.value.aiTextElementsByQuestionKey.has(question.key)),
-  )
-  if (wasAnswered && feedsAiText) {
-    focusOverridePageId.value = focusPageId.value
-    if (focusOverrideTimer) {
-      clearTimeout(focusOverrideTimer)
-    }
-    focusOverrideTimer = setTimeout(() => {
-      focusOverridePageId.value = null
-      focusOverrideTimer = null
-    }, FOCUS_OVERRIDE_MS)
-  }
-
+  leaveStep()
   advance()
 }
 
 function clearFocusOverride(): void {
+  focusHoldToken += 1
   if (focusOverrideTimer) {
     clearTimeout(focusOverrideTimer)
     focusOverrideTimer = null
@@ -794,12 +957,13 @@ function clearFocusOverride(): void {
 }
 
 function goSkip(): void {
-  clearFocusOverride()
-  void flushAnswers()
+  leaveStep()
   advance()
 }
 
 function goBack(): void {
+  // The previous step is where the customer is heading — no point holding the book elsewhere.
+  void requestAiGeneration()
   clearFocusOverride()
   if (currentIndex.value > 0) {
     currentIndex.value -= 1
@@ -839,6 +1003,9 @@ function goToStep(step: number): void {
 }
 
 const isFinishing = ref(false)
+// The (several-second) generations at the end of finish() — shown as their own message, since a
+// plain spinner on "Продолжить" for that long reads as a hang.
+const finishingMessage = ref<string | null>(null)
 const submitErrorMessage = ref<string | null>(null)
 const missingPhotosModalOpen = ref(false)
 
@@ -859,7 +1026,12 @@ async function finish(): Promise<void> {
 
   isFinishing.value = true
   try {
-    await flushAnswers()
+    // The last step's texts (and any run still in flight) land before the review step mounts.
+    if (aiMarkers.value.awaitingByPageId.size > 0 || generatingAiElementIds.value.size > 0) {
+      finishingMessage.value = 'Дописываем тексты журнала…'
+    }
+    await requestAiGeneration()
+    finishingMessage.value = null
 
     const missingPhotoPages = collectPhotoSlotPreview(store.order?.journalPages ?? [])
     if (missingPhotoPages.some((page) => page.slots.some((slot) => !slot.url))) {
@@ -870,9 +1042,19 @@ async function finish(): Promise<void> {
     if (!store.order) {
       return
     }
+
+    // The questionnaire is done — now the texts written from the whole journal (cover lines) can
+    // be generated, before the review step mounts, so its book shows them instead of placeholders.
+    if (store.hasJournalWideAiTexts()) {
+      finishingMessage.value = 'Пишем фразы для обложки по вашему журналу…'
+    }
+    await store.generateJournalAiTexts()
+    finishingMessage.value = null
+
     await router.push({ name: 'order-review', params: { orderId: store.order.id } })
   } finally {
     isFinishing.value = false
+    finishingMessage.value = null
   }
 }
 
@@ -894,6 +1076,8 @@ const aiTextEditModal = reactive<{
   elementId: string | null
   initialText: string
   lengthConstraint: LengthConstraint | null
+  element: AiTextPlaceholder | null
+  fitContext: AiTextFitContext | null
   saving: boolean
 }>({
   open: false,
@@ -901,6 +1085,8 @@ const aiTextEditModal = reactive<{
   elementId: null,
   initialText: '',
   lengthConstraint: null,
+  element: null,
+  fitContext: null,
   saving: false,
 })
 
@@ -925,6 +1111,9 @@ function openAiTextEditor(journalPageId: string, elementId: string): void {
   aiTextEditModal.elementId = elementId
   aiTextEditModal.initialText = leaf.previewPlaceholderText ?? ''
   aiTextEditModal.lengthConstraint = leaf.lengthConstraint
+  aiTextEditModal.element = leaf
+  const canvas = canvasDataByPageId.value.get(journalPageId)
+  aiTextEditModal.fitContext = canvas ? buildAiTextFitContext(canvas, elementId) : null
   aiTextEditModal.open = true
 }
 
@@ -951,14 +1140,14 @@ async function saveAiTextEdit(text: string): Promise<void> {
 }
 
 /** A fresh AI variant with the same feeding answers — see order-builder.store.ts's
- * `regenerateAiText`. Needs a real backend order (YandexGPT runs server-side), so a guest still on
- * a local draft gets a message instead of a silent no-op; the manual edit above works either way. */
+ * `regenerateAiText`. Needs an account: a guest gets the sign-in prompt, and the regeneration
+ * runs right after signing in. At the daily limit the store's error carries the server's
+ * explanation; the manual edit above still works. */
 async function handleRegenerateAiText(journalPageId: string, elementId: string): Promise<void> {
-  if (store.isLocalDraft) {
-    submitErrorMessage.value = 'Сначала сохраните заказ, чтобы сгенерировать новый вариант текста.'
+  if (!authStore.isAuthenticated) {
+    openAuthModal(AUTH_MESSAGE_REGENERATE, { journalPageId, elementId })
     return
   }
-
   try {
     await store.regenerateAiText(journalPageId, elementId)
   } catch {
@@ -968,6 +1157,7 @@ async function handleRegenerateAiText(journalPageId: string, elementId: string):
 
 onMounted(() => {
   void load()
+  void store.refreshAiUsage()
   window.addEventListener('beforeunload', handleBeforeUnload)
 
   mobileMediaQuery = window.matchMedia('(max-width: 767px)')
@@ -976,7 +1166,12 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  // The answers are saved right away (a generation still in flight would otherwise hold the save
+  // back in the queue). Leaving the questionnaire altogether (stepper, browser back) leaves the
+  // step too — the run lives on in the store and lands there; a no-op when finish() already wrote
+  // everything.
   void flushAnswers()
+  void requestAiGeneration()
   window.removeEventListener('beforeunload', handleBeforeUnload)
   mobileMediaQuery?.removeEventListener('change', updateIsMobileViewport)
   if (pulseTimer) {
@@ -1395,6 +1590,33 @@ onUnmounted(() => {
 // text-h3, text-body are the project's own typography utility classes (styles/typography.scss).
 // Desktop-only — .questionnaire-page__intro-mobile above replaces this (static title/description,
 // no per-question eyebrow) on mobile.
+.questionnaire-page__ai-limit {
+  margin-bottom: $spacing-6;
+}
+
+.questionnaire-page__ai-outdated {
+  display: flex;
+  align-items: flex-start;
+  gap: $spacing-2;
+  margin: 0 0 $spacing-4;
+  color: $text-secondary;
+
+  .v-icon {
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+}
+
+.questionnaire-page__inline-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: $accent-deep;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .questionnaire-page__intro {
   margin-bottom: $spacing-8;
 

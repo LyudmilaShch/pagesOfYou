@@ -13,6 +13,16 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
   // ---------------------------------------------------------------------------
+  // Behind a reverse proxy (nginx, a cloud load balancer) — TRUST_PROXY is the number of proxy
+  // hops in front of the app, so `req.ip` is the visitor's real address, not the proxy's. The
+  // guest AI generation limit (AiUsageService) and the throttler both key on it. Unset locally.
+  // ---------------------------------------------------------------------------
+  if (process.env.TRUST_PROXY) {
+    const hops = Number(process.env.TRUST_PROXY);
+    app.set('trust proxy', Number.isFinite(hops) ? hops : process.env.TRUST_PROXY);
+  }
+
+  // ---------------------------------------------------------------------------
   // CORS — allow requests from the Vue frontend
   // ---------------------------------------------------------------------------
   // Must be registered before useStaticAssets below: Express runs middleware in

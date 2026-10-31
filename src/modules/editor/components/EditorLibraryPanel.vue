@@ -2,6 +2,23 @@
   <div class="editor-library">
     <div class="editor-library__list">
       <button
+        v-if="showCoverPhrase"
+        type="button"
+        class="editor-library__item"
+        :disabled="store.previewMode"
+        @click="handleAddCoverPhrase"
+      >
+        <span class="editor-library__item-icon">
+          <v-icon size="18">mdi-format-quote-open</v-icon>
+        </span>
+        <span class="editor-library__item-content">
+          <span class="editor-library__item-label">Фраза обложки</span>
+          <span class="editor-library__item-description">
+            Короткий анонс о человеке — появится после заполнения журнала. Каждый клик добавляет ещё одну фразу
+          </span>
+        </span>
+      </button>
+      <button
         v-for="item in items"
         :key="item.type"
         type="button"
@@ -70,6 +87,16 @@ const props = defineProps<{
 const store = useEditorStore()
 
 const items = computed(() => LIBRARY_ELEMENTS.filter((item) => item.category === props.category))
+
+// Cover lines only make sense on a cover — offered there alone, at the top of the text category.
+const showCoverPhrase = computed(() => props.category === 'text' && store.document?.pageType === 'COVER')
+
+function handleAddCoverPhrase(): void {
+  if (store.previewMode) {
+    return
+  }
+  store.addCoverPhrase()
+}
 
 const frames = ref<AdminPhotoFrame[]>([])
 const loadingFrames = ref(false)

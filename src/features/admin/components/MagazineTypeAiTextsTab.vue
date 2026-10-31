@@ -29,10 +29,24 @@
           </div>
           <p class="mt-ai-texts-tab__item-prompt">{{ item.element.prompt || 'Промпт не задан' }}</p>
           <div class="mt-ai-texts-tab__item-tags">
+            <v-chip v-if="item.element.contentSource === 'journal'" size="x-small" variant="tonal" color="primary">
+              по всему журналу
+            </v-chip>
             <v-chip size="x-small" variant="outlined">
               {{ item.element.questionKeys.length }} {{ pluralQuestions(item.element.questionKeys.length) }}
             </v-chip>
-            <v-chip size="x-small" variant="outlined">{{ lengthSummary(item.element.lengthConstraint) }}</v-chip>
+            <v-chip v-if="item.parts.length > 1" size="x-small" variant="outlined" prepend-icon="mdi-link-variant">
+              {{ item.parts.length }} {{ pluralParts(item.parts.length) }}
+              <template v-if="item.element.chainMode === 'phrases'"> · отдельные фразы</template>
+            </v-chip>
+            <v-chip
+              v-for="(part, index) in item.parts"
+              :key="part.id"
+              size="x-small"
+              variant="outlined"
+            >
+              <template v-if="item.parts.length > 1">{{ index + 1 }}: </template>{{ lengthSummary(part.lengthConstraint) }}
+            </v-chip>
           </div>
         </div>
         <v-icon size="18" color="grey">mdi-chevron-right</v-icon>
@@ -56,12 +70,24 @@
             persistent-hint
           />
 
+          <div class="mt-ai-texts-tab__length">
+            <p class="mt-ai-texts-tab__length-title">Из чего писать</p>
+            <v-btn-toggle v-model="form.contentSource" color="primary" density="compact" mandatory>
+              <v-btn value="questions" size="small">Вопросы анкеты</v-btn>
+              <v-btn value="journal" size="small">Весь журнал</v-btn>
+            </v-btn-toggle>
+            <p v-if="form.contentSource === 'journal'" class="mt-ai-texts-tab__parts-hint">
+              Текст пишется после заполнения анкеты — по всем ответам и текстам журнала. Выбранные
+              ниже вопросы задаются последним шагом анкеты как пожелания.
+            </p>
+          </div>
+
           <v-select
             v-model="form.questionKeys"
             :items="questionItems"
             item-title="label"
             item-value="key"
-            label="Вопросы, используемые в промпте"
+            :label="form.contentSource === 'journal' ? 'Дополнительные вопросы (необязательно)' : 'Вопросы, используемые в промпте'"
             variant="outlined"
             multiple
             chips
@@ -69,15 +95,41 @@
             hide-details="auto"
           />
 
-          <div class="mt-ai-texts-tab__length">
-            <p class="mt-ai-texts-tab__length-title">Длина текста</p>
-            <v-btn-toggle v-model="form.lengthUnit" color="primary" density="compact" mandatory>
+          <template v-if="form.parts.length > 1">
+            <p class="mt-ai-texts-tab__parts-hint">
+              Текст разбит на {{ form.parts.length }} {{ pluralParts(form.parts.length) }} — промпт и
+              вопросы общие, длина задаётся для каждой части. Порядок и расположение частей меняются в
+              редакторе разворота.
+            </p>
+            <div class="mt-ai-texts-tab__length">
+              <p class="mt-ai-texts-tab__length-title">Как связаны части</p>
+              <v-btn-toggle v-model="form.chainMode" color="primary" density="compact" mandatory>
+                <v-btn value="continuous" size="small">Единый текст</v-btn>
+                <v-btn value="phrases" size="small">Отдельные фразы</v-btn>
+              </v-btn-toggle>
+            </div>
+          </template>
+
+          <div v-for="(part, index) in form.parts" :key="part.id" class="mt-ai-texts-tab__length">
+            <p class="mt-ai-texts-tab__length-title">
+              {{ form.parts.length > 1 ? `Часть ${index + 1} · ${part.name}` : 'Длина текста' }}
+            </p>
+            <v-text-field
+              v-if="form.parts.length > 1"
+              v-model="part.partHint"
+              :label="form.chainMode === 'phrases' ? 'О чём эта фраза (необязательно)' : 'О чём эта часть (необязательно)'"
+              :placeholder="form.chainMode === 'phrases' ? 'Например: увлечение, мечта, черта характера' : 'Например: знакомство, пожелание на будущее'"
+              variant="outlined"
+              density="compact"
+              hide-details
+            />
+            <v-btn-toggle v-model="part.lengthUnit" color="primary" density="compact" mandatory>
               <v-btn value="characters" size="small">Символы</v-btn>
               <v-btn value="words" size="small">Слова</v-btn>
             </v-btn-toggle>
             <div class="mt-ai-texts-tab__bounds">
               <v-text-field
-                v-model.number="form.lengthMin"
+                v-model.number="part.lengthMin"
                 label="Минимум"
                 type="number"
                 min="0"
@@ -86,7 +138,7 @@
                 hide-details
               />
               <v-text-field
-                v-model.number="form.lengthMax"
+                v-model.number="part.lengthMax"
                 label="Максимум"
                 type="number"
                 min="0"
@@ -117,7 +169,9 @@ import { computed, onMounted, reactive, ref } from 'vue'
 
 import { isAiTextElement } from '@/modules/editor/models'
 import type { AiTextPlaceholder, LengthConstraint, LengthConstraintUnit } from '@/modules/editor/models'
+import type { AiTextChainMode, AiTextContentSource } from '@/modules/editor/models/ai-text-placeholder.model'
 import { normalizeCanvasData } from '@/modules/editor/models/canvas-data.model'
+import { getAiTextSiblingParts } from '@/modules/editor/utils/ai-text-chain.util'
 import { locateNode, walkTree } from '@/modules/editor/utils/element-tree.util'
 import {
   adminMagazinePagesApi,
@@ -132,11 +186,15 @@ const props = defineProps<{
   magazineTypeId: string
 }>()
 
+/** One generated text — a standalone block, or every part of a chain (see ai-text-chain.util.ts),
+ * whose shared prompt/questions are edited once and written to all parts. */
 interface AiTextItem {
   pageId: string
   pageName: string
   pageType: PageType
+  /** The first part — the one shown in the list (prompt/questions are mirrored across parts). */
   element: AiTextPlaceholder
+  parts: AiTextPlaceholder[]
 }
 
 const pages = ref<AdminMagazinePage[]>([])
@@ -161,6 +219,15 @@ function pluralQuestions(n: number): string {
   if (mod10 === 1) return 'вопрос'
   if (mod10 >= 2 && mod10 <= 4) return 'вопроса'
   return 'вопросов'
+}
+
+function pluralParts(n: number): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod100 >= 11 && mod100 <= 19) return 'частей'
+  if (mod10 === 1) return 'часть'
+  if (mod10 >= 2 && mod10 <= 4) return 'части'
+  return 'частей'
 }
 
 function lengthSummary(constraint: LengthConstraint): string {
@@ -188,10 +255,19 @@ function normalizePages(pageList: AdminMagazinePage[]): AdminMagazinePage[] {
 function collectAiTextItems(pageList: AdminMagazinePage[]): AiTextItem[] {
   const collected: AiTextItem[] = []
   for (const page of pageList) {
+    const seenChainIds = new Set<string>()
     walkTree(page.canvasData.elements, (node) => {
-      if (isAiTextElement(node)) {
-        collected.push({ pageId: page.id, pageName: page.name, pageType: page.pageType, element: node })
+      if (!isAiTextElement(node)) {
+        return
       }
+      if (node.chainId) {
+        if (seenChainIds.has(node.chainId)) {
+          return
+        }
+        seenChainIds.add(node.chainId)
+      }
+      const parts = getAiTextSiblingParts(page.canvasData.elements, node)
+      collected.push({ pageId: page.id, pageName: page.name, pageType: page.pageType, element: parts[0], parts })
     })
   }
   return collected
@@ -219,21 +295,37 @@ const editDialog = reactive<{ open: boolean; item: AiTextItem | null; saving: bo
   item: null,
   saving: false,
 })
+interface PartLengthForm {
+  id: string
+  name: string
+  partHint: string
+  lengthUnit: LengthConstraintUnit
+  lengthMin: number
+  lengthMax: number
+}
+
 const form = reactive({
   prompt: '',
   questionKeys: [] as string[],
-  lengthUnit: 'characters' as LengthConstraintUnit,
-  lengthMin: 0,
-  lengthMax: 0,
+  chainMode: 'continuous' as AiTextChainMode,
+  contentSource: 'questions' as AiTextContentSource,
+  parts: [] as PartLengthForm[],
 })
 
 function openEdit(item: AiTextItem): void {
   editDialog.item = item
   form.prompt = item.element.prompt
   form.questionKeys = [...item.element.questionKeys]
-  form.lengthUnit = item.element.lengthConstraint.unit
-  form.lengthMin = item.element.lengthConstraint.min ?? 0
-  form.lengthMax = item.element.lengthConstraint.max ?? 0
+  form.chainMode = item.element.chainMode
+  form.contentSource = item.element.contentSource
+  form.parts =item.parts.map((part) => ({
+    id: part.id,
+    name: part.name,
+    partHint: part.partHint,
+    lengthUnit: part.lengthConstraint.unit,
+    lengthMin: part.lengthConstraint.min ?? 0,
+    lengthMax: part.lengthConstraint.max ?? 0,
+  }))
   editDialog.open = true
 }
 
@@ -244,23 +336,29 @@ async function submitEdit(): Promise<void> {
   }
 
   const page = pages.value.find((candidate) => candidate.id === item.pageId)
-  const location = page ? locateNode(page.canvasData.elements, item.element.id) : null
-  if (!page || !location) {
+  const locations = page
+    ? form.parts.map((part) => ({ part, location: locateNode(page.canvasData.elements, part.id) }))
+    : []
+  if (!page || locations.some(({ location }) => !location)) {
     notify('Элемент больше не существует — обновите список', 'error')
     return
   }
 
-  const patchedElement: AiTextPlaceholder = {
-    ...item.element,
-    prompt: form.prompt,
-    questionKeys: [...form.questionKeys],
-    lengthConstraint: {
-      unit: form.lengthUnit,
-      min: form.lengthMin || null,
-      max: form.lengthMax || null,
-    },
+  for (const { part, location } of locations) {
+    location!.siblings[location!.index] = {
+      ...(location!.node as AiTextPlaceholder),
+      prompt: form.prompt,
+      questionKeys: [...form.questionKeys],
+      chainMode: form.chainMode,
+      contentSource: form.contentSource,
+      partHint: part.partHint.trim(),
+      lengthConstraint: {
+        unit: part.lengthUnit,
+        min: part.lengthMin || null,
+        max: part.lengthMax || null,
+      },
+    }
   }
-  location.siblings[location.index] = patchedElement
 
   editDialog.saving = true
   try {
@@ -375,6 +473,12 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: $spacing-2;
+}
+
+.mt-ai-texts-tab__parts-hint {
+  margin: 0;
+  color: $text-secondary;
+  font-size: $font-size-body-sm;
 }
 
 .mt-ai-texts-tab__length-title {

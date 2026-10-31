@@ -30,6 +30,8 @@
           'spread-thumb__el--active': activeElementId === leaf.id,
           'spread-thumb__el--hovered': hoveredElementId === leaf.id,
           'spread-thumb__el--oversized': isOversizedLeaf(leaf),
+          'spread-thumb__el--text-overflow': textIssueMessages?.has(leaf.id),
+          'spread-thumb__el--ai-awaiting': awaitingElementIds.has(leaf.id) && !pendingElementIds.has(leaf.id),
         }"
         :data-element-id="leaf.id"
         :style="elementStyle(leaf)"
@@ -136,6 +138,22 @@
           <div class="spread-thumb__text">
             <div class="spread-thumb__text-inner" :style="textInnerStyle(leaf)">{{ leaf.previewPlaceholderText }}</div>
           </div>
+          <v-tooltip v-if="textIssueMessages?.has(leaf.id)" location="top" content-class="editor-tooltip--arrow-top">
+            <template #activator="{ props: tooltipProps }">
+              <span v-bind="tooltipProps" class="spread-thumb__overflow-badge" :aria-label="textIssueMessages.get(leaf.id)">
+                <v-icon size="12" color="white">mdi-alert</v-icon>
+              </span>
+            </template>
+            {{ textIssueMessages.get(leaf.id) }}
+          </v-tooltip>
+          <v-tooltip v-else-if="awaitingElementIds.has(leaf.id)" location="top" content-class="editor-tooltip--arrow-top">
+            <template #activator="{ props: tooltipProps }">
+              <span v-bind="tooltipProps" class="spread-thumb__awaiting-badge" :aria-label="AWAITING_MESSAGE">
+                <v-icon size="12" color="white">mdi-creation</v-icon>
+              </span>
+            </template>
+            {{ AWAITING_MESSAGE }}
+          </v-tooltip>
           <div v-if="aiTextEditEnabled" class="spread-thumb__photo-actions">
             <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
               <template #activator="{ props: tooltipProps }">
@@ -153,17 +171,29 @@
             </v-tooltip>
             <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
               <template #activator="{ props: tooltipProps }">
-                <button
-                  v-bind="tooltipProps"
-                  type="button"
-                  class="spread-thumb__photo-action-btn"
-                  aria-label="Сгенерировать другой вариант"
-                  @click.stop="emit('regenerate-ai-text', leaf.id)"
-                >
-                  <v-icon size="14" color="black">mdi-refresh</v-icon>
-                </button>
+                <!-- A wrapper carries the tooltip: a disabled <button> fires no hover events, and
+                     at the limit the tooltip is exactly what explains why it's disabled. -->
+                <span v-bind="tooltipProps" class="spread-thumb__action-wrap">
+                  <button
+                    type="button"
+                    class="spread-thumb__photo-action-btn"
+                    :disabled="isAiLimitReached"
+                    aria-label="Сгенерировать другой вариант"
+                    @click.stop="emit('regenerate-ai-text', leaf.id)"
+                  >
+                    <v-icon size="14" color="black">mdi-refresh</v-icon>
+                  </button>
+                </span>
               </template>
-              Сгенерировать другой вариант
+              <template v-if="isAiLimitReached">
+                Лимит перегенераций на сегодня исчерпан — текст можно поправить вручную
+              </template>
+              <template v-else-if="aiUsage?.isGuest">
+                Сгенерировать другой вариант · нужно войти в аккаунт
+              </template>
+              <template v-else>
+                Сгенерировать другой вариант<template v-if="aiUsage"> · осталось сегодня: {{ aiUsage.remaining }}</template>
+              </template>
             </v-tooltip>
           </div>
         </template>
@@ -230,6 +260,9 @@ const props = withDefaults(
      * touches one of their feeding questions hasn't resolved yet — see QuestionnairePage.vue's
      * `pendingAiElementIds`) — shown as a shimmer instead of the (possibly stale) preview text. */
     pendingElementIds?: Set<string>
+    /** ai-text-placeholder element ids whose answers are in, but whose text is only written once
+     * the customer leaves the questionnaire step — badged so the answer visibly "goes somewhere". */
+    awaitingElementIds?: Set<string>
     /** Manual photo-placement mode (see PhotoUploadPage.vue) — every photo-placeholder becomes a
      * drop target, highlighted while a drag is over it, emitting `drop-photo` on release instead
      * of doing anything itself (this component has no store access — the parent owns the save). */
@@ -246,6 +279,15 @@ const props = withDefaults(
      * above. Only QuestionnairePage.vue's book offers this (see order-builder.store.ts's
      * `regenerateAiText`, which needs a real backend order). */
     aiTextEditEnabled?: boolean
+    /** ai-text-placeholder id → problem message, for blocks on THIS page whose text runs into
+     * something or off the page (see ai-text-overflow.util.ts) — outlined and badged so the
+     * customer sees what to shorten. */
+    textIssueMessages?: Map<string, string>
+    /** Today's AI regeneration allowance — shown on the "regenerate" button's tooltip, which is
+     * disabled once a signed-in customer's `remaining` hits 0. A guest has no regenerations: the
+     * button stays enabled and the parent answers its click with a sign-in prompt. Unset → no
+     * counter, button always enabled. */
+    aiUsage?: { remaining: number; isGuest: boolean } | null
     /** Real rows for every toc-placeholder on this page — computed once by the caller from the
      * order's/template's actual page list (see journal-structure.util.ts's `buildTocEntries`),
      * since this component only ever sees ITS OWN page's canvasData, never its siblings. Left
@@ -264,6 +306,7 @@ const props = withDefaults(
   }>(),
   {
     pendingElementIds: () => new Set(),
+    awaitingElementIds: () => new Set(),
     dropEnabled: false,
     cropEnabled: false,
     pickEnabled: false,
@@ -280,6 +323,12 @@ const emit = defineEmits<{
 }>()
 
 const dragOverElementId = ref<string | null>(null)
+
+const isAiLimitReached = computed(
+  () => props.aiUsage != null && !props.aiUsage.isGuest && props.aiUsage.remaining <= 0,
+)
+
+const AWAITING_MESSAGE = 'Напишем текст, когда нажмёте «Далее»'
 
 function isActionableLeaf(leaf: LeafElement): boolean {
   return (
@@ -781,7 +830,10 @@ function textInnerStyle(leaf: TextPlaceholder | AiTextPlaceholder): Record<strin
     transform: `scale(${scale.value})`,
     transformOrigin: 'top left',
     display: 'flex',
-    alignItems: leaf.verticalAlign === 'top' ? 'flex-start' : leaf.verticalAlign === 'bottom' ? 'flex-end' : 'center',
+    // `safe`: a text taller than its box (an AI text longer than the admin's box) starts at the
+    // box's top and grows down instead of spilling up past it too — same as the print render,
+    // where the text node has no fixed height and always grows down from the box's top.
+    alignItems: leaf.verticalAlign === 'top' ? 'flex-start' : leaf.verticalAlign === 'bottom' ? 'safe flex-end' : 'safe center',
     justifyContent: leaf.textAlign === 'left' ? 'flex-start' : leaf.textAlign === 'right' ? 'flex-end' : 'center',
     fontFamily: leaf.fontFamily,
     fontSize: `${leaf.fontSize}px`,
@@ -1049,6 +1101,58 @@ function shapeStyle(leaf: ShapeElement): Record<string, string> {
 
 .spread-thumb__text {
   padding: 0;
+}
+
+.spread-thumb__action-wrap {
+  display: inline-flex;
+}
+
+.spread-thumb__photo-action-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.spread-thumb__el--text-overflow {
+  outline: 1.5px dashed $accent-deep;
+  outline-offset: 1px;
+}
+
+.spread-thumb__overflow-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: $accent-deep;
+  pointer-events: auto;
+}
+
+// Answers are in, the text gets written once the step is left — a soft breathing outline, so the
+// answer visibly "lands" on the page before the real text does.
+.spread-thumb__el--ai-awaiting {
+  outline: 1.5px dashed rgba($accent, 0.7);
+  outline-offset: 1px;
+  animation: spread-thumb-awaiting 2s ease-in-out infinite;
+}
+
+.spread-thumb__awaiting-badge {
+  @extend .spread-thumb__overflow-badge;
+  background: $accent;
+}
+
+@keyframes spread-thumb-awaiting {
+  0%,
+  100% {
+    outline-color: rgba($accent, 0.35);
+  }
+  50% {
+    outline-color: rgba($accent, 0.85);
+  }
 }
 
 .spread-thumb__toc {

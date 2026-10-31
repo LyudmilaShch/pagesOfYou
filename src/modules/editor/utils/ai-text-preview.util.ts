@@ -1,4 +1,4 @@
-import type { LengthConstraint } from '../models/ai-text-placeholder.model'
+import type { AiTextPlaceholder, LengthConstraint } from '../models/ai-text-placeholder.model'
 
 const AI_TEXT_PLACEHOLDER_PHRASE =
   'Здесь появится текст, сгенерированный на основе заполненной анкеты. После заполнения всех ' +
@@ -42,4 +42,16 @@ export function buildAiTextFallbackPreview(constraint: LengthConstraint): string
   const max = Math.min(rawMax, CHARACTERS_PREVIEW_CAP)
   const repeats = Math.ceil(max / AI_TEXT_PLACEHOLDER_PHRASE.length)
   return AI_TEXT_PLACEHOLDER_PHRASE.repeat(repeats).slice(0, max).trimEnd()
+}
+
+/** The pre-generation stand-in for `element`: a text written from the whole journal (cover lines
+ * etc.) only appears once the questionnaire is finished, so it says exactly that — short enough
+ * for a cover-line box — instead of the generic filler sized to the length constraint. */
+export function buildAiTextElementPreview(element: AiTextPlaceholder): string {
+  if (element.contentSource === 'journal') {
+    return element.chainMode === 'phrases'
+      ? 'Фраза появится после заполнения журнала'
+      : 'Текст появится после заполнения журнала'
+  }
+  return buildAiTextFallbackPreview(element.lengthConstraint)
 }

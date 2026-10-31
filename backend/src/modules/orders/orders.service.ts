@@ -21,8 +21,15 @@ import { resolveAssetUrl } from '../../common/utils/asset-url.util';
 import { MIN_JOURNAL_SPREADS } from '../../shared/constants/journal.constants';
 import { normalizeCanvasData } from '../../shared/types/canvas-data.types';
 import type { CanvasAiTextPlaceholder, CanvasLeafElement } from '../../shared/types/canvas-data.types';
-import { findAiTextLeavesForKeys, flattenTree } from '../../shared/utils/element-tree.util';
+import { findAiTextGroupOf, flattenTree, groupAiTextLeaves } from '../../shared/utils/element-tree.util';
+import {
+  buildJournalPromptContext,
+  buildQuestionsPromptContext,
+  collectJournalTexts,
+} from '../../shared/utils/ai-prompt-context.util';
 import { AiTextGenerationService } from '../ai-text-generation/ai-text-generation.service';
+import { AiUsageService, type AiUsageKind } from '../ai-text-generation/ai-usage.service';
+import { aiAnswersSignature } from '../../shared/utils/ai-answers-signature.util';
 import { calculateJournalPrice } from '../../shared/utils/pricing.util';
 import {
   buildInitialJournalSlots,
@@ -97,6 +104,10 @@ const ORDER_INCLUDE = {
 
 type OrderWithDetails = Prisma.OrderGetPayload<{ include: typeof ORDER_INCLUDE }>;
 
+/** `generateWithinLimit`'s "no generation left today" result — distinct from `null` (the
+ * generation itself produced nothing). */
+const LIMIT_REACHED = Symbol('ai-limit-reached');
+
 @Injectable()
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
@@ -105,6 +116,7 @@ export class OrdersService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly aiTextGeneration: AiTextGenerationService,
+    private readonly aiUsage: AiUsageService,
   ) {}
 
   async createDraft(userId: string, dto: CreateDraftOrderDto) {
@@ -431,11 +443,29 @@ export class OrdersService {
       changedKeys.add(input.questionKey);
     }
 
+    // AI texts are NOT generated here — this runs on every autosave while the customer is still
+    // typing; the questionnaire asks for them once a step is left (generateAiTextsForAnswers).
     if (changedKeys.size > 0) {
       await this.syncAnswersToPlaceholders(orderId, { questionKeys: [...changedKeys] });
-      await this.generateAiTextForElements(orderId, { questionKeys: [...changedKeys] });
     }
 
+    return this.findOne(orderId, userId);
+  }
+
+  /**
+   * Brings the order's question-driven AI texts up to date with its answers — called by the
+   * questionnaire when a step is left. Every text whose questions are all answered is considered,
+   * not only those fed by `changedKeys`: one that's already written from exactly these answers
+   * (see aiAnswersSignature) is skipped for free, so a repeated call costs nothing.
+   */
+  async generateAiTextsForAnswers(orderId: string, userId: string, changedKeys: string[]) {
+    const order = await this.getOwnedOrderOrThrow(orderId, userId);
+
+    if (order.status !== OrderStatus.DRAFT) {
+      throw new BadRequestException('Only draft orders can be edited.');
+    }
+
+    await this.generateAiTextForElements(orderId, { userId, changedKeys });
     return this.findOne(orderId, userId);
   }
 
@@ -661,16 +691,17 @@ export class OrdersService {
   }
 
   /**
-   * Generates text for `ai-text-placeholder` elements whose `questionKeys` intersect the given
-   * answers, via YandexGPT (see `AiTextGenerationService`) — mirrors `syncAnswersToPlaceholders`'s
-   * shape (same two call sites, same `questionKeys`/`journalPageIds` filters), but writes
-   * `source: AI` instead of `AUTO` and is best-effort: any failure (missing config, upstream
-   * error) is logged and swallowed here so it can never fail the answer-save request it's called
-   * from.
+   * Writes every question-driven `ai-text-placeholder` that's due via YandexGPT (see
+   * `AiTextGenerationService`): all its questions answered, and either no text yet (a `fill` —
+   * never limited visibly) or a text written from different answers (an update — a
+   * `regenerate`, charged to the daily limit; at the limit the old text simply stays and the
+   * customer sees it flagged as outdated). Texts written before answers were fingerprinted
+   * (`aiSourceHash` null) only update when one of `changedKeys` feeds them. Writes `source: AI`
+   * and is best-effort: any failure (missing config, upstream error) is logged and swallowed.
    */
   private async generateAiTextForElements(
     orderId: string,
-    options: { questionKeys?: string[]; journalPageIds?: string[] },
+    options: { userId: string; changedKeys?: string[]; journalPageIds?: string[] },
   ): Promise<void> {
     try {
       const journalPages = await this.prisma.journalPage.findMany({
@@ -692,73 +723,123 @@ export class OrdersService {
       }));
 
       const allAnswers = await this.prisma.questionAnswer.findMany({ where: { orderId } });
+      const answerByKey = new Map(allAnswers.map((answer) => [answer.questionKey, answer.textValue]));
       // Same "answered" criterion buildAiPromptContext uses (non-empty textValue) — gates
       // generation below on every one of an element's questionKeys meeting it, not just one.
       const answeredKeys = new Set(
         allAnswers.filter((answer) => answer.textValue?.trim()).map((answer) => answer.questionKey),
       );
+      const changedKeys = new Set(options.changedKeys ?? []);
 
-      // questionKeys not given (called from setJournalPageTemplate) → the new page's AI-text
-      // elements could reference any question the order has ever answered, not just recently
-      // changed ones, so consider every key with a non-empty answer.
-      const relevantKeys = options.questionKeys
-        ? new Set(options.questionKeys)
-        : new Set(allAnswers.map((answer) => answer.questionKey));
+      // One generated TEXT at a time — a chain's parts (see groupAiTextLeaves) are generated
+      // together in one request; its first part's prompt/questionKeys speak for the whole chain
+      // (the editor mirrors them across parts).
+      for (const { page: journalPage, leaves } of pagesWithLeaves) {
+        for (const parts of groupAiTextLeaves(leaves)) {
+          const lead = parts[0];
+          // Journal-wide texts wait for the finished questionnaire (generateJournalAiTexts) —
+          // their questionKeys are wishes, not triggers.
+          if (lead.contentSource === 'journal' || lead.questionKeys.length === 0) {
+            continue;
+          }
+          // Wait for every one of this text's feeding questions — generating from a partial
+          // answer set (e.g. 1 of 2 questions) would need regenerating anyway once the rest come
+          // in, and risks YandexGPT inventing content for the still-missing ones.
+          if (!lead.questionKeys.every((key) => answeredKeys.has(key))) {
+            continue;
+          }
 
-      if (relevantKeys.size === 0) {
-        return;
-      }
+          const existingByElementId = new Map(
+            journalPage.placeholderValues.map((value) => [value.elementId, value]),
+          );
+          // A part the customer edited by hand keeps its text; the rest of its chain still regenerates.
+          const writableParts = parts.filter(
+            (part) => existingByElementId.get(part.id)?.source !== PlaceholderSource.OVERRIDDEN,
+          );
+          const sourceHash = aiAnswersSignature(lead.questionKeys, answerByKey);
+          const feedsChange = lead.questionKeys.some((key) => changedKeys.has(key));
+          const isUpToDate = (part: CanvasAiTextPlaceholder) => {
+            const existing = existingByElementId.get(part.id);
+            if (!existing?.textValue?.trim()) {
+              return false;
+            }
+            return existing.aiSourceHash ? existing.aiSourceHash === sourceHash : !feedsChange;
+          };
+          if (writableParts.every(isUpToDate)) {
+            continue;
+          }
+          const isUpdate = writableParts.some((part) => existingByElementId.get(part.id)?.textValue?.trim());
 
-      const matches: Array<{ journalPageId: string; element: ReturnType<typeof findAiTextLeavesForKeys>[number] }> = [];
-      for (const { page, leaves } of pagesWithLeaves) {
-        for (const element of findAiTextLeavesForKeys(leaves, relevantKeys)) {
-          matches.push({ journalPageId: page.id, element });
-        }
-      }
+          const promptContext = await this.buildAiPromptContext(orderId, lead);
+          if (!promptContext) {
+            continue;
+          }
 
-      if (matches.length === 0) {
-        return;
-      }
+          const texts = await this.generateWithinLimit(options.userId, isUpdate ? 'regenerate' : 'fill', () =>
+            this.aiTextGeneration.generateTextParts(
+              promptContext,
+              parts.map((part) => part.lengthConstraint),
+              parts.map((part) => part.partHint),
+              lead.chainMode,
+            ),
+          );
 
-      for (const { journalPageId, element } of matches) {
-        const journalPage = journalPages.find((page) => page.id === journalPageId)!;
-        const existing = journalPage.placeholderValues.find((value) => value.elementId === element.id);
+          // Out of today's generations of this kind → the text keeps what it has (its old version
+          // is flagged as outdated on the client, an empty one keeps its placeholder); the other
+          // kind may still have room, so carry on.
+          if (texts === LIMIT_REACHED) {
+            this.logger.log(
+              `AI ${isUpdate ? 'regeneration limit' : 'fill cap'} reached for user ${options.userId} (order ${orderId}).`,
+            );
+            continue;
+          }
+          if (!texts) {
+            continue;
+          }
 
-        if (existing?.source === PlaceholderSource.OVERRIDDEN) {
-          continue;
-        }
-
-        // Wait for every one of this element's feeding questions, not just whichever one(s) just
-        // changed — generating from a partial answer set (e.g. 1 of 2 questions) would need
-        // regenerating anyway once the rest come in, and risks YandexGPT inventing content for the
-        // still-missing ones.
-        if (!element.questionKeys.every((key) => answeredKeys.has(key))) {
-          continue;
-        }
-
-        const promptContext = await this.buildAiPromptContext(orderId, element);
-        if (!promptContext) {
-          continue;
-        }
-
-        const text = await this.aiTextGeneration.generateText(promptContext, element.lengthConstraint);
-
-        if (!text) {
-          continue;
-        }
-
-        const data = { textValue: text, valueType: PlaceholderValueType.TEXT, source: PlaceholderSource.AI };
-
-        if (existing) {
-          await this.prisma.placeholderValue.update({ where: { id: existing.id }, data });
-        } else {
-          await this.prisma.placeholderValue.create({
-            data: { journalPageId, elementId: element.id, ...data },
-          });
+          await this.writeAiTexts(
+            journalPage.id,
+            writableParts.map((part) => ({ elementId: part.id, text: texts[parts.indexOf(part)] })),
+            existingByElementId,
+            sourceHash,
+          );
         }
       }
     } catch (err) {
       this.logger.warn(`AI text generation failed for order ${orderId}: ${err}`);
+    }
+  }
+
+  private async answersSignatureOf(orderId: string, questionKeys: string[]): Promise<string> {
+    const answers = await this.prisma.questionAnswer.findMany({
+      where: { orderId, questionKey: { in: questionKeys } },
+    });
+    return aiAnswersSignature(questionKeys, new Map(answers.map((answer) => [answer.questionKey, answer.textValue])));
+  }
+
+  /** Stores generated texts as `source: AI`, fingerprinted with the answers they came from. */
+  private async writeAiTexts(
+    journalPageId: string,
+    texts: Array<{ elementId: string; text: string | undefined }>,
+    existingByElementId: Map<string, { id: string }>,
+    sourceHash: string | null,
+  ): Promise<void> {
+    for (const { elementId, text } of texts) {
+      if (!text) {
+        continue;
+      }
+      const existing = existingByElementId.get(elementId);
+      const data = {
+        textValue: text,
+        valueType: PlaceholderValueType.TEXT,
+        source: PlaceholderSource.AI,
+        aiSourceHash: sourceHash,
+      };
+      if (existing) {
+        await this.prisma.placeholderValue.update({ where: { id: existing.id }, data });
+      } else {
+        await this.prisma.placeholderValue.create({ data: { journalPageId, elementId, ...data } });
+      }
     }
   }
 
@@ -776,22 +857,191 @@ export class OrdersService {
         where: { orderId, questionKey: { in: element.questionKeys } },
       }),
     ]);
-    const questionByKey = new Map(questions.map((question) => [question.key, question]));
-    const answerByKey = new Map(answers.map((answer) => [answer.questionKey, answer]));
+    return buildQuestionsPromptContext(
+      element,
+      new Map(questions.map((question) => [question.key, question])),
+      new Map(answers.map((answer) => [answer.questionKey, answer.textValue ?? ''])),
+    );
+  }
 
-    const pairs = element.questionKeys
-      .map((key) => {
-        const question = questionByKey.get(key);
-        const answerText = answerByKey.get(key)?.textValue?.trim();
-        return question && answerText ? `${question.label}: ${answerText}` : null;
-      })
-      .filter((line): line is string => Boolean(line));
+  /** Loads everything a `contentSource: 'journal'` text is written from — every question and
+   * answer of the order, every other page's texts — for the pure `buildJournalPromptContext`. */
+  private async buildJournalPromptContext(
+    orderId: string,
+    parts: CanvasAiTextPlaceholder[],
+  ): Promise<string | null> {
+    const lead = parts[0];
+    const order = await this.prisma.order.findUniqueOrThrow({
+      where: { id: orderId },
+      select: { magazineTypeId: true },
+    });
+    const [questions, answers, journalPages] = await Promise.all([
+      this.prisma.question.findMany({
+        where: { magazineTypeId: order.magazineTypeId, deletedAt: null },
+        orderBy: { sortOrder: 'asc' },
+      }),
+      this.prisma.questionAnswer.findMany({ where: { orderId } }),
+      this.prisma.journalPage.findMany({
+        where: { orderId },
+        orderBy: { sortOrder: 'asc' },
+        include: { placeholderValues: true },
+      }),
+    ]);
 
-    if (pairs.length === 0) {
-      return null;
+    const journalTexts = collectJournalTexts(
+      journalPages.map((page) => ({
+        leaves: flattenTree(normalizeCanvasData(page.pageSnapshot).elements),
+        textByElementId: new Map(page.placeholderValues.map((value) => [value.elementId, value.textValue ?? ''])),
+      })),
+      new Set(parts.map((part) => part.id)),
+    );
+
+    return buildJournalPromptContext(
+      lead,
+      questions,
+      new Map(answers.map((answer) => [answer.questionKey, answer.textValue ?? ''])),
+      journalTexts,
+    );
+  }
+
+  /**
+   * Fills every `contentSource: 'journal'` text that has no text yet — called once the
+   * questionnaire is finished (and again on the review step / after a guest draft becomes an
+   * order, as a cheap no-op when everything is already filled). A text with no part filled is
+   * generated as a whole set; when only SOME parts are missing (a template was swapped, a part
+   * was added), each missing part is written alone with the existing ones as context, so it
+   * doesn't repeat them. Hand-edited parts are never touched. Best-effort, like the per-answer
+   * generation: failures are logged, the order is returned either way.
+   */
+  async generateJournalAiTexts(orderId: string, userId: string) {
+    const order = await this.getOwnedOrderOrThrow(orderId, userId);
+
+    if (order.status !== OrderStatus.DRAFT) {
+      throw new BadRequestException('Only draft orders can be edited.');
     }
 
-    return `${element.prompt}\n\nОтветы пользователя:\n${pairs.join('\n')}`;
+    try {
+      const journalPages = await this.prisma.journalPage.findMany({
+        where: { orderId },
+        orderBy: { sortOrder: 'asc' },
+        include: { placeholderValues: true },
+      });
+
+      pages: for (const page of journalPages) {
+        const groups = groupAiTextLeaves(flattenTree(normalizeCanvasData(page.pageSnapshot).elements))
+          .filter((group) => group[0].contentSource === 'journal');
+
+        for (const parts of groups) {
+          const valueByElementId = new Map(page.placeholderValues.map((value) => [value.elementId, value]));
+          const missing = parts.filter((part) => !valueByElementId.get(part.id)?.textValue?.trim());
+          if (missing.length === 0) {
+            continue;
+          }
+
+          const promptContext = await this.buildJournalPromptContext(orderId, parts);
+          if (!promptContext) {
+            continue;
+          }
+
+          const lead = parts[0];
+          const texts = new Map<string, string>();
+
+          let limitReached = false;
+          if (missing.length === parts.length) {
+            const generated = await this.generateWithinLimit(userId, 'fill', () =>
+              this.aiTextGeneration.generateTextParts(
+                promptContext,
+                parts.map((part) => part.lengthConstraint),
+                parts.map((part) => part.partHint),
+                lead.chainMode,
+              ),
+            );
+            limitReached = generated === LIMIT_REACHED;
+            if (Array.isArray(generated)) {
+              generated.forEach((text, index) => texts.set(parts[index].id, text));
+            }
+          } else {
+            for (const part of missing) {
+              const context = await this.buildAiPartRewriteContext(page.id, promptContext, parts, part);
+              const generated = await this.generateWithinLimit(userId, 'fill', () =>
+                this.aiTextGeneration.generateText(context, part.lengthConstraint, lead.chainMode),
+              );
+              if (generated === LIMIT_REACHED) {
+                limitReached = true;
+                break;
+              }
+              if (generated) {
+                texts.set(
+                  part.id,
+                  lead.chainMode === 'phrases' ? this.aiTextGeneration.finalizePhrase(generated) : generated,
+                );
+              }
+            }
+          }
+
+          // Written from the whole journal, not from particular answers — nothing to fingerprint.
+          await this.writeAiTexts(
+            page.id,
+            missing.map((part) => ({ elementId: part.id, text: texts.get(part.id) })),
+            valueByElementId,
+            null,
+          );
+
+          if (limitReached) {
+            this.logger.log(`AI fill cap reached for user ${userId} — journal-wide texts of order ${orderId} left unfinished.`);
+            break pages;
+          }
+        }
+      }
+    } catch (err) {
+      this.logger.warn(`Journal-wide AI text generation failed for order ${orderId}: ${err}`);
+    }
+
+    return this.findOne(orderId, userId);
+  }
+
+  /** Runs one generation against `userId`'s daily counter of `kind`: one unit taken up front,
+   * given back if the generation produced nothing. `LIMIT_REACHED` when there was no unit left. */
+  private async generateWithinLimit<T>(
+    userId: string,
+    kind: AiUsageKind,
+    generate: () => Promise<T | null>,
+  ): Promise<T | null | typeof LIMIT_REACHED> {
+    const reservation = await this.aiUsage.reserve({ userId }, kind);
+    if (!reservation) {
+      return LIMIT_REACHED;
+    }
+    const result = await generate();
+    if (result === null) {
+      await this.aiUsage.release(reservation);
+    }
+    return result;
+  }
+
+  /** Prompt for rewriting one part of a chained text: loads every part's current text (generated
+   * or hand-edited) and hands the assembly to `AiTextGenerationService.buildPartRewriteContext`. */
+  private async buildAiPartRewriteContext(
+    journalPageId: string,
+    promptContext: string,
+    parts: CanvasAiTextPlaceholder[],
+    target: CanvasAiTextPlaceholder,
+  ): Promise<string> {
+    const values = await this.prisma.placeholderValue.findMany({
+      where: { journalPageId, elementId: { in: parts.map((part) => part.id) } },
+    });
+    const textByElementId = new Map(values.map((value) => [value.elementId, value.textValue?.trim() ?? '']));
+
+    return this.aiTextGeneration.buildPartRewriteContext(
+      promptContext,
+      parts.map((part) => ({
+        // Pages saved through the advanced editor keep their text in the snapshot itself (their
+        // PlaceholderValues are cleared — see saveJournalPageCanvas).
+        text: textByElementId.get(part.id) || part.previewPlaceholderText?.trim() || '',
+        hint: part.partHint ?? '',
+        isTarget: part.id === target.id,
+      })),
+      parts[0].chainMode,
+    );
   }
 
   /**
@@ -821,34 +1071,55 @@ export class OrdersService {
     }
 
     const leaves = flattenTree(normalizeCanvasData(journalPage.pageSnapshot).elements);
-    const element = leaves.find((leaf) => leaf.id === elementId);
+    const parts = findAiTextGroupOf(leaves, elementId);
+    const element = parts?.find((part) => part.id === elementId);
 
-    if (!element || element.type !== 'ai-text-placeholder') {
+    if (!parts || !element) {
       throw new BadRequestException(`Element "${elementId}" is not an AI-text placeholder.`);
     }
 
-    const promptContext = await this.buildAiPromptContext(orderId, element);
+    const lead = parts[0];
+    const promptContext =
+      lead.contentSource === 'journal'
+        ? await this.buildJournalPromptContext(orderId, parts)
+        : await this.buildAiPromptContext(orderId, lead);
     if (!promptContext) {
       throw new BadRequestException('Ни на один из связанных вопросов ещё нет ответа.');
     }
 
-    const text = await this.aiTextGeneration.generateText(promptContext, element.lengthConstraint);
-    if (!text) {
+    // A chain part is rewritten ALONE — the customer's other parts (possibly hand-edited) must
+    // stay exactly as they are — with those parts' current text as context, so the new version
+    // still continues the previous part and leads into the next one (or, for phrases, doesn't
+    // repeat them). A lone phrase still needs the cover-line instruction.
+    const context =
+      parts.length > 1 || lead.chainMode === 'phrases'
+        ? await this.buildAiPartRewriteContext(journalPageId, promptContext, parts, element)
+        : promptContext;
+
+    // A deliberate action — at the limit, the customer must learn why nothing happened (429).
+    const reservation = await this.aiUsage.reserveOrThrow({ userId }, 'regenerate');
+    const generated = await this.aiTextGeneration.generateText(context, element.lengthConstraint, lead.chainMode);
+    if (!generated) {
+      await this.aiUsage.release(reservation);
       throw new ServiceUnavailableException(
         'Не удалось сгенерировать текст. Попробуйте ещё раз позже.',
       );
     }
+    const text = lead.chainMode === 'phrases' ? this.aiTextGeneration.finalizePhrase(generated) : generated;
 
     const existing = await this.prisma.placeholderValue.findUnique({
       where: { journalPageId_elementId: { journalPageId, elementId } },
     });
-    const data = { textValue: text, valueType: PlaceholderValueType.TEXT, source: PlaceholderSource.AI };
-
-    if (existing) {
-      await this.prisma.placeholderValue.update({ where: { id: existing.id }, data });
-    } else {
-      await this.prisma.placeholderValue.create({ data: { journalPageId, elementId, ...data } });
-    }
+    // Written from today's answers — which also clears an "outdated" flag left by an update the
+    // limit had to skip.
+    const sourceHash =
+      lead.contentSource === 'journal' ? null : await this.answersSignatureOf(orderId, lead.questionKeys);
+    await this.writeAiTexts(
+      journalPageId,
+      [{ elementId, text }],
+      new Map(existing ? [[elementId, existing]] : []),
+      sourceHash,
+    );
 
     return { text };
   }
@@ -1296,7 +1567,7 @@ export class OrdersService {
     // this one regenerated page, so already-answered questions repopulate immediately instead of
     // staying blank until the next unrelated answer edit.
     await this.syncAnswersToPlaceholders(orderId, { journalPageIds: [journalPageId] });
-    await this.generateAiTextForElements(orderId, { journalPageIds: [journalPageId] });
+    await this.generateAiTextForElements(orderId, { userId, journalPageIds: [journalPageId] });
 
     return this.findOne(orderId, userId);
   }

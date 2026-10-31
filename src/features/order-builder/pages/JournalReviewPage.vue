@@ -72,6 +72,14 @@
           </p>
         </header>
 
+        <AiLimitNotice
+          v-if="store.isAiFillCapReached"
+          :is-guest="isGuest"
+          :unwritten-count="aiMarkers.unwrittenCount"
+          class="journal-review-page__ai-limit"
+          @login="loginForMoreAi"
+        />
+
         <div class="journal-review-page__book-wrap" aria-label="Развороты журнала">
           <QuestionnaireBook
             :pages="store.order?.journalPages ?? []"
@@ -86,6 +94,8 @@
             crop-enabled
             pick-enabled
             ai-text-edit-enabled
+            :text-issue-messages-by-page-id="textIssueMessagesByPageId"
+            :ai-usage="store.aiUsage"
             @crop-photo="openCropEditor"
             @pick-photo="openPhotoPicker"
             @edit-ai-text="openAiTextEditor"
@@ -113,6 +123,10 @@
             <v-icon size="16">mdi-alert-outline</v-icon>
             Не хватает {{ missingPhotoCount }} фото
           </span>
+          <span v-if="aiTextProblems.length > 0" class="journal-review-page__missing-photos-pill">
+            <v-icon size="16">mdi-text-box-remove-outline</v-icon>
+            Текст мешает макету: {{ aiTextProblems.length }}
+          </span>
 
           <v-btn
             color="primary"
@@ -128,9 +142,16 @@
       </div>
     </footer>
 
+    <AuthPromptModal
+      :open="authModalState.prompt"
+      :message="authModalState.message"
+      @login="showAuthForm"
+      @close="handleAuthClose"
+    />
+
     <AuthModal
       :open="authModalState.open"
-      message="Чтобы оформить заказ, войдите в аккаунт"
+      :message="authModalState.viaPrompt ? undefined : authModalState.message"
       @success="handleAuthSuccess"
       @close="handleAuthClose"
     />
@@ -169,10 +190,30 @@
       :open="aiTextEditModal.open"
       :initial-text="aiTextEditModal.initialText"
       :length-constraint="aiTextEditModal.lengthConstraint"
+      :element="aiTextEditModal.element"
+      :fit-context="aiTextEditModal.fitContext"
       :loading="aiTextEditModal.saving"
       @close="closeAiTextEditor"
       @save="saveAiTextEdit"
     />
+
+    <v-dialog v-model="overflowDialogOpen" max-width="440">
+      <v-card>
+        <v-card-title>Проверьте длинные тексты</v-card-title>
+        <v-card-text>
+          В {{ aiTextProblems.length }} {{ pluralBlocks(aiTextProblems.length) }} текст наезжает на
+          фото или соседний текст либо выходит за край страницы. Такие блоки отмечены на развороте
+          значком <v-icon size="16" color="primary">mdi-alert</v-icon> — наведите на него, чтобы
+          увидеть, в чём дело, затем нажмите «Изменить текст» и сократите его или сгенерируйте
+          другой вариант.
+        </v-card-text>
+        <v-card-actions>
+          <v-btn variant="text" @click="continueDespiteOverflow">Всё равно продолжить</v-btn>
+          <v-spacer />
+          <v-btn color="primary" variant="flat" @click="overflowDialogOpen = false">Исправить</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </div>
 </template>
 
@@ -188,15 +229,24 @@ import { flattenTree } from '@/modules/editor/utils/element-tree.util'
 import { computePhotoPageVisibleArea, type PhotoCropState } from '@/modules/editor/utils/photo-crop.util'
 import { useAuthStore } from '@/stores/auth.store'
 import AuthModal from '@/components/auth/AuthModal.vue'
+import AuthPromptModal from '@/components/auth/AuthPromptModal.vue'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
 import { getGalleryScope } from '../utils/photo-gallery-scope.util'
 import { materializeCanvasData } from '../utils/merge-placeholder-element.util'
 import { collectPhotoSlotPreview, countEmptyPhotoSlots } from '../utils/missing-photos.util'
+import {
+  buildAiTextFitContext,
+  collectAiTextFitProblems,
+  groupAiTextFitProblemsByPage,
+} from '../utils/ai-text-overflow.util'
+import type { AiTextFitContext } from '@/modules/editor/utils/ai-text-capacity.util'
 import QuestionnaireBook from '../components/questionnaire/QuestionnaireBook.vue'
 import MissingPhotosModal from '../components/MissingPhotosModal.vue'
 import PhotoCropModal from '../components/PhotoCropModal.vue'
 import PhotoGalleryPickerDialog from '../components/PhotoGalleryPickerDialog.vue'
 import AiTextEditModal from '../components/AiTextEditModal.vue'
+import AiLimitNotice from '../components/AiLimitNotice.vue'
+import { answerMapOf, buildAiTextMarkers, mergeTextIssueMessages } from '../utils/draft-ai-texts.util'
 
 // Stable empty instances — QuestionnaireBook's fill-badge/pulse/pending-AI props don't apply on
 // this read-mostly review step, but they aren't optional props (same reasoning as
@@ -252,6 +302,11 @@ async function load(): Promise<void> {
     if (!store.order) {
       throw new Error('Заказ не найден.')
     }
+    // Brings the texts up to date — those the questionnaire couldn't write yet (yesterday's cap, an
+    // update after signing in), then any cover line still on its placeholder (e.g. the cover
+    // template was swapped after the questionnaire). Both skip what's already written, so this is
+    // normally a no-op.
+    void store.generateAiTextsForAnswers([]).then(() => store.generateJournalAiTexts())
   } catch (err: unknown) {
     loadErrorMessage.value = err instanceof Error ? err.message : 'Не удалось загрузить страницу.'
   } finally {
@@ -270,6 +325,55 @@ const canvasDataByPageId = computed(() => {
 const missingPhotoCount = computed(() =>
   countEmptyPhotoSlots(collectPhotoSlotPreview(store.order?.journalPages ?? [])),
 )
+
+// Bumped whenever the browser finishes loading fonts — the overflow check measures with the
+// block's real font, and measuring against a fallback before a custom font arrives would be off.
+const fontLoadEpoch = ref(0)
+function bumpFontLoadEpoch(): void {
+  fontLoadEpoch.value += 1
+}
+
+const aiTextProblems = computed(() => {
+  void fontLoadEpoch.value
+  return collectAiTextFitProblems(store.order?.journalPages ?? [], canvasDataByPageId.value)
+})
+
+const aiTextProblemsByPageId = computed(() => groupAiTextFitProblemsByPage(aiTextProblems.value))
+
+const isGuest = computed(() => store.aiUsage?.isGuest ?? !authStore.isAuthenticated)
+
+// Texts that can't be written right now (past the hidden cap, or outdated with no updates left) —
+// flagged ⚠ next to the layout problems, which win where both apply. Texts that CAN still be
+// written aren't badged here: the load above is already writing them.
+const aiMarkers = computed(() =>
+  buildAiTextMarkers(
+    store.order?.journalPages ?? [],
+    answerMapOf(store.order?.questionAnswers ?? []),
+    store.aiUsage,
+    isGuest.value,
+    { includeJournal: true },
+  ),
+)
+const textIssueMessagesByPageId = computed(() =>
+  mergeTextIssueMessages(aiTextProblemsByPageId.value, aiMarkers.value.messagesByPageId),
+)
+
+/** A guest at the cap signs in for the customer allowance — draft generation is counted per
+ * account as soon as the request carries a token, so a fresh count is all it takes; whatever is
+ * still missing then gets written right away. */
+async function loginForMoreAi(): Promise<void> {
+  if (await requireAuth('Войдите, чтобы получить больше ИИ-генераций', true)) {
+    await store.refreshAiUsage()
+    await store.generateAiTextsForAnswers([])
+    await store.generateJournalAiTexts()
+  }
+}
+
+function pluralBlocks(n: number): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  return mod10 === 1 && mod100 !== 11 ? 'блоке' : 'блоках'
+}
 
 function goToPreviousStep(): void {
   void router.push({ name: 'order-questionnaire', params: { orderId: orderId.value } })
@@ -434,6 +538,8 @@ const aiTextEditModal = reactive<{
   elementId: string | null
   initialText: string
   lengthConstraint: LengthConstraint | null
+  element: AiTextPlaceholder | null
+  fitContext: AiTextFitContext | null
   saving: boolean
 }>({
   open: false,
@@ -441,6 +547,8 @@ const aiTextEditModal = reactive<{
   elementId: null,
   initialText: '',
   lengthConstraint: null,
+  element: null,
+  fitContext: null,
   saving: false,
 })
 
@@ -462,6 +570,9 @@ function openAiTextEditor(journalPageId: string, elementId: string): void {
   aiTextEditModal.elementId = elementId
   aiTextEditModal.initialText = leaf.previewPlaceholderText ?? ''
   aiTextEditModal.lengthConstraint = leaf.lengthConstraint
+  aiTextEditModal.element = leaf
+  const canvas = canvasDataByPageId.value.get(journalPageId)
+  aiTextEditModal.fitContext = canvas ? buildAiTextFitContext(canvas, elementId) : null
   aiTextEditModal.open = true
 }
 
@@ -487,12 +598,12 @@ async function saveAiTextEdit(text: string): Promise<void> {
   }
 }
 
+/** 🔄 needs an account — a guest signs in first, then the regeneration just goes ahead. */
 async function handleRegenerateAiText(journalPageId: string, elementId: string): Promise<void> {
-  if (store.isLocalDraft) {
-    submitErrorMessage.value = 'Сначала сохраните заказ, чтобы сгенерировать новый вариант текста.'
+  if (!(await requireAuth('Чтобы сгенерировать другой вариант текста, войдите в аккаунт', true))) {
     return
   }
-
+  await store.refreshAiUsage()
   try {
     await store.regenerateAiText(journalPageId, elementId)
   } catch {
@@ -504,19 +615,44 @@ async function handleRegenerateAiText(journalPageId: string, elementId: string):
 // Sign-in bridge + final submit → checkout
 // ---------------------------------------------------------------------------
 
-const authModalState = reactive<{ open: boolean; resolve: ((success: boolean) => void) | null }>({
+const CHECKOUT_AUTH_MESSAGE = 'Чтобы оформить заказ, войдите в аккаунт'
+
+// `viaPrompt` — a feature a guest bumped into (🔄, more AI generations): a short notice with the
+// reason and "Войти" comes first (`prompt`), the sign-in form (`open`) only once they click it.
+// Checkout goes straight to the form, with the reason above it.
+const authModalState = reactive<{
+  open: boolean
+  prompt: boolean
+  viaPrompt: boolean
+  message: string
+  resolve: ((success: boolean) => void) | null
+}>({
   open: false,
+  prompt: false,
+  viaPrompt: false,
+  message: CHECKOUT_AUTH_MESSAGE,
   resolve: null,
 })
 
-function requireAuth(): Promise<boolean> {
+function requireAuth(message = CHECKOUT_AUTH_MESSAGE, viaPrompt = false): Promise<boolean> {
   if (authStore.isAuthenticated) {
     return Promise.resolve(true)
   }
+  authModalState.message = message
+  authModalState.viaPrompt = viaPrompt
   return new Promise((resolve) => {
     authModalState.resolve = resolve
-    authModalState.open = true
+    if (viaPrompt) {
+      authModalState.prompt = true
+    } else {
+      authModalState.open = true
+    }
   })
+}
+
+function showAuthForm(): void {
+  authModalState.prompt = false
+  authModalState.open = true
 }
 
 function handleAuthSuccess(): void {
@@ -527,6 +663,7 @@ function handleAuthSuccess(): void {
 
 function handleAuthClose(): void {
   authModalState.open = false
+  authModalState.prompt = false
   authModalState.resolve?.(false)
   authModalState.resolve = null
 }
@@ -534,10 +671,13 @@ function handleAuthClose(): void {
 const isSubmitting = ref(false)
 const submitErrorMessage = ref<string | null>(null)
 const missingPhotosModalOpen = ref(false)
+const overflowDialogOpen = ref(false)
+// Set once the customer explicitly chose "Всё равно продолжить" — a warning, not a hard block.
+const overflowAcknowledged = ref(false)
 
 /** The last stop before checkout — every gate the questionnaire step used to run right before
  * navigating to checkout now lives here instead, since fixing anything it finds (missing photos,
- * an unfillable required slot) is now possible right on this same page. */
+ * an unfillable required slot, a text too long for its box) is now possible right on this same page. */
 async function finish(): Promise<void> {
   if (isSubmitting.value) {
     return
@@ -548,6 +688,11 @@ async function finish(): Promise<void> {
     const missingPhotoPages = collectPhotoSlotPreview(store.order?.journalPages ?? [])
     if (missingPhotoPages.some((page) => page.slots.some((slot) => !slot.url))) {
       missingPhotosModalOpen.value = true
+      return
+    }
+
+    if (aiTextProblems.value.length > 0 && !overflowAcknowledged.value) {
+      overflowDialogOpen.value = true
       return
     }
 
@@ -587,6 +732,12 @@ function continueAfterPhotosFilled(): void {
   void finish()
 }
 
+function continueDespiteOverflow(): void {
+  overflowDialogOpen.value = false
+  overflowAcknowledged.value = true
+  void finish()
+}
+
 // Same threshold as the `tablet-up` SCSS mixin (`$breakpoint-tablet-min: 768px`) — the book only
 // gets height-bound (see QuestionnaireBook.vue's `fitHeight` prop) above it, so the page fits one
 // screen with no scroll on desktop; below it, the book keeps its normal width-driven sizing and
@@ -600,14 +751,19 @@ function updateIsDesktopViewport(): void {
 
 onMounted(() => {
   void load()
+  void store.refreshAiUsage()
 
   desktopMediaQuery = window.matchMedia('(min-width: 768px)')
   updateIsDesktopViewport()
   desktopMediaQuery.addEventListener('change', updateIsDesktopViewport)
+
+  document.fonts.addEventListener('loadingdone', bumpFontLoadEpoch)
+  void document.fonts.ready.then(bumpFontLoadEpoch)
 })
 
 onBeforeUnmount(() => {
   desktopMediaQuery?.removeEventListener('change', updateIsDesktopViewport)
+  document.fonts.removeEventListener('loadingdone', bumpFontLoadEpoch)
 })
 </script>
 
@@ -883,6 +1039,11 @@ onBeforeUnmount(() => {
     font-size: $font-size-caption !important;
     line-height: 1.3;
   }
+}
+
+.journal-review-page__ai-limit {
+  max-width: 720px;
+  margin: 0 auto $spacing-6;
 }
 
 .journal-review-page__book-wrap {

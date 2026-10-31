@@ -65,6 +65,12 @@ export function buildQuestionnaireFlow(
 
   const steps: QuestionnaireStep[] = []
   const seenStepKeys = new Set<string>()
+  // Wishes for texts written from the whole journal (cover lines etc. — `contentSource: 'journal'`)
+  // are asked LAST, whatever page the text sits on: that text is only generated once the
+  // questionnaire is finished, so asking about it on the cover's own (first) step would come
+  // before the user has told us anything else. Homed on the first page that holds such a text.
+  const finalStepKeys: string[] = []
+  let finalStepPageId: string | null = null
 
   for (const page of journalPages) {
     const leaves = flattenTree(normalizeCanvasData(page.pageSnapshot).elements)
@@ -91,6 +97,18 @@ export function buildQuestionnaireFlow(
     }
 
     for (const leaf of leaves) {
+      if (leaf.type === 'ai-text-placeholder' && leaf.contentSource === 'journal') {
+        // Not in aiTextElementsByQuestionKey either: answering these doesn't trigger generation
+        // (that happens on finishing the questionnaire), so there's nothing to shimmer for.
+        finalStepPageId ??= page.id
+        for (const key of leaf.questionKeys) {
+          if (questionByKey.has(key) && !finalStepKeys.includes(key)) {
+            finalStepKeys.push(key)
+          }
+        }
+        continue
+      }
+
       if (leaf.type === 'ai-text-placeholder') {
         for (const key of leaf.questionKeys) {
           if (!questionByKey.has(key)) {
@@ -121,6 +139,17 @@ export function buildQuestionnaireFlow(
     if (stepQuestions.length > 0) {
       steps.push({ journalPageId: page.id, questions: stepQuestions })
     }
+  }
+
+  // A wish that some other element also binds directly was already asked on that element's step.
+  const finalStepQuestions = finalStepKeys
+    .filter((key) => !seenStepKeys.has(key))
+    .map((key) => questionByKey.get(key)!)
+  if (finalStepPageId && finalStepQuestions.length > 0) {
+    for (const question of finalStepQuestions) {
+      affectedPageIds.set(question.key, [finalStepPageId])
+    }
+    steps.push({ journalPageId: finalStepPageId, questions: finalStepQuestions })
   }
 
   return { steps, pageQuestionKeys, affectedPageIds, aiTextElementsByQuestionKey }

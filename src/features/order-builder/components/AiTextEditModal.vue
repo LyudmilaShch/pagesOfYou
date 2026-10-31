@@ -20,6 +20,15 @@
           {{ wordCount }} из {{ maxWords }} слов
         </p>
 
+        <p v-if="fit.issue" class="ai-text-edit__overflow">
+          <v-icon size="16">mdi-alert-outline</v-icon>
+          {{ AI_TEXT_FIT_ISSUE_LABELS[fit.issue] }} — сократите примерно на
+          {{ fit.excessWords }} {{ pluralWords(fit.excessWords) }}
+        </p>
+        <p v-else-if="fit.exceedsBox" class="ai-text-edit__hint">
+          Текст чуть длиннее, чем задумано в макете, но ни на что не наезжает — так можно оставить
+        </p>
+
         <p v-if="minLimit !== null" class="ai-text-edit__hint">
           Рекомендуемый минимум — {{ minLimit }} {{ isWordUnit ? 'слов' : 'символов' }}
         </p>
@@ -38,13 +47,24 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 
-import type { LengthConstraint } from '@/modules/editor/models'
+import type { AiTextPlaceholder, LengthConstraint } from '@/modules/editor/models'
+import {
+  AI_TEXT_FIT_ISSUE_LABELS,
+  analyzeAiTextFit,
+  type AiTextFit,
+  type AiTextFitContext,
+} from '@/modules/editor/utils/ai-text-capacity.util'
 
 const props = defineProps<{
   open: boolean
   initialText: string
   loading?: boolean
   lengthConstraint?: LengthConstraint | null
+  /** The block being edited (materialized, absolute position — the customer's typography) — when
+   * given, the draft is measured live against what's around it (`fitContext`), warning before a
+   * too-long text runs into a photo/another text or off the page. */
+  element?: AiTextPlaceholder | null
+  fitContext?: AiTextFitContext | null
 }>()
 
 const emit = defineEmits<{
@@ -74,6 +94,23 @@ const wordCount = computed(() => {
   const trimmed = draft.value.trim()
   return trimmed ? trimmed.split(/\s+/).length : 0
 })
+
+// Doesn't block saving — the customer may still prefer to shorten it later; the review step
+// re-checks before checkout.
+const fit = computed<AiTextFit>(() =>
+  props.open && props.element
+    ? analyzeAiTextFit(props.element, draft.value, props.fitContext ?? null)
+    : { exceedsBox: false, issue: null, excessWords: 0 },
+)
+
+function pluralWords(n: number): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod100 >= 11 && mod100 <= 19) return 'слов'
+  if (mod10 === 1) return 'слово'
+  if (mod10 >= 2 && mod10 <= 4) return 'слова'
+  return 'слов'
+}
 
 const canSave = computed(() => {
   if (!draft.value.trim()) {
@@ -110,6 +147,15 @@ function handleDialogUpdate(value: boolean): void {
   &--over {
     color: $accent-deep;
   }
+}
+
+.ai-text-edit__overflow {
+  display: flex;
+  align-items: flex-start;
+  gap: $spacing-1;
+  margin: $spacing-2 0 0;
+  font-size: $font-size-caption;
+  color: $accent-deep;
 }
 
 .ai-text-edit__hint {

@@ -3,7 +3,8 @@
     <!-- Step 1: Phone -->
     <template v-if="step === 1">
       <div class="auth-card__header">
-        <h1 class="auth-card__title">Войти</h1>
+        <h1 :id="titleId" class="auth-card__title">Войти</h1>
+        <p v-if="message" class="auth-card__message">{{ message }}</p>
         <p class="auth-card__subtitle">Введите номер телефона, и мы отправим код подтверждения</p>
       </div>
 
@@ -143,6 +144,12 @@ import { computed, onUnmounted, reactive, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth.store'
 
 const authStore = useAuthStore()
+
+defineProps<{
+  /** Why sign-in is asked for — shown under the title (see AuthModal.vue). */
+  message?: string
+  titleId?: string
+}>()
 
 const emit = defineEmits<{
   success: []
@@ -371,6 +378,14 @@ onUnmounted(() => {
     margin: 0;
   }
 
+  &__message {
+    font-family: Inter, -apple-system, sans-serif;
+    font-size: 15px;
+    font-weight: 500;
+    color: #111111;
+    line-height: 1.45;
+    margin: 0 0 6px;
+  }
   &__body {
     padding: 24px 32px 32px;
     display: flex;

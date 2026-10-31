@@ -101,6 +101,27 @@ export const ordersApi = {
     return data.data.text
   },
 
+  /** Brings the question-driven AI texts up to date with the saved answers — called when a
+   * questionnaire step is left (saving an answer no longer generates). Best-effort server-side;
+   * texts already written from these exact answers are skipped for free. See
+   * `OrdersService.generateAiTextsForAnswers`. */
+  async generateAiTexts(orderId: string, questionKeys: string[]): Promise<OrderDetail> {
+    const { data } = await http.post<BackendResponse<OrderDetail>>(`/orders/${orderId}/ai-texts/generate`, {
+      questionKeys,
+    })
+    return data.data
+  },
+
+  /** Fills the journal-wide AI texts (cover lines etc.) that are still empty — called once the
+   * questionnaire is finished. Best-effort server-side: always resolves with the order, a failed
+   * generation just leaves those texts empty. See `OrdersService.generateJournalAiTexts`. */
+  async generateJournalAiTexts(orderId: string): Promise<OrderDetail> {
+    const { data } = await http.post<BackendResponse<OrderDetail>>(
+      `/orders/${orderId}/journal-ai-texts/generate`,
+    )
+    return data.data
+  },
+
   /** Order-level (not page-level) — one answer can sync into elements on several journal pages
    * at once. See `OrdersService.upsertQuestionnaireAnswers`. */
   async saveQuestionnaireAnswers(

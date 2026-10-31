@@ -1637,6 +1637,7 @@ import {
 } from '../utils/placeholder-display.util'
 import { isAiTextElement as isAiTextPageElement, isTocElement as isTocPageElement } from '../models'
 import type { AiTextPlaceholder } from '../models/ai-text-placeholder.model'
+import { areAiTextChainSiblings, getAiTextSiblingParts } from '../utils/ai-text-chain.util'
 import type { TocPlaceholder } from '../models/toc-placeholder.model'
 
 
@@ -1656,7 +1657,12 @@ provide(PROPERTIES_PANEL_STACK_KEY, {
 
 watch(
   () => selected.value?.id,
-  () => panelStack.reset({ id: 'root' }),
+  (nextId, previousId) => {
+    if (areAiTextChainSiblings(store.elements, previousId, nextId)) {
+      return
+    }
+    panelStack.reset({ id: 'root' })
+  },
 )
 
 const panelScreenComponent = computed(() =>
@@ -1794,7 +1800,11 @@ const tocElement = computed(() => selected.value as TocPlaceholder)
 const aiTextLengthSummary = computed(() => {
   const constraint = aiTextElement.value.lengthConstraint
   const unitLabel = constraint.unit === 'words' ? 'слов' : 'символов'
-  return `${constraint.min ?? '—'}–${constraint.max ?? '—'} ${unitLabel}`
+  const parts = getAiTextSiblingParts(store.elements, aiTextElement.value)
+  const partLabel = parts.length > 1
+    ? ` · часть ${parts.findIndex((part) => part.id === aiTextElement.value.id) + 1} из ${parts.length}`
+    : ''
+  return `${constraint.min ?? '—'}–${constraint.max ?? '—'} ${unitLabel}${partLabel}`
 })
 
 // True whenever we're in admin (template-build) mode — not just "there happen to be questions

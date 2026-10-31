@@ -30,7 +30,14 @@ export class AdminSettingsService {
 
     return this.prisma.platformSettings.update({
       where: { id: SETTINGS_ID },
-      data: { productionDaysMin, productionDaysMax },
+      data: {
+        productionDaysMin,
+        productionDaysMax,
+        aiDailyLimitUser: dto.aiDailyLimitUser ?? current.aiDailyLimitUser,
+        aiDailyFillCapUser: dto.aiDailyFillCapUser ?? current.aiDailyFillCapUser,
+        aiDailyFillCapGuest: dto.aiDailyFillCapGuest ?? current.aiDailyFillCapGuest,
+        aiGuestAutoUpdatesPerText: dto.aiGuestAutoUpdatesPerText ?? current.aiGuestAutoUpdatesPerText,
+      },
     });
   }
 }

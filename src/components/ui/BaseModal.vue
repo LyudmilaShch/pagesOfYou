@@ -15,6 +15,7 @@
             'base-modal__panel--fit-viewport': fitViewport,
             'base-modal__panel--wide': wide,
             'base-modal__panel--narrow': narrow,
+            'base-modal__panel--bare': bare,
           }"
         >
           <button
@@ -45,6 +46,9 @@ defineProps<{
    * icon, a line or two of text, stacked buttons) that otherwise sit lost in a mostly-empty
    * 960px-wide box. Takes precedence if both `wide` and `narrow` are somehow set. */
   narrow?: boolean
+  /** No panel chrome of its own (background, border, padding) — for content that is already a
+   * self-contained card (e.g. AuthForm), which would otherwise sit framed inside a second box. */
+  bare?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -110,6 +114,19 @@ const handleOverlayClick = () => {
 
     &--narrow {
       width: min(100%, 420px);
+    }
+
+    &--bare {
+      width: min(100%, 440px);
+      padding: 0;
+      overflow: visible;
+      background-color: transparent;
+      border: none;
+      box-shadow: none;
+
+      @include tablet-up {
+        padding: 0;
+      }
     }
   }
 

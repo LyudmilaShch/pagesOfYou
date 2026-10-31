@@ -16,7 +16,7 @@ import {
   normalizePhotoStrokeWidth,
 } from '@/modules/editor/utils/element-stroke.util'
 import { mapTree } from '@/modules/editor/utils/element-tree.util'
-import { buildAiTextFallbackPreview } from '@/modules/editor/utils/ai-text-preview.util'
+import { buildAiTextElementPreview } from '@/modules/editor/utils/ai-text-preview.util'
 import type { PlaceholderJsonValue, PlaceholderValue } from '../types/order.types'
 
 export interface LocalPlaceholderDraft {
@@ -140,7 +140,7 @@ export function mergeElementWithPlaceholderValue(
 
     return {
       ...aiText,
-      previewPlaceholderText: generatedText?.trim() || buildAiTextFallbackPreview(aiText.lengthConstraint),
+      previewPlaceholderText: generatedText?.trim() || buildAiTextElementPreview(aiText),
     }
   }
 

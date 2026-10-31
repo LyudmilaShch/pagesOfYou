@@ -85,6 +85,14 @@ export function normalizeAiTextPlaceholderElement(element: PageElement): PageEle
       ? element.questionKeys.filter((key): key is string => typeof key === 'string')
       : [],
     lengthConstraint: normalizeLengthConstraint(element.lengthConstraint),
+    chainId: typeof element.chainId === 'string' && element.chainId ? element.chainId : null,
+    chainOrder:
+      typeof element.chainOrder === 'number' && Number.isFinite(element.chainOrder)
+        ? element.chainOrder
+        : 0,
+    chainMode: element.chainMode === 'phrases' ? 'phrases' : 'continuous',
+    contentSource: element.contentSource === 'journal' ? 'journal' : 'questions',
+    partHint: typeof element.partHint === 'string' ? element.partHint : '',
     rotation:
       typeof element.rotation === 'number' && Number.isFinite(element.rotation)
         ? element.rotation

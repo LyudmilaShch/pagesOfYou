@@ -163,15 +163,33 @@ export function flattenTree(nodes: CanvasElement[]): CanvasLeafElement[] {
   return result;
 }
 
-/** `ai-text-placeholder` leaves whose `questionKeys` intersect the given set — unlike
- * `PlaceholderValue` sync (which matches a single `questionKey` per element), an AI-text block can
- * reference several questions at once, so this is `.some(...)`, not `===`. */
-export function findAiTextLeavesForKeys(
+/** Every generated text on a page: each chain's parts in reading order (`chainOrder`, then tree
+ * order), and each standalone `ai-text-placeholder` as a group of one. */
+export function groupAiTextLeaves(leaves: CanvasLeafElement[]): CanvasAiTextPlaceholder[][] {
+  // Keyed by chainId, or by the element's own id when standalone; Map keeps first-seen order.
+  const groups = new Map<string, CanvasAiTextPlaceholder[]>();
+
+  for (const leaf of leaves) {
+    if (leaf.type !== 'ai-text-placeholder') {
+      continue;
+    }
+    const key = leaf.chainId ? `chain:${leaf.chainId}` : `element:${leaf.id}`;
+    const group = groups.get(key);
+    if (group) {
+      group.push(leaf);
+    } else {
+      groups.set(key, [leaf]);
+    }
+  }
+
+  // Array.prototype.sort is stable, so equal chainOrders keep their tree order.
+  return [...groups.values()].map((group) => [...group].sort((a, b) => a.chainOrder - b.chainOrder));
+}
+
+/** The parts of `elementId`'s generated text (just itself when standalone), in reading order. */
+export function findAiTextGroupOf(
   leaves: CanvasLeafElement[],
-  keys: Set<string>,
-): CanvasAiTextPlaceholder[] {
-  return leaves.filter(
-    (leaf): leaf is CanvasAiTextPlaceholder =>
-      leaf.type === 'ai-text-placeholder' && leaf.questionKeys.some((key) => keys.has(key)),
-  );
+  elementId: string,
+): CanvasAiTextPlaceholder[] | null {
+  return groupAiTextLeaves(leaves).find((group) => group.some((part) => part.id === elementId)) ?? null;
 }

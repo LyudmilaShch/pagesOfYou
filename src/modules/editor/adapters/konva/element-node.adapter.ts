@@ -28,7 +28,7 @@ import { TEXT_VERTICAL_ALIGN_DEFAULT } from '../../utils/normalize-text-placehol
 import { isTextPlaceholderType } from '../../utils/normalize-text-placeholder.util'
 import { resolveKonvaFontStyle } from '../../utils/text-style.util'
 import { shouldWrapTextContent } from '../../utils/text-measure.util'
-import { buildAiTextFallbackPreview } from '../../utils/ai-text-preview.util'
+import { buildAiTextElementPreview } from '../../utils/ai-text-preview.util'
 import {
   clampPhotoCrop,
   computePhotoImageLayout,
@@ -912,7 +912,7 @@ function getTextPlaceholderElement(element: PageElement): TextPlaceholder | null
       ...element,
       textSizingMode: 'fixed',
       defaultText:
-        element.previewPlaceholderText?.trim() || buildAiTextFallbackPreview(element.lengthConstraint),
+        element.previewPlaceholderText?.trim() || buildAiTextElementPreview(element),
       maxLength: 0,
       required: false,
     } as unknown as TextPlaceholder

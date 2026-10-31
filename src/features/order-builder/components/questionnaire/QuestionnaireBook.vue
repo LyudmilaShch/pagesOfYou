@@ -72,10 +72,13 @@
                   v-if="half.canvasData"
                   :canvas-data="half.canvasData"
                   :pending-element-ids="pendingElementIds"
+                  :awaiting-element-ids="awaitingElementIdsByPageId?.get(half.pageId)"
                   :drop-enabled="dropEnabled"
                   :crop-enabled="cropEnabled"
                   :pick-enabled="pickEnabled"
                   :ai-text-edit-enabled="aiTextEditEnabled"
+                  :text-issue-messages="textIssueMessagesByPageId?.get(half.pageId)"
+                  :ai-usage="aiUsage"
                   :toc-entries="tocEntriesFor(half.pageId)"
                   :visible-half="isSpreadPage(half.pageId) ? half.key : undefined"
                   @drop-photo="(elementId, url) => emit('drop-photo', half.pageId, elementId, url)"
@@ -266,6 +269,9 @@ const props = defineProps<{
   /** ai-text-placeholder element ids currently mid-generation — forwarded to every
    * `JournalSpreadThumbnail` so it can show a shimmer instead of stale/blank preview text. */
   pendingElementIds: Set<string>
+  /** journalPageId → ai-text ids whose text gets written once the questionnaire step is left —
+   * forwarded per page, same keying as `textIssueMessagesByPageId`. */
+  awaitingElementIdsByPageId?: Map<string, Set<string>>
   /** Manual photo-placement mode (see PhotoUploadPage.vue) — forwarded to every
    * `JournalSpreadThumbnail` so its photo-placeholders become drop targets. */
   dropEnabled: boolean
@@ -279,6 +285,13 @@ const props = defineProps<{
    * QuestionnairePage.vue's AiTextEditModal) — forwarded to every `JournalSpreadThumbnail`,
    * defaults off since only Шаг 3 (where the text actually gets generated) offers this. */
   aiTextEditEnabled?: boolean
+  /** journalPageId → (ai-text id → problem message) for texts that run into something or off the
+   * page — forwarded per page to `JournalSpreadThumbnail` (keyed by page, since the same template
+   * element id repeats on every page built from that template). */
+  textIssueMessagesByPageId?: Map<string, Map<string, string>>
+  /** Today's AI generation allowance — forwarded to every `JournalSpreadThumbnail` for the
+   * "regenerate" button's counter/disabled state. */
+  aiUsage?: { remaining: number; isGuest: boolean } | null
   /** Hides the per-spread "Сменить шаблон" button and the "Изменить порядок разворотов"/"Добавить
    * 4 страницы" toolbar — for contexts where restructuring the journal would be a distraction from
    * (or work against) the task at hand, e.g. MissingPhotosModal.vue, where adding more spreads

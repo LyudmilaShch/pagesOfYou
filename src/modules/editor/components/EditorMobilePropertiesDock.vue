@@ -775,6 +775,7 @@ import type { PhotoMaskType } from '../models/photo-mask.model'
 import type { TextAlign, TextVerticalAlign } from '../models/text-placeholder.model'
 import { isAiTextElement as isAiTextPageElement, isTocElement as isTocPageElement } from '../models'
 import type { AiTextPlaceholder } from '../models/ai-text-placeholder.model'
+import { areAiTextChainSiblings, getAiTextSiblingParts } from '../utils/ai-text-chain.util'
 import type { TocPlaceholder } from '../models/toc-placeholder.model'
 import type { AdminPhotoFrame } from '@/shared/api/admin/photo-frames.api'
 import type { AdminCustomPhotoMask } from '@/shared/api/admin/custom-photo-masks.api'
@@ -945,7 +946,10 @@ function onHandlePointerUp(): void {
 
 watch(
   () => selected.value?.id,
-  () => {
+  (nextId, previousId) => {
+    if (areAiTextChainSiblings(store.elements, previousId, nextId)) {
+      return
+    }
     panelStack.reset({ id: 'root' })
     activeCategory.value = 'content'
     expanded.value = false
@@ -1068,7 +1072,11 @@ const hasEditorQuestions = computed(() => editorQuestions.value.length > 0 || cr
 const aiTextLengthSummary = computed(() => {
   const constraint = aiTextElement.value.lengthConstraint
   const unitLabel = constraint.unit === 'words' ? 'слов' : 'символов'
-  return `${constraint.min ?? '—'}–${constraint.max ?? '—'} ${unitLabel}`
+  const parts = getAiTextSiblingParts(store.elements, aiTextElement.value)
+  const partLabel = parts.length > 1
+    ? ` · часть ${parts.findIndex((part) => part.id === aiTextElement.value.id) + 1} из ${parts.length}`
+    : ''
+  return `${constraint.min ?? '—'}–${constraint.max ?? '—'} ${unitLabel}${partLabel}`
 })
 
 const activeTextEffectLabel = computed(() => {

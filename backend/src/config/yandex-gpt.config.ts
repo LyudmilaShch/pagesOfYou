@@ -8,6 +8,9 @@ export const yandexGptConfig = registerAs('yandexGpt', () => ({
   apiKey: process.env.YANDEX_GPT_API_KEY,
   folderId: process.env.YANDEX_GPT_FOLDER_ID,
   model: process.env.YANDEX_GPT_MODEL ?? 'yandexgpt-lite/latest',
+  /** Short cover-line-style phrases (`chainMode: 'phrases'`) — the full model by default: they're
+   * a few words each (cheap), and lite tends to fall back on generic clichés for them. */
+  phrasesModel: process.env.YANDEX_GPT_PHRASES_MODEL ?? 'yandexgpt/latest',
   apiUrl:
     process.env.YANDEX_GPT_API_URL ??
     'https://llm.api.cloud.yandex.net/foundationModels/v1/completion',

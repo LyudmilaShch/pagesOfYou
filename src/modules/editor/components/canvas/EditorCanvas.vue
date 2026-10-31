@@ -295,6 +295,24 @@
             />
           </v-group>
 
+          <!-- Admin-only: reading-order badges on chained AI-text parts, plus (while a part is
+               selected) a dashed outline on its sibling parts. -->
+          <v-group :config="aiTextChainGroupConfig">
+            <v-rect
+              v-for="outline in aiTextChainOverlay.outlines"
+              :key="outline.key"
+              :config="outline.config"
+            />
+            <v-group
+              v-for="badge in aiTextChainOverlay.badges"
+              :key="badge.key"
+              :config="badge.config"
+            >
+              <v-circle :config="badge.circle" />
+              <v-text :config="badge.text" />
+            </v-group>
+          </v-group>
+
           <v-rect v-if="marqueeRectConfig" :config="marqueeRectConfig" />
 
           <PageBackgroundCropLayer v-if="store.pageBackgroundCropEditing && !store.previewMode" />
@@ -397,7 +415,9 @@ import {
 } from '../../utils/marquee-selection.util'
 import { isPageBackgroundCropTransformerTarget, isPageBackgroundTarget } from '../../utils/canvas-background.util'
 import type { PageBackgroundCropTarget } from '../../utils/canvas-background.util'
-import { findNodeById, getElementAbsoluteBounds } from '../../utils/element-tree.util'
+import { findNodeById, flattenTree, getElementAbsoluteBounds } from '../../utils/element-tree.util'
+import { collectAiTextChains } from '../../utils/ai-text-chain.util'
+import { createEditorQuestion, editorQuestions } from '../../services/editor-questions'
 import EditorElementNode from './EditorElementNode.vue'
 import SpreadPageBackgroundLayers from './SpreadPageBackgroundLayers.vue'
 import PageBackgroundCropLayer from './PageBackgroundCropLayer.vue'
@@ -725,6 +745,99 @@ const smartGuideLineConfigs = computed(() =>
 const smartGuidesGroupConfig = computed(() => ({
   listening: false,
   visible: smartGuideLineConfigs.value.length > 0 && !store.previewMode,
+}))
+
+const AI_TEXT_CHAIN_COLOR = '#e85a93'
+const AI_TEXT_CHAIN_BADGE_RADIUS = 9
+
+// Same admin-context gate as the properties panels' own hasEditorQuestions — the customer editor
+// never provides questions, and its parts are just ordinary text blocks to the customer.
+const showAiTextChainOverlay = computed(
+  () =>
+    !props.chromeless &&
+    !store.previewMode &&
+    (editorQuestions.value.length > 0 || createEditorQuestion.value !== null),
+)
+
+const aiTextChainOverlay = computed(() => {
+  const empty = { badges: [], outlines: [] }
+  if (!showAiTextChainOverlay.value) {
+    return empty
+  }
+
+  const chains = collectAiTextChains(store.elements)
+  if (chains.size === 0) {
+    return empty
+  }
+
+  // Absolute (page) boxes, composed through any parent groups and following live drags.
+  const boxById = new Map(
+    flattenTree(store.elements, store.liveDragPositions).map((leaf) => [leaf.id, leaf]),
+  )
+  // Badges are drawn in screen pixels regardless of zoom — the page group is scaled by pageScale.
+  const inverseScale = 1 / (pageScale.value || 1)
+  const selectedId = store.selectedElement?.id ?? null
+
+  const badges: Array<Record<string, unknown> & { key: string }> = []
+  const outlines: Array<{ key: string; config: Record<string, unknown> }> = []
+
+  for (const [chainId, parts] of chains) {
+    const isActiveChain = parts.some((part) => part.id === selectedId)
+
+    parts.forEach((part, index) => {
+      const box = boxById.get(part.id)
+      if (!box || box.visible === false) {
+        return
+      }
+
+      badges.push({
+        key: `${chainId}-${part.id}`,
+        config: { x: box.position.x, y: box.position.y, scaleX: inverseScale, scaleY: inverseScale, listening: false },
+        circle: {
+          radius: AI_TEXT_CHAIN_BADGE_RADIUS,
+          fill: isActiveChain ? AI_TEXT_CHAIN_COLOR : '#ffffff',
+          stroke: AI_TEXT_CHAIN_COLOR,
+          strokeWidth: 1.5,
+        },
+        text: {
+          text: String(index + 1),
+          x: -AI_TEXT_CHAIN_BADGE_RADIUS,
+          y: -AI_TEXT_CHAIN_BADGE_RADIUS,
+          width: AI_TEXT_CHAIN_BADGE_RADIUS * 2,
+          height: AI_TEXT_CHAIN_BADGE_RADIUS * 2,
+          align: 'center',
+          verticalAlign: 'middle',
+          fontSize: 11,
+          fontStyle: 'bold',
+          fill: isActiveChain ? '#ffffff' : AI_TEXT_CHAIN_COLOR,
+        },
+      })
+
+      if (isActiveChain && part.id !== selectedId) {
+        outlines.push({
+          key: `${chainId}-${part.id}-outline`,
+          config: {
+            x: box.position.x,
+            y: box.position.y,
+            width: part.size.width,
+            height: part.size.height,
+            stroke: AI_TEXT_CHAIN_COLOR,
+            strokeWidth: 1.5 * inverseScale,
+            dash: [6 * inverseScale, 4 * inverseScale],
+            listening: false,
+          },
+        })
+      }
+    })
+
+  }
+
+  return { badges, outlines }
+})
+
+const aiTextChainGroupConfig = computed(() => ({
+  listening: false,
+  visible: aiTextChainOverlay.value.badges.length > 0,
 }))
 
 const pageOffset = computed(() => {

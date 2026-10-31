@@ -90,6 +90,11 @@ export function normalizeAiTextPlaceholderElement(element: CanvasElement): Canva
       ? aiText.questionKeys.filter((key): key is string => typeof key === 'string')
       : [],
     lengthConstraint: normalizeLengthConstraint(aiText.lengthConstraint),
+    chainId: typeof aiText.chainId === 'string' && aiText.chainId ? aiText.chainId : null,
+    chainOrder: typeof aiText.chainOrder === 'number' && Number.isFinite(aiText.chainOrder) ? aiText.chainOrder : 0,
+    chainMode: aiText.chainMode === 'phrases' ? 'phrases' : 'continuous',
+    contentSource: aiText.contentSource === 'journal' ? 'journal' : 'questions',
+    partHint: typeof aiText.partHint === 'string' ? aiText.partHint : '',
     rotation: typeof aiText.rotation === 'number' && Number.isFinite(aiText.rotation) ? aiText.rotation : 0,
     lineHeight: typeof aiText.lineHeight === 'number' && aiText.lineHeight > 0 ? aiText.lineHeight : 1.4,
     letterSpacing: typeof aiText.letterSpacing === 'number' ? aiText.letterSpacing : 0,

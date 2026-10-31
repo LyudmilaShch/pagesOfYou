@@ -47,6 +47,11 @@ export interface PlaceholderValue {
   textValue: string | null
   jsonValue: PlaceholderJsonValue | null
   source: PlaceholderSource
+  /** AI text only — fingerprint of the answers it was written from (see aiAnswersSignature). */
+  aiSourceHash?: string | null
+  /** AI text in a guest's local draft only — how many times it already updated itself after an
+   * answer change (capped by `AiUsageStatus.guestAutoUpdatesPerText`). */
+  aiAutoUpdates?: number
 }
 
 export interface MagazinePageSummary {

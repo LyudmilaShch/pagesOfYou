@@ -8,12 +8,32 @@ import {
   type SetJournalPageTemplatePayload,
 } from '../api/orders.api'
 import { photoGalleryApi } from '../api/photo-gallery.api'
+import {
+  aiTextsApi,
+  type AiUsageStatus,
+  type DraftAiTextPurpose,
+  type GenerateDraftAiTextPayload,
+} from '../api/ai-texts.api'
+import {
+  aiTextGroupsOf,
+  answerMapOf,
+  collectDraftJournalTexts,
+  draftAnswersPayload,
+  draftPagePayload,
+  questionAiTextStatuses,
+  textOf,
+} from '../utils/draft-ai-texts.util'
+import { aiAnswersSignature } from '../utils/ai-answers-signature.util'
+import { isAxiosError } from 'axios'
+import { extractApiErrorMessage } from '@/shared/utils/api-error.util'
 import { getOrCreateGuestId } from '@/shared/utils/guest-id.util'
 import { clearLocalDraft, saveLocalDraft, type StoredLocalDraft } from '../utils/local-draft-storage.util'
 import { calculateJournalPrice } from '../utils/pricing.util'
 import { useAuthStore } from '@/stores/auth.store'
 import { MIN_JOURNAL_SPREADS } from '../constants/journal.constants'
 import { normalizeCanvasData, type CanvasData } from '@/modules/editor/models/canvas-data.model'
+import { isAiTextElement } from '@/modules/editor/models'
+import { flattenTree } from '@/modules/editor/utils/element-tree.util'
 import type { MagazineType } from '../types/magazine-type'
 import type {
   JournalPage,
@@ -398,6 +418,13 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     try {
       if (isLocalDraft.value) {
         applyLocalJournalPageTemplate(journalPageId, payload)
+        // Same as the backend's template swap: the fresh page's texts are written from every
+        // answer the guest already gave, not left on their placeholder until the next edit. Not
+        // awaited — the template switch itself shouldn't wait seconds on YandexGPT.
+        void generateLocalAiTextsForAnswers(
+          new Set(order.value.questionAnswers.map((answer) => answer.questionKey)),
+          journalPageId,
+        )
         return
       }
 
@@ -449,6 +476,8 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     orderError.value = null
 
     try {
+      // No AI generation here — this is the questionnaire's autosave while typing; texts are
+      // written once a step is left (see generateAiTextsForAnswers).
       if (isLocalDraft.value) {
         applyLocalQuestionAnswers(answers)
         return
@@ -527,6 +556,264 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // AI generation limit + generation for a guest's local draft
+  // ---------------------------------------------------------------------------
+
+  /** Today's AI generation allowance (see AiUsageService on the backend) — shown next to the
+   * "regenerate" buttons. `null` until first fetched. */
+  const aiUsage = ref<AiUsageStatus | null>(null)
+
+  /** The hidden cap on first texts is reached — new blocks stay unwritten until tomorrow, so the
+   * questionnaire and the review step show AiLimitNotice. */
+  const isAiFillCapReached = computed(() => aiUsage.value?.fillCapReached ?? false)
+
+  async function refreshAiUsage(): Promise<void> {
+    try {
+      aiUsage.value = await aiTextsApi.getUsage(getOrCreateGuestId())
+    } catch {
+      // Best-effort — the counter just doesn't show.
+    }
+  }
+
+  function isLimitError(err: unknown): boolean {
+    return isAxiosError(err) && err.response?.status === 429
+  }
+
+  /** Writes generated texts into a local draft page as `source: 'AI'` — skipping parts the
+   * customer edited by hand, unless `overwrite` names them (a deliberate regenerate). `sourceHash`
+   * fingerprints the answers they came from; `countUpdate` spends one of a guest's per-block
+   * automatic updates. */
+  function writeLocalAiTexts(
+    journalPageId: string,
+    texts: Record<string, string>,
+    overwrite: Set<string> = new Set(),
+    meta: { sourceHash?: string | null; countUpdate?: boolean } = {},
+  ): void {
+    if (!order.value) {
+      return
+    }
+    const pageIndex = order.value.journalPages.findIndex((page) => page.id === journalPageId)
+    if (pageIndex === -1) {
+      return
+    }
+    const page = order.value.journalPages[pageIndex]
+    const byElementId = new Map(page.placeholderValues.map((value) => [value.elementId, value]))
+    for (const [elementId, text] of Object.entries(texts)) {
+      const existing = byElementId.get(elementId)
+      if (!text?.trim() || (existing?.source === 'OVERRIDDEN' && !overwrite.has(elementId))) {
+        continue
+      }
+      byElementId.set(elementId, {
+        id: existing?.id ?? `local-ai-${Date.now()}-${elementId}`,
+        elementId,
+        valueType: 'TEXT',
+        textValue: text.trim(),
+        jsonValue: null,
+        source: 'AI',
+        aiSourceHash: meta.sourceHash ?? null,
+        aiAutoUpdates: (existing?.aiAutoUpdates ?? 0) + (meta.countUpdate ? 1 : 0),
+      })
+    }
+    order.value.journalPages[pageIndex] = { ...page, placeholderValues: [...byElementId.values()] }
+    saveLocalDraft(order.value.magazineTypeId, order.value, trashedJournalPages.value)
+  }
+
+  /** One draft generation request — keeps `aiUsage` in step with what the server reports, and
+   * marks the matching counter as used up on a 429 so the UI reflects it right away. */
+  async function requestDraftAiText(
+    page: JournalPage,
+    elementId: string,
+    scope: 'all' | 'part',
+    purpose: DraftAiTextPurpose,
+    extra: Pick<GenerateDraftAiTextPayload, 'currentTexts' | 'journalTexts'> = {},
+  ): Promise<Record<string, string>> {
+    if (!order.value) {
+      throw new Error('Заказ не загружен.')
+    }
+    try {
+      const result = await aiTextsApi.generateForDraft({
+        guestId: getOrCreateGuestId(),
+        magazineTypeId: order.value.magazineTypeId,
+        page: draftPagePayload(page),
+        elementId,
+        scope,
+        purpose,
+        answers: draftAnswersPayload(order.value.questionAnswers),
+        ...extra,
+      })
+      aiUsage.value = result.usage
+      return result.texts
+    } catch (err) {
+      if (isLimitError(err) && aiUsage.value) {
+        // Same split as the backend: a guest's update draws on the fill cap, a customer's on the
+        // regeneration limit.
+        const isFill = purpose === 'fill' || (purpose === 'update' && aiUsage.value.isGuest)
+        aiUsage.value = isFill
+          ? { ...aiUsage.value, fillCapReached: true }
+          : { ...aiUsage.value, used: aiUsage.value.limit, remaining: 0 }
+      }
+      throw err
+    }
+  }
+
+  /** The local-draft counterpart of `OrdersService.generateAiTextForElements`: every
+   * question-driven text that's missing or outdated (see questionAiTextStatuses) is written. An
+   * update is skipped once a guest's block used up its automatic updates, or at the customer's
+   * regeneration limit — the old text stays and is flagged as outdated. Best-effort: a failed
+   * text is skipped, the rest still go. */
+  async function generateLocalAiTextsForAnswers(changedKeys: Set<string>, onlyPageId?: string): Promise<void> {
+    if (!order.value) {
+      return
+    }
+    const pages = order.value.journalPages.filter((page) => !onlyPageId || page.id === onlyPageId)
+    const statuses = questionAiTextStatuses(pages, answerMapOf(order.value.questionAnswers), changedKeys)
+
+    for (const status of statuses) {
+      if (status.state === 'up-to-date') {
+        continue
+      }
+      const isUpdate = status.state === 'outdated'
+      const usage = aiUsage.value
+      const isGuest = !useAuthStore().isAuthenticated
+      const canGenerate = isUpdate
+        ? isGuest
+          ? status.autoUpdates < (usage?.guestAutoUpdatesPerText ?? Infinity)
+          : (usage?.remaining ?? 1) > 0
+        : !usage?.fillCapReached
+      const page = order.value?.journalPages.find((candidate) => candidate.id === status.journalPageId)
+      if (!canGenerate || !page) {
+        continue
+      }
+
+      try {
+        const texts = await requestDraftAiText(page, status.parts[0].id, 'all', isUpdate ? 'update' : 'fill')
+        writeLocalAiTexts(page.id, texts, new Set(), {
+          sourceHash: status.sourceHash,
+          countUpdate: isUpdate && isGuest,
+        })
+      } catch {
+        // Best-effort — see the doc comment; a 429 already marked the counter as used up.
+      }
+    }
+  }
+
+  /** Brings the journal's question-driven AI texts up to date with the saved answers — the
+   * questionnaire calls this when a step is left (saving an answer doesn't generate any more).
+   * Never throws. For a real order only the AI texts are taken from the response: an answer
+   * autosaved while this was running must not be rolled back by its older snapshot. */
+  async function generateAiTextsForAnswers(changedKeys: Iterable<string>): Promise<void> {
+    if (!order.value) {
+      return
+    }
+    try {
+      if (isLocalDraft.value) {
+        await generateLocalAiTextsForAnswers(new Set(changedKeys))
+        return
+      }
+      const result = await ordersApi.generateAiTexts(order.value.id, [...changedKeys])
+      mergeAiTextsFrom(result)
+    } catch {
+      // Best-effort — the texts just stay as they were.
+    } finally {
+      void refreshAiUsage()
+    }
+  }
+
+  function mergeAiTextsFrom(source: OrderDetail): void {
+    if (!order.value) {
+      return
+    }
+    const sourcePages = new Map(source.journalPages.map((page) => [page.id, page]))
+    order.value.journalPages = order.value.journalPages.map((page) => {
+      const aiValues = (sourcePages.get(page.id)?.placeholderValues ?? []).filter((value) => value.source === 'AI')
+      if (aiValues.length === 0) {
+        return page
+      }
+      const byElementId = new Map(page.placeholderValues.map((value) => [value.elementId, value]))
+      for (const value of aiValues) {
+        // A part edited by hand meanwhile wins over the generated text.
+        if (byElementId.get(value.elementId)?.source !== 'OVERRIDDEN') {
+          byElementId.set(value.elementId, value)
+        }
+      }
+      return { ...page, placeholderValues: [...byElementId.values()] }
+    })
+  }
+
+  /** The local-draft counterpart of `OrdersService.generateJournalAiTexts` — fills every still
+   * empty journal-wide text (cover lines): a whole set at once, or each missing part alone with
+   * the existing ones as context. Best-effort, stops at the daily limit. */
+  async function generateLocalJournalAiTexts(): Promise<void> {
+    if (!order.value) {
+      return
+    }
+
+    for (const page of [...order.value.journalPages]) {
+      for (const parts of aiTextGroupsOf(page)) {
+        if (parts[0].contentSource !== 'journal') {
+          continue
+        }
+        const current = () => order.value!.journalPages.find((candidate) => candidate.id === page.id) ?? page
+        const missing = parts.filter((part) => !textOf(current(), part.id))
+        if (missing.length === 0) {
+          continue
+        }
+        const journalTexts = collectDraftJournalTexts(order.value.journalPages, new Set(parts.map((part) => part.id)))
+
+        try {
+          if (missing.length === parts.length) {
+            writeLocalAiTexts(page.id, await requestDraftAiText(current(), parts[0].id, 'all', 'fill', { journalTexts }))
+            continue
+          }
+          for (const part of missing) {
+            const currentTexts = parts
+              .map((other) => ({ elementId: other.id, text: textOf(current(), other.id) }))
+              .filter((item) => item.text)
+            writeLocalAiTexts(
+              page.id,
+              await requestDraftAiText(current(), part.id, 'part', 'fill', { journalTexts, currentTexts }),
+            )
+          }
+        } catch (err) {
+          if (isLimitError(err)) {
+            return
+          }
+        }
+      }
+    }
+  }
+
+  /** Whether the journal holds any text written from the whole journal (cover lines etc.) —
+   * gates the end-of-questionnaire generation call, so journals without one skip the round-trip. */
+  function hasJournalWideAiTexts(): boolean {
+    return (order.value?.journalPages ?? []).some((page) =>
+      flattenTree(normalizeCanvasData(page.pageSnapshot).elements).some(
+        (leaf) => isAiTextElement(leaf) && leaf.contentSource === 'journal',
+      ),
+    )
+  }
+
+  /** Fills the journal-wide AI texts that are still empty (see ordersApi.generateJournalAiTexts,
+   * or generateLocalJournalAiTexts for a guest's local draft). Never throws: a failure just leaves
+   * the cover lines on their placeholder, the customer can still regenerate them later. */
+  async function generateJournalAiTexts(): Promise<void> {
+    if (!order.value || !hasJournalWideAiTexts()) {
+      return
+    }
+    try {
+      if (isLocalDraft.value) {
+        await generateLocalJournalAiTexts()
+      } else {
+        order.value = await ordersApi.generateJournalAiTexts(order.value.id)
+      }
+    } catch {
+      // Best-effort — see the doc comment.
+    } finally {
+      void refreshAiUsage()
+    }
+  }
+
   /** A fresh AI-generated variant for one ai-text-placeholder, same feeding answers — the "🔄"
    * icon on the questionnaire book preview. Needs a real backend order (YandexGPT runs
    * server-side): callers should gate this on `!isLocalDraft` rather than let it throw. The
@@ -536,14 +823,15 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     if (!order.value) {
       throw new Error('Заказ не загружен.')
     }
-    if (isLocalDraft.value) {
-      throw new Error('Сначала сохраните заказ, чтобы сгенерировать новый вариант текста.')
-    }
 
     isSaving.value = true
     orderError.value = null
 
     try {
+      if (isLocalDraft.value) {
+        return await regenerateLocalAiText(journalPageId, elementId)
+      }
+
       const text = await ordersApi.regenerateAiText(order.value.id, journalPageId, elementId)
 
       const pageIndex = order.value.journalPages.findIndex((page) => page.id === journalPageId)
@@ -562,12 +850,43 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
       }
 
       return text
-    } catch {
-      orderError.value = 'Не удалось сгенерировать новый вариант текста.'
+    } catch (err) {
+      // The server's own message carries the daily-limit explanation (429) — see AiUsageService.
+      orderError.value = extractApiErrorMessage(err, 'Не удалось сгенерировать новый вариант текста.')
       throw new Error(orderError.value)
     } finally {
       isSaving.value = false
+      void refreshAiUsage()
     }
+  }
+
+  /** A guest's "regenerate" on one block — only that part is rewritten (the others, possibly
+   * hand-edited, are sent along as context), same as the order flow's `regenerateAiText`. */
+  async function regenerateLocalAiText(journalPageId: string, elementId: string): Promise<string> {
+    const page = order.value?.journalPages.find((candidate) => candidate.id === journalPageId)
+    const parts = page ? aiTextGroupsOf(page).find((group) => group.some((part) => part.id === elementId)) : null
+    if (!order.value || !page || !parts) {
+      throw new Error('Блок не найден.')
+    }
+
+    const currentTexts = parts
+      .filter((part) => part.id !== elementId)
+      .map((part) => ({ elementId: part.id, text: textOf(page, part.id) }))
+      .filter((item) => item.text)
+    const journalTexts =
+      parts[0].contentSource === 'journal'
+        ? collectDraftJournalTexts(order.value.journalPages, new Set(parts.map((part) => part.id)))
+        : undefined
+
+    const texts = await requestDraftAiText(page, elementId, 'part', 'regenerate', { currentTexts, journalTexts })
+    // Written from today's answers — which also clears an "outdated" flag.
+    const lead = parts[0]
+    const sourceHash =
+      lead.contentSource === 'journal'
+        ? null
+        : aiAnswersSignature(lead.questionKeys, answerMapOf(order.value.questionAnswers))
+    writeLocalAiTexts(journalPageId, texts, new Set([elementId]), { sourceHash })
+    return texts[elementId] ?? ''
   }
 
   /** Adds a single spread — mirrors `OrdersService.addJournalSpread` on the backend. Printing
@@ -964,6 +1283,16 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     // Captured before `order.value` is replaced below — the guest's locally-held answers (see
     // `applyLocalQuestionAnswers`) have nowhere else to come from once this local draft is gone.
     const localAnswers = order.value.questionAnswers
+    // The AI texts the guest already saw (generated through the draft endpoint, or edited by
+    // hand), keyed by page position — the new order's pages get fresh ids but keep sortOrder and
+    // element ids (same pageSnapshot).
+    const localAiTextsBySortOrder = new Map(
+      order.value.journalPages.map((page) => {
+        const aiTextIds = new Set(aiTextGroupsOf(page).flat().map((part) => part.id))
+        const values = page.placeholderValues.filter((value) => aiTextIds.has(value.elementId) && value.textValue?.trim())
+        return [page.sortOrder, values] as const
+      }),
+    )
 
     order.value = await ordersApi.createDraft(selectedMagazineType.value.id, journalPages)
     isLocalDraft.value = false
@@ -976,6 +1305,24 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     } catch {
       // Best-effort — the order itself is already created; the guest's gallery photos just stay
       // under the old guestId and won't show up in this order's gallery. Not fatal.
+    }
+
+    // Saved as hand-placed (OVERRIDDEN, see upsertPlaceholders), so no later generation rewrites
+    // them — the customer keeps exactly the texts they reviewed, and doesn't pay a second time.
+    for (const page of order.value.journalPages) {
+      const values = localAiTextsBySortOrder.get(page.sortOrder) ?? []
+      if (values.length === 0) {
+        continue
+      }
+      try {
+        order.value = await ordersApi.savePlaceholders(
+          order.value.id,
+          page.id,
+          values.map((value) => ({ elementId: value.elementId, valueType: 'TEXT', textValue: value.textValue ?? '' })),
+        )
+      } catch {
+        // Best-effort — those texts just get written from the answers below instead.
+      }
     }
 
     if (localAnswers.length > 0) {
@@ -993,6 +1340,12 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
         // user can re-fill the questionnaire if this push fails.
       }
     }
+
+    // A guest's questionnaire is already finished by now (this runs from the review step), so any
+    // text still missing — and the cover lines — are written right away instead of waiting for a
+    // step that won't come again. Both skip what's already there.
+    await generateAiTextsForAnswers([])
+    await generateJournalAiTexts()
 
     return order.value
   }
@@ -1066,6 +1419,12 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     saveQuestionnaireAnswers,
     savePlaceholders,
     regenerateAiText,
+    generateJournalAiTexts,
+    aiUsage,
+    isAiFillCapReached,
+    generateAiTextsForAnswers,
+    hasJournalWideAiTexts,
+    refreshAiUsage,
     addJournalSpread,
     reorderJournalSpreads,
     removeJournalSpread,

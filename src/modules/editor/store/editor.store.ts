@@ -45,8 +45,15 @@ import { createElementFromLibrary } from '../factories/create-element.factory'
 import type { LibraryElementType } from '../factories/create-element.factory'
 import { toStoredAssetPath } from '@/shared/config/assets'
 import type { PageElement } from '../models'
-import { isGroupElement } from '../models'
+import { isAiTextElement, isGroupElement } from '../models'
+import type { AiTextPlaceholder } from '../models/ai-text-placeholder.model'
 import type { GroupElement } from '../models/group-element.model'
+import {
+  generateAiTextChainId,
+  getAiTextChainParts,
+  getAiTextSiblingParts,
+  type AiTextSharedPatch,
+} from '../utils/ai-text-chain.util'
 import type { EditorDocument, EditorSourceDocument } from '../models/page-template.model'
 import { normalizeCanvasData } from '../models/canvas-data.model'
 import type { CanvasData } from '../models/canvas-data.model'
@@ -972,6 +979,8 @@ export const useEditorStore = defineStore('editor', () => {
       return null
     }
 
+    relinkClonedAiTextChains(clones)
+
     selectedElementIds.value = clones.map((clone) => clone.id)
     isDirty.value = true
     return clones[clones.length - 1]
@@ -1030,6 +1039,8 @@ export const useEditorStore = defineStore('editor', () => {
       pasted.push(clone)
     }
 
+    relinkClonedAiTextChains(pasted)
+
     walkTree(pasted, (node) => {
       if (isTextPlaceholderType(node.type)) {
         recalculateTextElementSize(node.id)
@@ -1039,6 +1050,209 @@ export const useEditorStore = defineStore('editor', () => {
     selectedElementIds.value = pasted.map((clone) => clone.id)
     isDirty.value = true
     return pasted
+  }
+
+  /**
+   * Chain links on freshly cloned (duplicated/pasted, already inserted) subtrees: a lone cloned
+   * part joins its original chain as the new LAST part — so "duplicate" on a part doubles as "add
+   * a part" — while 2+ parts of one chain cloned together (e.g. a whole group duplicated) become
+   * an independent chain of their own, instead of interleaving with the originals.
+   */
+  function relinkClonedAiTextChains(clones: PageElement[]): void {
+    if (!document.value) {
+      return
+    }
+
+    const clonedPartsByChain = new Map<string, AiTextPlaceholder[]>()
+    walkTree(clones, (node) => {
+      if (isAiTextElement(node) && node.chainId) {
+        const parts = clonedPartsByChain.get(node.chainId) ?? []
+        parts.push(node)
+        clonedPartsByChain.set(node.chainId, parts)
+      }
+    })
+
+    const root = document.value.canvasData.elements
+    for (const [chainId, clonedParts] of clonedPartsByChain) {
+      if (clonedParts.length > 1) {
+        const freshChainId = generateAiTextChainId()
+        for (const part of clonedParts) {
+          part.chainId = freshChainId
+        }
+        continue
+      }
+
+      const allParts = getAiTextChainParts(root, chainId)
+      const maxOrder = Math.max(...allParts.filter((part) => part !== clonedParts[0]).map((part) => part.chainOrder), 0)
+      clonedParts[0].chainOrder = maxOrder + 1
+    }
+  }
+
+  /** Mirrors the chain-wide fields (prompt, questionKeys) onto every part of `id`'s chain — or
+   * just `id` itself when it's standalone. */
+  function updateAiTextShared(id: string, patch: AiTextSharedPatch): void {
+    if (!document.value) {
+      return
+    }
+
+    const element = findNodeById(document.value.canvasData.elements, id)
+    if (!element || !isAiTextElement(element)) {
+      return
+    }
+
+    for (const part of getAiTextSiblingParts(document.value.canvasData.elements, element)) {
+      updateElement(part.id, patch)
+    }
+  }
+
+  /** Adds a new part right after the chain's current last part — a clone of `id` (same typography,
+   * prompt and length), placed next to it: to the right when the page has room, otherwise below.
+   * A standalone block becomes part 1 of a new chain. */
+  function addAiTextChainPart(id: string): PageElement | null {
+    if (!document.value || previewMode.value) {
+      return null
+    }
+
+    const root = document.value.canvasData.elements
+    const source = findNodeById(root, id)
+    if (!source || !isAiTextElement(source)) {
+      return null
+    }
+
+    pushHistoryImmediate()
+
+    if (!source.chainId) {
+      source.chainId = generateAiTextChainId()
+      source.chainOrder = 1
+    }
+
+    const parts = getAiTextChainParts(root, source.chainId)
+    const last = parts[parts.length - 1]
+    const lastLocation = locateNode(root, last.id)
+    if (!lastLocation) {
+      return null
+    }
+
+    const clone = cloneSubtree(last) as AiTextPlaceholder
+    clone.chainOrder = last.chainOrder + 1
+    clone.partHint = ''
+    clone.name = `${source.label} — часть ${parts.length + 1}`
+    clone.locked = false
+
+    const gap = 16
+    const lastBounds = getElementAbsoluteBounds(root, last.id)
+    const fitsRight = lastBounds.x + lastBounds.width * 2 + gap <= document.value.width
+    clone.position = fitsRight
+      ? { x: last.position.x + last.size.width + gap, y: last.position.y }
+      : { x: last.position.x, y: last.position.y + last.size.height + gap }
+
+    lastLocation.siblings.splice(lastLocation.index + 1, 0, clone)
+    selectedElementIds.value = [clone.id]
+    isDirty.value = true
+    return clone
+  }
+
+  /**
+   * The cover's "Фраза обложки" library item: the first click creates a ready-made cover line
+   * (independent phrases, generated from the whole journal once the questionnaire is done, short
+   * word limit, display-sized type); every later click adds one more phrase to that same set — a
+   * clone of its last phrase, see addAiTextChainPart — so the admin only decides how many and
+   * where they go.
+   */
+  function addCoverPhrase(): PageElement | null {
+    if (!document.value || previewMode.value) {
+      return null
+    }
+
+    let existing: AiTextPlaceholder | null = null
+    walkTree(document.value.canvasData.elements, (node) => {
+      if (!existing && isAiTextElement(node) && node.contentSource === 'journal' && node.chainMode === 'phrases') {
+        existing = node
+      }
+    })
+    if (existing) {
+      return addAiTextChainPart((existing as AiTextPlaceholder).id)
+    }
+
+    const element = createElementFromLibrary(
+      'ai-text-placeholder',
+      document.value.width,
+      document.value.height,
+    ) as AiTextPlaceholder
+
+    Object.assign(element, {
+      name: 'Фраза обложки',
+      label: 'Фраза обложки',
+      prompt:
+        'Короткие яркие фразы для обложки журнала — как анонсы на обложке настоящего журнала. ' +
+        'Они описывают человека, которому посвящён журнал: его характер, увлечения, важные моменты.',
+      lengthConstraint: { unit: 'words', min: 3, max: 8 },
+      chainId: generateAiTextChainId(),
+      chainOrder: 1,
+      chainMode: 'phrases',
+      contentSource: 'journal',
+      fontSize: 22,
+      fontWeight: 600,
+      lineHeight: 1.2,
+      size: { width: 260, height: 64 },
+    } satisfies Partial<AiTextPlaceholder>)
+
+    insertNewElement(element)
+    return element
+  }
+
+  /** Detaches `id` into a standalone block (keeps its current prompt). A chain left with a single
+   * part is dissolved too, so that part goes back to being an ordinary standalone block. */
+  function unlinkAiTextChainPart(id: string): void {
+    if (!document.value || previewMode.value) {
+      return
+    }
+
+    const root = document.value.canvasData.elements
+    const element = findNodeById(root, id)
+    if (!element || !isAiTextElement(element) || !element.chainId) {
+      return
+    }
+
+    pushHistoryImmediate()
+
+    const remaining = getAiTextChainParts(root, element.chainId).filter((part) => part.id !== id)
+    element.chainId = null
+    element.chainOrder = 0
+    if (remaining.length === 1) {
+      remaining[0].chainId = null
+      remaining[0].chainOrder = 0
+    }
+    isDirty.value = true
+  }
+
+  /** Swaps `id` with its neighbour in the chain's reading order. Renumbers the whole chain to
+   * 1..n first, so gaps/duplicate orders left by deletions or pastes can't make a swap a no-op. */
+  function moveAiTextChainPart(id: string, direction: 'earlier' | 'later'): void {
+    if (!document.value || previewMode.value) {
+      return
+    }
+
+    const root = document.value.canvasData.elements
+    const element = findNodeById(root, id)
+    if (!element || !isAiTextElement(element) || !element.chainId) {
+      return
+    }
+
+    const parts = getAiTextChainParts(root, element.chainId)
+    const index = parts.findIndex((part) => part.id === id)
+    const targetIndex = direction === 'earlier' ? index - 1 : index + 1
+    if (index === -1 || targetIndex < 0 || targetIndex >= parts.length) {
+      return
+    }
+
+    pushHistoryImmediate()
+
+    ;[parts[index], parts[targetIndex]] = [parts[targetIndex], parts[index]]
+    parts.forEach((part, order) => {
+      part.chainOrder = order + 1
+    })
+    isDirty.value = true
   }
 
   /** Truncates the isolation breadcrumb at the first id no longer present after a removal/undo. */
@@ -2400,6 +2614,11 @@ export const useEditorStore = defineStore('editor', () => {
     hasClipboardContent,
     copySelection,
     pasteClipboard,
+    updateAiTextShared,
+    addAiTextChainPart,
+    addCoverPhrase,
+    unlinkAiTextChainPart,
+    moveAiTextChainPart,
     removeElement,
     removeSelectedElements,
     selectElement,

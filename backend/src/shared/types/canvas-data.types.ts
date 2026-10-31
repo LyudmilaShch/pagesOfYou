@@ -222,6 +222,13 @@ export interface CanvasLengthConstraint {
   max: number | null;
 }
 
+export type CanvasAiTextChainMode = 'continuous' | 'phrases';
+
+/** 'questions' — generated from its own `questionKeys` as soon as they're answered; 'journal' —
+ * from the whole questionnaire + the journal's other texts, once the questionnaire is finished
+ * (`questionKeys` are then optional extra wishes). */
+export type CanvasAiTextContentSource = 'questions' | 'journal';
+
 /**
  * AI-generated text block: admin defines a prompt template + which questions feed it, the actual
  * generated text is written back as a normal TEXT PlaceholderValue (source: AI, future phase).
@@ -237,6 +244,18 @@ export interface CanvasAiTextPlaceholder extends CanvasElementBase {
   lengthConstraint: CanvasLengthConstraint;
   /** Static text shown on-canvas before any generation exists. */
   previewPlaceholderText?: string;
+  /** Parts of one generated text spread over several blocks of the same page/spread share a
+   * `chainId` (null = standalone); reading order is `chainOrder` ascending. `prompt`/`questionKeys`
+   * are mirrored across a chain by the editor — the first part's are authoritative here. */
+  chainId: string | null;
+  chainOrder: number;
+  /** 'continuous' — one text split into consecutive pieces; 'phrases' — independent short phrases
+   * (e.g. cover lines). Chain-wide, mirrored by the editor — the first part's is authoritative. */
+  chainMode: CanvasAiTextChainMode;
+  /** Chain-wide, mirrored like `chainMode` — the first part's is authoritative. */
+  contentSource: CanvasAiTextContentSource;
+  /** Optional per-part note on what this part should be about — added to the generation prompt. */
+  partHint: string;
 
   // Same typography fields as CanvasTextPlaceholder (deliberately duplicated, not inherited).
   fontFamily: string;

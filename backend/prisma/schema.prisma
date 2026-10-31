@@ -713,6 +713,10 @@ model PlaceholderValue {
   /// upsertPlaceholders — синхронизация такие строки больше не трогает).
   source PlaceholderSource @default(AUTO)
 
+  /// Для ИИ-текста — отпечаток ответов, по которым он написан (см. aiAnswersSignature): совпал
+  /// с текущими ответами — генерировать заново незачем, не совпал — текст устарел.
+  aiSourceHash String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1009,7 +1013,38 @@ model PlatformSettings {
   productionDaysMin Int @default(5)
   productionDaysMax Int @default(7)
 
+  /// ИИ-генерации текста (одна генерация = один блок или один набор связанных частей, вместе с
+  /// повторными попытками внутри неё), сутки — по UTC. Первый текст блока лимит не тратит, иначе
+  /// журнал мог бы не заполниться до конца:
+  /// - aiDailyLimitUser — перегенерации пользователя (🔄 и обновление текста после изменения
+  ///   ответа), это «осталось N» у кнопки. Гостю перегенерация недоступна вовсе.
+  /// - aiDailyFillCapUser / aiDailyFillCapGuest — скрытый защитный потолок на первые тексты
+  ///   (и автообновления гостя). Для гостя дополнительно действует потолок на IP — в
+  ///   AI_GUEST_IP_LIMIT_MULTIPLIER раз больше (несколько гостей за одним NAT).
+  /// - aiGuestAutoUpdatesPerText — сколько раз текст блока у гостя обновляется сам после
+  ///   изменения ответов (считается в черновике гостя).
+  aiDailyLimitUser          Int @default(30)
+  aiDailyFillCapUser        Int @default(300)
+  aiDailyFillCapGuest       Int @default(150)
+  aiGuestAutoUpdatesPerText Int @default(2)
+
   updatedAt DateTime @updatedAt
 
   @@map("platform_settings")
+}
+
+/// Суточный счётчик ИИ-генераций — по одной строке на субъект и день (UTC). `subjectKey` —
+/// "user:<id>" (перегенерации пользователя) или "fill:user:<id>" / "fill:guest:<guestId>" /
+/// "fill:ip:<адрес>" (первые тексты, защитный потолок). Старые дни не удаляются автоматически: строки
+/// крошечные, а история пригодится, чтобы подобрать лимиты по реальному расходу.
+model AiUsageCounter {
+  id         String   @id @default(cuid())
+  subjectKey String
+  day        DateTime @db.Date
+  count      Int      @default(0)
+  updatedAt  DateTime @updatedAt
+
+  @@unique([subjectKey, day])
+  @@index([day])
+  @@map("ai_usage_counters")
 }
