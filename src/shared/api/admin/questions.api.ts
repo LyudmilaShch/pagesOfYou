@@ -42,7 +42,8 @@ export interface QuestionOptionPayload {
 }
 
 export interface CreateQuestionPayload {
-  key: string
+  /** Omit to let the backend derive it from `label`. */
+  key?: string
   type: QuestionType
   label: string
   helpText?: string

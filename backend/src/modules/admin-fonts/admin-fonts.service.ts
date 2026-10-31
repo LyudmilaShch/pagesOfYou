@@ -4,22 +4,8 @@ import { Prisma } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../../database';
 import { resolveAssetUrl, toStoredAssetPath } from '../../common/utils/asset-url.util';
+import { transliterate } from '../../shared/utils/transliterate.util';
 import type { CreateFontDto, ReorderFontsDto, UpdateFontDto } from './dto/font.dto';
-
-const CYRILLIC_TO_LATIN: Record<string, string> = {
-  а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z',
-  и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r',
-  с: 's', т: 't', у: 'u', ф: 'f', х: 'h', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'sch',
-  ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya',
-};
-
-function transliterate(value: string): string {
-  return value
-    .toLowerCase()
-    .split('')
-    .map((char) => CYRILLIC_TO_LATIN[char] ?? char)
-    .join('');
-}
 
 function slugify(value: string): string {
   const slug = transliterate(value)

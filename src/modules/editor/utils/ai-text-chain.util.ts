@@ -4,8 +4,9 @@ import type { AiTextPlaceholder } from '../models/ai-text-placeholder.model'
 import { walkTree } from './element-tree.util'
 
 /** Fields that belong to the whole chained text, not to one part — editing them on any part
- * writes them to every part (see the editor store's `updateAiTextShared`). */
-export const AI_TEXT_SHARED_FIELDS = ['prompt', 'questionKeys', 'chainMode', 'contentSource'] as const
+ * writes them to every part (see the editor store's `updateAiTextShared`). `chainMode` and
+ * `contentSource` are chain-wide too, but fixed at creation and copied to each new part. */
+export const AI_TEXT_SHARED_FIELDS = ['prompt', 'questionKeys'] as const
 
 export type AiTextSharedPatch = Partial<Pick<AiTextPlaceholder, (typeof AI_TEXT_SHARED_FIELDS)[number]>>
 

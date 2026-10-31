@@ -76,44 +76,6 @@
         Номера частей видны на холсте. Новая часть копирует оформление этой и встаёт рядом —
         перетащите её на нужное место. «Дублировать» на части тоже добавляет её в конец.
       </p>
-
-      <template v-if="isChained && isCoverPage">
-        <p class="editor-ai-text-config-screen__section-title">Как связаны части</p>
-        <v-btn-toggle
-          :model-value="chainMode"
-          color="primary"
-          density="compact"
-          mandatory
-          @update:model-value="patchShared({ chainMode: $event })"
-        >
-          <v-btn value="continuous" size="small">Единый текст</v-btn>
-          <v-btn value="phrases" size="small">Отдельные фразы</v-btn>
-        </v-btn-toggle>
-        <p class="editor-ai-text-config-screen__hint">
-          {{ chainMode === 'phrases'
-            ? 'Каждая часть — самостоятельная короткая фраза на общую тему, без повторов. Подходит для анонсов на обложке.'
-            : 'Один текст, разбитый на части: каждая продолжает предыдущую. Порядок чтения — сверху вниз по списку.' }}
-        </p>
-      </template>
-    </div>
-
-    <div v-if="isCoverPage" class="editor-ai-text-config-screen__parts">
-      <p class="editor-ai-text-config-screen__section-title">Из чего писать</p>
-      <v-btn-toggle
-        :model-value="contentSource"
-        color="primary"
-        density="compact"
-        mandatory
-        @update:model-value="patchShared({ contentSource: $event })"
-      >
-        <v-btn value="questions" size="small">Вопросы анкеты</v-btn>
-        <v-btn value="journal" size="small">Весь журнал</v-btn>
-      </v-btn-toggle>
-      <p class="editor-ai-text-config-screen__hint">
-        {{ contentSource === 'journal'
-          ? 'Текст пишется в конце, когда анкета заполнена: по всем ответам и уже готовым текстам журнала. До этого в блоке — заглушка.'
-          : 'Текст пишется сразу, как только пользователь ответит на выбранные ниже вопросы.' }}
-      </p>
     </div>
 
     <EditorTextField
@@ -218,9 +180,6 @@ const parts = computed(() =>
 )
 
 const isChained = computed(() => parts.value.length > 1)
-
-/** Chain mode and content source are cover-only settings (cover lines, whole-journal text). */
-const isCoverPage = computed(() => store.document?.pageType === 'COVER')
 
 const chainMode = computed(() => aiTextElement.value?.chainMode ?? 'continuous')
 const contentSource = computed(() => aiTextElement.value?.contentSource ?? 'questions')

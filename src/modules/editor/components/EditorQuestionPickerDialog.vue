@@ -64,14 +64,6 @@
             density="compact"
             hide-details="auto"
           />
-          <v-text-field
-            v-model="createForm.key"
-            label="key *"
-            hint="Латиница, цифры, _ и - (например meeting_place)"
-            persistent-hint
-            variant="outlined"
-            density="compact"
-          />
           <v-select
             v-model="createForm.type"
             :items="questionTypeItems"
@@ -168,14 +160,13 @@ const createError = ref('')
 
 function emptyCreateForm(): {
   label: string
-  key: string
   type: QuestionType
   placeholder: string
   helpText: string
   isRequired: boolean
   options: QuestionOptionPayload[]
 } {
-  return { label: '', key: '', type: 'TEXT', placeholder: '', helpText: '', isRequired: false, options: [] }
+  return { label: '', type: 'TEXT', placeholder: '', helpText: '', isRequired: false, options: [] }
 }
 
 const createForm = reactive(emptyCreateForm())
@@ -234,8 +225,7 @@ function removeOption(index: number): void {
 
 async function submitCreate(): Promise<void> {
   const label = createForm.label.trim()
-  const key = createForm.key.trim()
-  if (!createEditorQuestion.value || !label || !key) {
+  if (!createEditorQuestion.value || !label) {
     return
   }
 
@@ -243,7 +233,6 @@ async function submitCreate(): Promise<void> {
   createError.value = ''
   try {
     const payload: CreateEditorQuestionPayload = {
-      key,
       label,
       type: createForm.type,
       placeholder: createForm.placeholder.trim() || undefined,

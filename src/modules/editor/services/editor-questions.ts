@@ -13,7 +13,8 @@ export interface EditorQuestionRef {
 }
 
 export interface CreateEditorQuestionPayload {
-  key: string
+  /** Omit to let the backend derive it from `label`. */
+  key?: string
   label: string
   type: QuestionType
   placeholder?: string

@@ -826,9 +826,13 @@ function elementStyle(leaf: LeafElement): Record<string, string> {
 function textInnerStyle(leaf: TextPlaceholder | AiTextPlaceholder): Record<string, string> {
   return {
     width: `${leaf.size.width}px`,
-    height: `${leaf.size.height}px`,
+    // min-, not fixed: a text longer than its box grows this box down with it, so the overflow
+    // outline (`.spread-thumb__el--text-overflow`) wraps the text actually printed, not the admin's box.
+    minHeight: `${leaf.size.height}px`,
     transform: `scale(${scale.value})`,
     transformOrigin: 'top left',
+    // Keeps that outline's thickness constant on screen despite the scale above.
+    '--thumb-inverse-scale': String(1 / scale.value),
     display: 'flex',
     // `safe`: a text taller than its box (an AI text longer than the admin's box) starts at the
     // box's top and grows down instead of spilling up past it too — same as the print render,
@@ -1112,9 +1116,10 @@ function shapeStyle(leaf: ShapeElement): Record<string, string> {
   cursor: not-allowed;
 }
 
-.spread-thumb__el--text-overflow {
-  outline: 1.5px dashed $accent-deep;
-  outline-offset: 1px;
+// On the text itself rather than the element: an overflowing text runs past the element's box.
+.spread-thumb__el--text-overflow .spread-thumb__text-inner {
+  outline: calc(1.5px * var(--thumb-inverse-scale, 1)) dashed $accent-deep;
+  outline-offset: calc(1px * var(--thumb-inverse-scale, 1));
 }
 
 .spread-thumb__overflow-badge {

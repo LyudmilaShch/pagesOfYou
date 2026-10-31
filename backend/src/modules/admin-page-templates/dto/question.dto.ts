@@ -42,15 +42,17 @@ export class QuestionOptionDto {
 export class CreateQuestionDto {
   @ApiProperty({
     example: 'meeting_place',
-    description: 'Уникален в рамках типа журнала, на него ссылаются элементы канваса (questionKey)',
+    description:
+      'Уникален в рамках типа журнала, на него ссылаются элементы канваса (questionKey). Если не передан — генерируется из label.',
   })
+  @IsOptional()
   @IsString()
   @MinLength(1)
   @MaxLength(100)
   @Matches(QUESTION_KEY_PATTERN, {
     message: 'key может содержать только строчные латинские буквы, цифры, "_" и "-"',
   })
-  key: string;
+  key?: string;
 
   @ApiProperty({ enum: QuestionType })
   @IsEnum(QuestionType)

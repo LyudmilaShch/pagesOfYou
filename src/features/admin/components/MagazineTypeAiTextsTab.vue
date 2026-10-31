@@ -70,24 +70,17 @@
             persistent-hint
           />
 
-          <div v-if="editDialog.item.pageType === 'COVER'" class="mt-ai-texts-tab__length">
-            <p class="mt-ai-texts-tab__length-title">Из чего писать</p>
-            <v-btn-toggle v-model="form.contentSource" color="primary" density="compact" mandatory>
-              <v-btn value="questions" size="small">Вопросы анкеты</v-btn>
-              <v-btn value="journal" size="small">Весь журнал</v-btn>
-            </v-btn-toggle>
-            <p v-if="form.contentSource === 'journal'" class="mt-ai-texts-tab__parts-hint">
-              Текст пишется после заполнения анкеты — по всем ответам и текстам журнала. Выбранные
-              ниже вопросы задаются последним шагом анкеты как пожелания.
-            </p>
-          </div>
+          <p v-if="isJournalSource" class="mt-ai-texts-tab__parts-hint">
+            Текст пишется после заполнения анкеты — по всем ответам и текстам журнала. Выбранные
+            ниже вопросы задаются последним шагом анкеты как пожелания.
+          </p>
 
           <v-select
             v-model="form.questionKeys"
             :items="questionItems"
             item-title="label"
             item-value="key"
-            :label="form.contentSource === 'journal' ? 'Дополнительные вопросы (необязательно)' : 'Вопросы, используемые в промпте'"
+            :label="isJournalSource ?'Дополнительные вопросы (необязательно)' : 'Вопросы, используемые в промпте'"
             variant="outlined"
             multiple
             chips
@@ -95,20 +88,11 @@
             hide-details="auto"
           />
 
-          <template v-if="form.parts.length > 1">
-            <p class="mt-ai-texts-tab__parts-hint">
-              Текст разбит на {{ form.parts.length }} {{ pluralParts(form.parts.length) }} — промпт и
-              вопросы общие, длина задаётся для каждой части. Порядок и расположение частей меняются в
-              редакторе разворота.
-            </p>
-            <div v-if="editDialog.item.pageType === 'COVER'" class="mt-ai-texts-tab__length">
-              <p class="mt-ai-texts-tab__length-title">Как связаны части</p>
-              <v-btn-toggle v-model="form.chainMode" color="primary" density="compact" mandatory>
-                <v-btn value="continuous" size="small">Единый текст</v-btn>
-                <v-btn value="phrases" size="small">Отдельные фразы</v-btn>
-              </v-btn-toggle>
-            </div>
-          </template>
+          <p v-if="form.parts.length > 1" class="mt-ai-texts-tab__parts-hint">
+            Текст разбит на {{ form.parts.length }} {{ pluralParts(form.parts.length) }} — промпт и
+            вопросы общие, длина задаётся для каждой части. Порядок и расположение частей меняются в
+            редакторе разворота.
+          </p>
 
           <div v-for="(part, index) in form.parts" :key="part.id" class="mt-ai-texts-tab__length">
             <p class="mt-ai-texts-tab__length-title">
@@ -117,8 +101,8 @@
             <v-text-field
               v-if="form.parts.length > 1"
               v-model="part.partHint"
-              :label="form.chainMode === 'phrases' ? 'О чём эта фраза (необязательно)' : 'О чём эта часть (необязательно)'"
-              :placeholder="form.chainMode === 'phrases' ? 'Например: увлечение, мечта, черта характера' : 'Например: знакомство, пожелание на будущее'"
+              :label="isPhrases ? 'О чём эта фраза (необязательно)' : 'О чём эта часть (необязательно)'"
+              :placeholder="isPhrases ? 'Например: увлечение, мечта, черта характера' : 'Например: знакомство, пожелание на будущее'"
               variant="outlined"
               density="compact"
               hide-details
@@ -169,7 +153,6 @@ import { computed, onMounted, reactive, ref } from 'vue'
 
 import { isAiTextElement } from '@/modules/editor/models'
 import type { AiTextPlaceholder, LengthConstraint, LengthConstraintUnit } from '@/modules/editor/models'
-import type { AiTextChainMode, AiTextContentSource } from '@/modules/editor/models/ai-text-placeholder.model'
 import { normalizeCanvasData } from '@/modules/editor/models/canvas-data.model'
 import { getAiTextSiblingParts } from '@/modules/editor/utils/ai-text-chain.util'
 import { locateNode, walkTree } from '@/modules/editor/utils/element-tree.util'
@@ -307,18 +290,19 @@ interface PartLengthForm {
 const form = reactive({
   prompt: '',
   questionKeys: [] as string[],
-  chainMode: 'continuous' as AiTextChainMode,
-  contentSource: 'questions' as AiTextContentSource,
   parts: [] as PartLengthForm[],
 })
+
+// Chain mode and content source are fixed when the element is created (the editor's
+// "Фраза обложки" vs a regular AI text) — shown here read-only, never written back.
+const isJournalSource = computed(() => editDialog.item?.element.contentSource === 'journal')
+const isPhrases = computed(() => editDialog.item?.element.chainMode === 'phrases')
 
 function openEdit(item: AiTextItem): void {
   editDialog.item = item
   form.prompt = item.element.prompt
   form.questionKeys = [...item.element.questionKeys]
-  form.chainMode = item.element.chainMode
-  form.contentSource = item.element.contentSource
-  form.parts =item.parts.map((part) => ({
+  form.parts = item.parts.map((part) => ({
     id: part.id,
     name: part.name,
     partHint: part.partHint,
@@ -349,8 +333,6 @@ async function submitEdit(): Promise<void> {
       ...(location!.node as AiTextPlaceholder),
       prompt: form.prompt,
       questionKeys: [...form.questionKeys],
-      chainMode: form.chainMode,
-      contentSource: form.contentSource,
       partHint: part.partHint.trim(),
       lengthConstraint: {
         unit: part.lengthUnit,

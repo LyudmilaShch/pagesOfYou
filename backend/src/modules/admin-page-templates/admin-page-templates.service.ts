@@ -8,11 +8,14 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database';
 import { flattenTree } from '../../shared/utils/element-tree.util';
 import { normalizeCanvasData } from '../../shared/types/canvas-data.types';
+import { transliterate } from '../../shared/utils/transliterate.util';
 import type {
   CreateQuestionDto,
   ReorderQuestionsDto,
   UpdateQuestionDto,
 } from './dto/question.dto';
+
+const MAX_GENERATED_KEY_LENGTH = 40;
 
 @Injectable()
 export class AdminPageTemplatesService {
@@ -36,7 +39,14 @@ export class AdminPageTemplatesService {
 
   async create(magazineTypeId: string, dto: CreateQuestionDto) {
     await this.assertMagazineTypeExists(magazineTypeId);
-    await this.assertKeyUnique(magazineTypeId, dto.key);
+
+    let key: string;
+    if (dto.key) {
+      await this.assertKeyUnique(magazineTypeId, dto.key);
+      key = dto.key;
+    } else {
+      key = await this.generateUniqueKey(magazineTypeId, dto.label);
+    }
 
     const maxSort = await this.prisma.question.aggregate({
       where: { magazineTypeId, deletedAt: null },
@@ -46,7 +56,7 @@ export class AdminPageTemplatesService {
     const item = await this.prisma.question.create({
       data: {
         magazineTypeId,
-        key: dto.key,
+        key,
         type: dto.type,
         label: dto.label,
         helpText: dto.helpText,
@@ -167,6 +177,30 @@ export class AdminPageTemplatesService {
     if (existing) {
       throw new ConflictException(`Вопрос с key "${key}" уже существует в этом типе журнала.`);
     }
+  }
+
+  /** Builds a key from the question label ("Где вы познакомились?" → "gde_vy_poznakomilis")
+   * and appends _2, _3… while it collides with an existing key (soft-deleted ones included,
+   * see assertKeyUnique). */
+  private async generateUniqueKey(magazineTypeId: string, label: string): Promise<string> {
+    const base =
+      transliterate(label)
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, MAX_GENERATED_KEY_LENGTH)
+        .replace(/_+$/, '') || 'question';
+
+    const taken = await this.prisma.question.findMany({
+      where: { magazineTypeId, key: { startsWith: base } },
+      select: { key: true },
+    });
+    const takenKeys = new Set(taken.map((question) => question.key));
+
+    let key = base;
+    for (let suffix = 2; takenKeys.has(key); suffix += 1) {
+      key = `${base}_${suffix}`;
+    }
+    return key;
   }
 
   /** Rejects a key rename while any canvas element across the magazine type's pages still
