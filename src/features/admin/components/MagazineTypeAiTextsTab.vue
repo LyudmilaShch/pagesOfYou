@@ -70,7 +70,7 @@
             persistent-hint
           />
 
-          <div class="mt-ai-texts-tab__length">
+          <div v-if="editDialog.item.pageType === 'COVER'" class="mt-ai-texts-tab__length">
             <p class="mt-ai-texts-tab__length-title">Из чего писать</p>
             <v-btn-toggle v-model="form.contentSource" color="primary" density="compact" mandatory>
               <v-btn value="questions" size="small">Вопросы анкеты</v-btn>
@@ -101,7 +101,7 @@
               вопросы общие, длина задаётся для каждой части. Порядок и расположение частей меняются в
               редакторе разворота.
             </p>
-            <div class="mt-ai-texts-tab__length">
+            <div v-if="editDialog.item.pageType === 'COVER'" class="mt-ai-texts-tab__length">
               <p class="mt-ai-texts-tab__length-title">Как связаны части</p>
               <v-btn-toggle v-model="form.chainMode" color="primary" density="compact" mandatory>
                 <v-btn value="continuous" size="small">Единый текст</v-btn>

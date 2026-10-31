@@ -77,7 +77,7 @@
         перетащите её на нужное место. «Дублировать» на части тоже добавляет её в конец.
       </p>
 
-      <template v-if="isChained">
+      <template v-if="isChained && isCoverPage">
         <p class="editor-ai-text-config-screen__section-title">Как связаны части</p>
         <v-btn-toggle
           :model-value="chainMode"
@@ -97,7 +97,7 @@
       </template>
     </div>
 
-    <div class="editor-ai-text-config-screen__parts">
+    <div v-if="isCoverPage" class="editor-ai-text-config-screen__parts">
       <p class="editor-ai-text-config-screen__section-title">Из чего писать</p>
       <v-btn-toggle
         :model-value="contentSource"
@@ -218,6 +218,9 @@ const parts = computed(() =>
 )
 
 const isChained = computed(() => parts.value.length > 1)
+
+/** Chain mode and content source are cover-only settings (cover lines, whole-journal text). */
+const isCoverPage = computed(() => store.document?.pageType === 'COVER')
 
 const chainMode = computed(() => aiTextElement.value?.chainMode ?? 'continuous')
 const contentSource = computed(() => aiTextElement.value?.contentSource ?? 'questions')
