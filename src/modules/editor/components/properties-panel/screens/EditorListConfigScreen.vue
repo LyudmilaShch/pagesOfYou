@@ -22,6 +22,34 @@
         : `Без минимума: можно заполнить от 1 до ${rows.length} пунктов или пропустить вопрос.` }}
     </p>
 
+    <div v-for="field in limitFields" :key="field.key" class="editor-list-config-screen__limit">
+      <p class="editor-list-config-screen__title">{{ field.title }}</p>
+      <div class="editor-list-config-screen__limit-row">
+        <v-btn-toggle
+          :model-value="settings[field.setting]?.unit ?? 'characters'"
+          class="editor-list-config-screen__limit-unit"
+          color="primary"
+          density="compact"
+          mandatory
+          @update:model-value="setLimit(field.key, { unit: $event, max: settings[field.setting]?.max ?? 0 })"
+        >
+          <v-btn value="characters" size="small">Символы</v-btn>
+          <v-btn value="words" size="small">Слова</v-btn>
+        </v-btn-toggle>
+        <EditorStepperField
+          :model-value="settings[field.setting]?.max ?? 0"
+          label="Максимум"
+          :min="0"
+          @update:model-value="setLimit(field.key, { unit: settings[field.setting]?.unit ?? 'characters', max: $event })"
+        />
+      </div>
+      <p class="editor-list-config-screen__hint">
+        {{ (settings[field.setting]?.max ?? 0) > 0
+          ? `В анкете: ${describeLimit(settings[field.setting]!)}. Столько же просим у ИИ в «Предложить пункты».`
+          : 'Не задано — лимит берётся из самого текста шаблона, в символах.' }}
+      </p>
+    </div>
+
     <v-select
       :model-value="settings.mode ?? 'slots'"
       :items="LAYOUT_MODES"
@@ -34,6 +62,57 @@
       @update:model-value="store.setListMode(listInfo.listId, $event)"
     />
     <p class="editor-list-config-screen__hint">{{ LAYOUT_MODE_HINTS[settings.mode ?? 'slots'] }}</p>
+
+    <v-select
+      :model-value="settings.heightMode ?? 'fixed'"
+      :items="HEIGHT_MODES"
+      item-title="title"
+      item-value="value"
+      label="Высота строк"
+      variant="outlined"
+      density="compact"
+      hide-details
+      @update:model-value="store.setListFlowSettings(listInfo.listId, { heightMode: $event })"
+    />
+    <p class="editor-list-config-screen__hint">
+      {{ settings.heightMode === 'text'
+        ? 'Область колонки (от верха первой строки до низа последней) не двигается — строки внутри неё раздвигаются по реальной высоте текста. Только для вертикальных колонок.'
+        : 'Строки стоят ровно на своих местах; длинное описание может наехать на следующую строку.' }}
+    </p>
+    <template v-if="settings.heightMode === 'text'">
+      <v-select
+        :model-value="settings.flowAlign ?? 'spread'"
+        :items="FLOW_ALIGNS"
+        item-title="title"
+        item-value="value"
+        label="Если текста мало"
+        variant="outlined"
+        density="compact"
+        hide-details
+        @update:model-value="store.setListFlowSettings(listInfo.listId, { flowAlign: $event })"
+      />
+      <EditorStepperField
+        :model-value="settings.minGap ?? DEFAULT_LIST_MIN_GAP"
+        label="Минимальный отступ между строками"
+        suffix="pt"
+        :min="0"
+        @update:model-value="store.setListFlowSettings(listInfo.listId, { minGap: $event })"
+      />
+      <EditorStepperField
+        :model-value="Math.round((settings.minFontScale ?? DEFAULT_LIST_MIN_FONT_SCALE) * 100)"
+        label="Шрифт можно уменьшить до"
+        suffix="%"
+        :min="50"
+        :max="100"
+        :step="5"
+        @update:model-value="store.setListFlowSettings(listInfo.listId, { minFontScale: $event / 100 })"
+      />
+      <p class="editor-list-config-screen__hint">
+        Если строки не влезают даже с минимальным отступом, сначала уменьшается шрифт описаний до указанного
+        процента, затем — заголовков. Отступ между заголовком и описанием уменьшается вместе с заголовком.
+        Не хватит и этого — пользователь увидит ⚠ на проверке.
+      </p>
+    </template>
 
     <div class="editor-list-config-screen__suggest">
       <EditorSwitch
@@ -156,6 +235,16 @@
         hide-details
         color="primary"
       />
+      <v-btn-toggle
+        v-model="previewText"
+        class="editor-list-config-screen__preview-toggle"
+        color="primary"
+        density="compact"
+        mandatory
+      >
+        <v-btn value="template" size="small">Текст шаблона</v-btn>
+        <v-btn value="long" size="small">Длинный текст</v-btn>
+      </v-btn-toggle>
       <div
         class="editor-list-config-screen__thumb"
         :style="{ aspectRatio: `${previewCanvas.pageWidth ?? A4_PAGE_WIDTH} / ${previewCanvas.pageHeight ?? A4_PAGE_HEIGHT}` }"
@@ -201,10 +290,21 @@
 import { computed, inject, ref, watch } from 'vue'
 
 import { useEditorStore } from '../../../store/editor.store'
-import { isGroupElement, isTextElement, type ListLayoutMode, type PageElement } from '../../../models'
+import {
+  isGroupElement,
+  isTextElement,
+  type ListFlowAlign,
+  type ListHeightMode,
+  type ListLayoutMode,
+  type ListTextLimit,
+  type PageElement,
+  type TextPlaceholder,
+} from '../../../models'
 import type { CanvasData } from '../../../models/canvas-data.model'
-import { getDescendants } from '../../../utils/element-tree.util'
-import { autoListSlots, collectRoleLeaves, distributeLists, listFoldX } from '../../../utils/list-distribution.util'
+import { getDescendants, mapTree } from '../../../utils/element-tree.util'
+import { autoListSlots, collectAnswerLeaves, distributeLists, listFoldX } from '../../../utils/list-distribution.util'
+import { measureListTextHeight } from '../../../utils/list-text-measure.util'
+import { clampToLimit, describeLimit } from '../../../utils/list-text-limit.util'
 import { createEditorQuestion, editorQuestions } from '../../../services/editor-questions'
 import { A4_PAGE_HEIGHT, A4_PAGE_WIDTH } from '../../../constants/page.constants'
 import { PROPERTIES_PANEL_STACK_KEY } from '../../../composables/properties-panel-stack.context'
@@ -212,7 +312,11 @@ import EditorQuestionPickerField from '../../EditorQuestionPickerField.vue'
 import EditorStepperField from '../../EditorStepperField.vue'
 import EditorSwitch from '../../EditorSwitch.vue'
 import EditorTextField from '../../EditorTextField.vue'
-import { DEFAULT_LIST_SUGGEST_PROMPT } from '../../../models/list.model'
+import {
+  DEFAULT_LIST_MIN_FONT_SCALE,
+  DEFAULT_LIST_MIN_GAP,
+  DEFAULT_LIST_SUGGEST_PROMPT,
+} from '../../../models/list.model'
 import JournalSpreadThumbnail from '../../JournalSpreadThumbnail.vue'
 
 /** The list's own settings — opened from the "Настройки списка" button on the list, one of its
@@ -266,6 +370,21 @@ const foldX = computed(() =>
   listFoldX(store.document?.canvasData.pageWidth ?? A4_PAGE_WIDTH, store.document?.canvasData.pageHeight ?? A4_PAGE_HEIGHT),
 )
 
+/** "Длина заголовка" always; "Длина описания" once some row has a description text. */
+const limitFields = computed(() => [
+  { key: 'title' as const, setting: 'titleLimit' as const, title: 'Длина заголовка пункта' },
+  ...(rows.value.some((row) => row.roles.includes('описание'))
+    ? [{ key: 'detail' as const, setting: 'detailLimit' as const, title: 'Длина описания пункта' }]
+    : []),
+])
+
+/** A max of 0 clears the limit — back to the texts' own maxLength. */
+function setLimit(field: 'title' | 'detail', limit: ListTextLimit): void {
+  if (listInfo.value) {
+    store.setListTextLimit(listInfo.value.listId, field, limit.max > 0 ? limit : null)
+  }
+}
+
 // Opens on the fewest items a customer may leave — the sparsest layout the admin has to live with.
 const previewCount = ref(1)
 watch(
@@ -284,17 +403,62 @@ const previewCanvas = computed<CanvasData | null>(() => {
     return null
   }
   const filledIds = new Set(
-    list.rows.slice(0, previewCount.value).flatMap((row) => collectRoleLeaves(row.node, 'item')),
+    list.rows.slice(0, previewCount.value).flatMap((row) => collectAnswerLeaves(row.node)),
   )
+  // "Длинный текст": the filled rows' titles/descriptions filled up to their limits — the worst case
+  // a text-height layout has to cope with.
+  const elements =
+    previewText.value === 'long'
+      ? mapTree(document.canvasData.elements, (leaf) =>
+          filledIds.has(leaf.id) && isTextElement(leaf) ? { ...leaf, defaultText: longSample(leaf) } : leaf,
+        )
+      : document.canvasData.elements
   return {
     ...document.canvasData,
-    elements: distributeLists(document.canvasData.elements, {
+    elements: distributeLists(elements, {
       isItemFilled: (id) => filledIds.has(id),
       pageWidth: document.canvasData.pageWidth ?? A4_PAGE_WIDTH,
       pageHeight: document.canvasData.pageHeight ?? A4_PAGE_HEIGHT,
+      measureTextHeight: measureListTextHeight,
     }),
   }
 })
+
+const previewText = ref<'template' | 'long'>('template')
+
+const LONG_TITLE = 'Длинный заголовок пункта'
+const LONG_DETAIL =
+  'Длинное описание пункта, которое пользователь может написать в анкете: несколько предложений о том, ' +
+  'почему это важно и как это было. Ещё одна фраза, чтобы текст занял больше строк. '
+
+/** The worst case a customer can type: up to the list's own limit for the title/description when the
+ * admin set one; without it, a description runs to its text's `maxLength` (or a generous default)
+ * and a title is just a short phrase (titles stay short in practice, whatever their raw limit). */
+function longSample(text: TextPlaceholder): string {
+  const isDetail = text.listRole === 'detail'
+  const limit = isDetail ? settings.value?.detailLimit : settings.value?.titleLimit
+  const source = isDetail ? LONG_DETAIL : `${LONG_TITLE} `
+  if (limit && limit.max > 0) {
+    const repeated = source.repeat(limit.unit === 'words' ? limit.max : Math.ceil(limit.max / source.length) + 1)
+    return clampToLimit(repeated, limit).trim()
+  }
+  if (!isDetail) {
+    return text.maxLength > 0 ? LONG_TITLE.slice(0, text.maxLength).trim() : LONG_TITLE
+  }
+  const length = text.maxLength > 0 ? text.maxLength : 200
+  return LONG_DETAIL.repeat(Math.ceil(length / LONG_DETAIL.length)).slice(0, length).trim()
+}
+
+const HEIGHT_MODES: Array<{ value: ListHeightMode; title: string }> = [
+  { value: 'fixed', title: 'Фиксированные места' },
+  { value: 'text', title: 'По тексту' },
+]
+
+const FLOW_ALIGNS: Array<{ value: ListFlowAlign; title: string }> = [
+  { value: 'spread', title: 'Растянуть по области' },
+  { value: 'top', title: 'Сверху, отступы как в шаблоне' },
+  { value: 'center', title: 'По центру, отступы как в шаблоне' },
+]
 
 const LAYOUT_MODES: Array<{ value: ListLayoutMode; title: string }> = [
   { value: 'slots', title: 'По местам шаблона' },
@@ -397,6 +561,43 @@ function pluralRows(n: number): string {
 
   &--warn {
     color: rgb(var(--v-theme-error));
+  }
+}
+
+// Two equal halves across the panel, sentence case — the default toggle overflows a narrow panel.
+.editor-list-config-screen__preview-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: 100%;
+
+  :deep(.v-btn) {
+    min-width: 0;
+    letter-spacing: normal;
+    text-transform: none;
+  }
+}
+
+.editor-list-config-screen__limit {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-2;
+}
+
+// Stacked, not side by side — the panel is too narrow for a stepper's label next to the toggle.
+.editor-list-config-screen__limit-row {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-2;
+}
+
+.editor-list-config-screen__limit-unit {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+
+  :deep(.v-btn) {
+    min-width: 0;
+    letter-spacing: normal;
+    text-transform: none;
   }
 }
 

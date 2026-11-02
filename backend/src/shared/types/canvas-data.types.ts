@@ -328,6 +328,16 @@ export interface CanvasListSettings {
   mode?: 'slots' | 'path' | 'start' | 'center';
   /** Admin-picked rows per item count (row ids; older templates: row indices) — overrides `mode`. */
   slotsByCount?: Record<string, Array<string | number>>;
+  /** Rows re-stacked by their real text height inside each column's template area — rendering
+   * only (frontend's list-distribution.util.ts); unset — 'fixed'. */
+  heightMode?: 'fixed' | 'text';
+  flowAlign?: 'spread' | 'top' | 'center';
+  minGap?: number;
+  minFontScale?: number;
+  /** Length limits of an item's title / description (frontend's list.model.ts); unset — the texts'
+   * own `maxLength` in characters. */
+  titleLimit?: { unit: 'characters' | 'words'; max: number } | null;
+  detailLimit?: { unit: 'characters' | 'words'; max: number } | null;
   /** "Предложить пункты" in the questionnaire; unset — shown. */
   suggestEnabled?: boolean;
   /** The admin's instruction for suggested items; unset/blank — DEFAULT_LIST_SUGGEST_PROMPT. */

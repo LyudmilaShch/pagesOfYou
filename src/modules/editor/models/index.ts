@@ -79,7 +79,7 @@ export type {
 } from './effect-descriptor.model'
 export { findDescriptor } from './effect-descriptor.model'
 export type { GroupElement } from './group-element.model'
-export type { ListLayoutMode, ListSettings } from './list.model'
+export type { ListFlowAlign, ListHeightMode, ListLayoutMode, ListSettings, ListTextLimit } from './list.model'
 export type { EditorDocument } from './page-template.model'
 export type { CanvasData } from './canvas-data.model'
 export { CANVAS_DATA_VERSION, createEmptyCanvasData, normalizeCanvasData } from './canvas-data.model'

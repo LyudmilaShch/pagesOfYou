@@ -14,9 +14,10 @@
           :placeholder="withDetails ? 'Заголовок' : index === 0 ? (placeholder ?? undefined) : undefined"
           variant="outlined"
           density="comfortable"
-          :maxlength="maxLength ?? undefined"
-          :counter="maxLength ?? undefined"
-          :hide-details="maxLength ? 'auto' : true"
+          :maxlength="titleLimit?.unit === 'characters' ? titleLimit.max : undefined"
+          :counter="titleLimit?.max ?? undefined"
+          :counter-value="titleLimit ? (value: string) => limitUsage(value ?? '', titleLimit!) : undefined"
+          :hide-details="titleLimit ? 'auto' : true"
           persistent-counter
           :autofocus="autofocus && index === 0"
           @update:model-value="updateItem(index, { title: $event })"
@@ -30,9 +31,10 @@
           density="comfortable"
           rows="2"
           auto-grow
-          :maxlength="detailMaxLength ?? undefined"
-          :counter="detailMaxLength ?? undefined"
-          :hide-details="detailMaxLength ? 'auto' : true"
+          :maxlength="detailLimit?.unit === 'characters' ? detailLimit.max : undefined"
+          :counter="detailLimit?.max ?? undefined"
+          :counter-value="detailLimit ? (value: string) => limitUsage(value ?? '', detailLimit!) : undefined"
+          :hide-details="detailLimit ? 'auto' : true"
           persistent-counter
           @update:model-value="updateItem(index, { text: $event })"
         />
@@ -79,6 +81,8 @@
 <script setup lang="ts">
 import { computed, nextTick } from 'vue'
 
+import type { ListTextLimit } from '@/modules/editor/models'
+import { clampToLimit, limitUsage } from '@/modules/editor/utils/list-text-limit.util'
 import { isListEntryFilled, type ListAnswerEntry } from '../../utils/list-answer.util'
 
 /** A LIST question's answer: one input per item (plus a description input when the list's rows
@@ -93,9 +97,9 @@ const props = withDefaults(
     min?: number
     /** The rows have description texts — each item gets a description input too. */
     withDetails?: boolean
-    /** Per item — the template's limits for the title and the description text. */
-    maxLength?: number | null
-    detailMaxLength?: number | null
+    /** Per item — how long the title / description may be, in characters or words. */
+    titleLimit?: ListTextLimit | null
+    detailLimit?: ListTextLimit | null
     placeholder?: string | null
     autofocus?: boolean
     /** "Предложить пункты" is on for this list (the admin's `list.suggestEnabled`). */
@@ -106,8 +110,8 @@ const props = withDefaults(
   {
     min: 0,
     withDetails: false,
-    maxLength: null,
-    detailMaxLength: null,
+    titleLimit: null,
+    detailLimit: null,
     placeholder: null,
     autofocus: false,
     canSuggest: true,
@@ -138,10 +142,27 @@ function setInputRef(el: unknown, index: number): void {
   inputRefs[index] = (el as { focus: () => void } | null) ?? null
 }
 
+/** Writes the change back — cut to the limit (the native `maxlength` covers characters; words need
+ * this). When something was cut, the focused input still shows what was typed (its bound value
+ * didn't change, so Vue doesn't touch it), so it's corrected by hand. */
 function updateItem(index: number, patch: Partial<ListAnswerEntry>): void {
+  const clamped: Partial<ListAnswerEntry> = {
+    ...(patch.title !== undefined && { title: props.titleLimit ? clampToLimit(patch.title, props.titleLimit) : patch.title }),
+    ...(patch.text !== undefined && { text: props.detailLimit ? clampToLimit(patch.text, props.detailLimit) : patch.text }),
+  }
   const next = [...items.value]
-  next[index] = { ...next[index], ...patch }
+  next[index] = { ...next[index], ...clamped }
   emit('update:modelValue', next)
+
+  const value = clamped.title ?? clamped.text
+  if (value !== (patch.title ?? patch.text)) {
+    void nextTick(() => {
+      const input = document.activeElement
+      if ((input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement) && input.value !== value) {
+        input.value = value ?? ''
+      }
+    })
+  }
 }
 
 async function addItem(at: number): Promise<void> {

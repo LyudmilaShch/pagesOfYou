@@ -48,7 +48,7 @@ import type { PageElement } from '../models'
 import { isAiTextElement, isGroupElement, isTextElement } from '../models'
 import type { AiTextPlaceholder } from '../models/ai-text-placeholder.model'
 import type { GroupElement } from '../models/group-element.model'
-import type { ListLayoutMode, ListSettings } from '../models/list.model'
+import type { ListLayoutMode, ListSettings, ListTextLimit } from '../models/list.model'
 import type { ListRole } from '../models/text-placeholder.model'
 import { collectLists, type ListInfo } from '../utils/list-distribution.util'
 import {
@@ -1304,6 +1304,19 @@ export const useEditorStore = defineStore('editor', () => {
 
   function setListMode(listId: string, mode: ListLayoutMode): void {
     patchListSettings(listId, { mode })
+  }
+
+  /** Rows laid out by real text height inside each column's fixed area — see list.model.ts. */
+  function setListFlowSettings(
+    listId: string,
+    patch: Partial<Pick<ListSettings, 'heightMode' | 'flowAlign' | 'minGap' | 'minFontScale'>>,
+  ): void {
+    patchListSettings(listId, patch)
+  }
+
+  /** The length limit of the items' titles or descriptions; null — back to the texts' own maxLength. */
+  function setListTextLimit(listId: string, field: 'title' | 'detail', limit: ListTextLimit | null): void {
+    patchListSettings(listId, field === 'title' ? { titleLimit: limit } : { detailLimit: limit })
   }
 
   /** "Предложить пункты": shown or not, and the admin's prompt (undefined — back to the default). */
@@ -2962,6 +2975,8 @@ export const useEditorStore = defineStore('editor', () => {
     setListMinItems,
     setListMode,
     setListSuggestSettings,
+    setListFlowSettings,
+    setListTextLimit,
     setListSlots,
     setListRole,
     applyListRowStyle,

@@ -1,5 +1,6 @@
-import type { ListLayoutMode, ListSettings, PageElement, Position } from '../models'
+import type { ListLayoutMode, ListSettings, PageElement, Position, TextPlaceholder } from '../models'
 import { isGroupElement, isListRow, isTextElement } from '../models'
+import { DEFAULT_LIST_MIN_FONT_SCALE, DEFAULT_LIST_MIN_GAP } from '../models/list.model'
 import { ROOT_FRAME, childBoxFromLocal, contentFrameOf, type AbsoluteBox } from './element-tree.util'
 import { isSpreadCanvas } from './spread.util'
 
@@ -15,6 +16,10 @@ import { isSpreadCanvas } from './spread.util'
  * row places, evenly picked, so rows only ever land where the admin drew one — unless the admin
  * picked the places for exactly this k by hand (`slotsByCount`).
  *
+ * With `heightMode: 'text'`, those targets only decide each row's place and x: inside each column
+ * the rows are re-stacked by their real text height within the column's fixed template area (see
+ * flowColumn) — the design around the list never moves.
+ *
  * Automatic modes work per column: the rows split into columns wherever a row sets
  * `listColumnBreak` or the next row sits on the other half of a spread, and items are shared out
  * between columns in proportion to their row counts — so nothing lands in the gap or on the fold.
@@ -29,6 +34,8 @@ export interface DistributeListsOptions {
   isItemFilled: (elementId: string) => boolean
   pageWidth: number
   pageHeight: number
+  /** Needed for lists with heightMode 'text' (they keep their fixed places without it). */
+  measureTextHeight?: MeasureTextHeight
 }
 
 /** One row of a list, as found in the tree. */
@@ -249,19 +256,252 @@ export function autoListSlots(list: ListInfo, count: number, foldX: number | nul
   return columns.flatMap((column, index) => pickSlotIndices(column.length, counts[index], mode).map((i) => column[i]))
 }
 
-/** Where each of the `count` filled rows goes (page coordinates), in reading order. */
-function listTargets(list: ListInfo, count: number, foldX: number | null): Position[] {
+interface ListTarget {
+  /** Page coordinates of the filled row's centre. */
+  point: Position
+  /** Index into the list's columns (see splitColumns) — what a text-height flow works within. */
+  column: number
+}
+
+/** Where each of the `count` filled rows goes, in reading order. */
+function listTargets(list: ListInfo, count: number, foldX: number | null, columns: number[][]): ListTarget[] {
   const anchors = list.rows.map((row) => row.anchor)
+  const columnOf = new Map(columns.flatMap((column, c) => column.map((index) => [index, c] as const)))
+  const onPlaces = (indices: number[]): ListTarget[] =>
+    indices.map((index) => ({ point: anchors[index], column: columnOf.get(index) ?? 0 }))
+
   const manual = manualListSlots(list, count)
   if (manual) {
-    return manual.map((index) => anchors[index])
+    return onPlaces(manual)
   }
   if (list.settings.mode === 'path') {
-    const columns = splitColumns(list.rows, foldX)
     const counts = allocateItems(columns.map((column) => column.length), count)
-    return columns.flatMap((column, index) => pointsAlongPath(column.map((i) => anchors[i]), counts[index]))
+    return columns.flatMap((column, c) =>
+      pointsAlongPath(column.map((i) => anchors[i]), counts[c]).map((point) => ({ point, column: c })),
+    )
   }
-  return autoListSlots(list, count, foldX).map((index) => anchors[index])
+  return onPlaces(autoListSlots(list, count, foldX))
+}
+
+/** Measures a text's height at a given font size, wrapped to its own box width — injected so this
+ * file stays free of Konva (materializeCanvasData passes the editor's own text measurement). */
+export type MeasureTextHeight = (text: TextPlaceholder, content: string, fontSize: number) => number
+
+/** Sub-pixel slack when deciding that one element sits below another inside a row. */
+const STACK_TOLERANCE = 1
+
+interface RowLayout {
+  /** Where the content starts below the node's own `position` (its local frame). */
+  top: number
+  height: number
+  /** How far down each element inside must move (by id, any depth) so nothing overlaps a text
+   * that grew — e.g. a description under a title that wrapped onto a second line. */
+  shifts: Map<string, number>
+  /** For a text: its measured height, the height of one line of it at its template size (what an
+   * element tucked inside its box, under its first line, is measured against) and how much its font
+   * was shrunk — the gap below it shrinks with it. */
+  text?: { height: number; lineHeight: number; scale: number }
+}
+
+/**
+ * A row's real content, in its own local frame: texts at their measured height (never less than
+ * their box), the rest at their size. Inside a group, an element that sits below a text which grew
+ * moves down by exactly that growth — so the template's gap between a title and its description is
+ * kept, never eaten. A text shorter than its box doesn't pull anything up (the designer's spacing).
+ */
+function rowLayout(
+  node: PageElement,
+  measure: MeasureTextHeight,
+  fontSizeOf: (text: TextPlaceholder) => number,
+): RowLayout {
+  if (isTextElement(node)) {
+    const fontSize = fontSizeOf(node)
+    const textHeight = measure(node, node.defaultText ?? '', fontSize)
+    const scale = node.fontSize > 0 ? fontSize / node.fontSize : 1
+    return {
+      top: 0,
+      // A shrunk text's box shrinks with it — else the box would hold the gap below it open.
+      height: Math.max(node.size.height * scale, textHeight),
+      shifts: new Map(),
+      text: { height: textHeight, lineHeight: measure(node, 'Ag', node.fontSize), scale },
+    }
+  }
+  if (!isGroupElement(node) || node.children.length === 0) {
+    return { top: 0, height: node.size.height, shifts: new Map() }
+  }
+
+  const shifts = new Map<string, number>()
+  const placed: Array<{
+    top: number
+    left: number
+    right: number
+    templateBottom: number
+    bottom: number
+    push: number
+    text?: RowLayout['text']
+  }> = []
+  const byTop = [...node.children].sort((a, b) => a.position.y - b.position.y)
+  for (const child of byTop) {
+    const inner = rowLayout(child, measure, fontSizeOf)
+    inner.shifts.forEach((value, id) => shifts.set(id, value))
+    const left = child.position.x
+    const right = child.position.x + child.size.width
+    // Placed below everything that starts above it and overlaps it horizontally, keeping the gap the
+    // template had between them — measured from the box's bottom when the child sits below the box,
+    // from the first line when it's tucked inside the box (a title box taller than its one line, the
+    // description right under that line), so an unchanged one-line text moves nothing. When the text
+    // above was shrunk, that gap shrinks by the same factor — the only case that may pull up.
+    const aboves = placed.filter(
+      (above) => above.top + STACK_TOLERANCE < child.position.y && above.left < right && left < above.right,
+    )
+    const candidates = aboves.map((above) => {
+      const scale = above.text?.scale ?? 1
+      const tucked = child.position.y < above.templateBottom - STACK_TOLERANCE
+      const gap = tucked && above.text
+        ? child.position.y - (above.top + above.text.lineHeight)
+        : child.position.y - above.templateBottom
+      const contentBottom = tucked && above.text ? above.top + above.text.height : above.bottom
+      return contentBottom + above.push + gap * scale - child.position.y
+    })
+    const shrunkAbove = aboves.some((above) => (above.text?.scale ?? 1) < 1)
+    const push = candidates.length === 0 ? 0 : shrunkAbove ? Math.max(...candidates) : Math.max(0, ...candidates)
+    if (Math.abs(push) > 1e-9) {
+      shifts.set(child.id, push)
+    }
+    placed.push({
+      top: child.position.y,
+      left,
+      right,
+      templateBottom: child.position.y + child.size.height,
+      bottom: child.position.y + inner.top + inner.height,
+      push,
+      text: inner.text,
+    })
+  }
+
+  const boxes = byTop.map((child, i) => ({
+    top: child.position.y + placed[i].push,
+    bottom: placed[i].bottom + placed[i].push,
+  }))
+  const top = Math.min(...boxes.map((box) => box.top))
+  return { top, height: Math.max(...boxes.map((box) => box.bottom)) - top, shifts }
+}
+
+const FONT_SCALE_STEP = 0.05
+
+interface FlowPlace {
+  /** The row's new centre y, in page coordinates. */
+  y: number
+  fontSizes: Map<string, number>
+  /** Elements inside the row moved down so they don't overlap a text that grew (see rowLayout). */
+  shifts: Map<string, number>
+}
+
+/**
+ * heightMode 'text' for one column: the column's template area (top of its first row to bottom of
+ * its last) stays where the designer put it, and the filled rows assigned to it are re-stacked
+ * inside by their real height — x kept from their targets. Gaps follow `flowAlign`; when even
+ * `minGap` gaps don't fit, the descriptions' font shrinks in steps down to `minFontScale`, then —
+ * still too tall — the titles' too (no descriptions — the titles straight away); past that the rows
+ * run out of the area (the review step's fit check then flags what they run into). Returns each
+ * row's new centre y, font sizes and inner shifts to apply.
+ */
+function flowColumn(
+  list: ListInfo,
+  columnRows: number[],
+  assigned: Array<{ index: number; target: ListTarget }>,
+  measure: MeasureTextHeight,
+): Map<number, FlowPlace> {
+  const placed = new Map<number, FlowPlace>()
+  const templateRows = columnRows.map((index) => list.rows[index])
+  const boxOf = (row: ListRowInfo) => ({
+    top: row.anchor.y - row.node.size.height / 2,
+    bottom: row.anchor.y + row.node.size.height / 2,
+  })
+  const areaTop = Math.min(...templateRows.map((row) => boxOf(row).top))
+  const areaBottom = Math.max(...templateRows.map((row) => boxOf(row).bottom))
+  const xs = templateRows.map((row) => row.anchor.x)
+  // A horizontal run of rows has no column height to fill — it keeps its places.
+  if (assigned.length === 0 || Math.max(...xs) - Math.min(...xs) > areaBottom - areaTop) {
+    return placed
+  }
+
+  const settings = list.settings
+  const minGap = settings.minGap ?? DEFAULT_LIST_MIN_GAP
+  const minScale = Math.min(1, Math.max(0.5, settings.minFontScale ?? DEFAULT_LIST_MIN_FONT_SCALE))
+  const hasDetails = list.rows.some((row) => collectRoleLeaves(row.node, 'detail').length > 0)
+  const areaHeight = areaBottom - areaTop
+  const templateHeights = templateRows.reduce((sum, row) => sum + row.node.size.height, 0)
+  const templateGap =
+    templateRows.length > 1 ? Math.max(minGap, (areaHeight - templateHeights) / (templateRows.length - 1)) : minGap
+
+  // Font scale per role: descriptions give way first, titles only once descriptions are at the limit.
+  const scales = { detail: 1, item: 1 }
+  const scaleOf = (text: TextPlaceholder): number =>
+    text.listRole === 'detail' ? scales.detail : text.listRole === 'item' ? scales.item : 1
+  const measureAll = () =>
+    assigned.map(({ index }) => rowLayout(list.rows[index].node, measure, (text) => text.fontSize * scaleOf(text)))
+  const gapsCount = assigned.length - 1
+  let contents = measureAll()
+  const total = () => contents.reduce((sum, content) => sum + content.height, 0)
+  const tooTall = () => total() + minGap * gapsCount > areaHeight
+  for (const role of hasDetails ? (['detail', 'item'] as const) : (['item'] as const)) {
+    while (tooTall() && scales[role] - FONT_SCALE_STEP >= minScale - 1e-9) {
+      const before = { scale: scales[role], contents, height: total() }
+      scales[role] = Math.round((scales[role] - FONT_SCALE_STEP) * 100) / 100
+      contents = measureAll()
+      // A step that doesn't make the rows shorter (one-line titles already fill their boxes) only
+      // makes the text smaller for nothing — undo it and leave this role be.
+      if (total() >= before.height - 1e-6) {
+        scales[role] = before.scale
+        contents = before.contents
+        break
+      }
+    }
+  }
+
+  const free = areaHeight - total()
+  const align = settings.flowAlign ?? 'spread'
+  const gap =
+    align === 'spread' && gapsCount > 0
+      ? Math.max(minGap, free / gapsCount)
+      : Math.max(minGap, Math.min(templateGap, gapsCount > 0 ? free / gapsCount : templateGap))
+  const blockHeight = total() + gap * gapsCount
+  let cursor = align === 'center' ? areaTop + Math.max(0, (areaHeight - blockHeight) / 2) : areaTop
+
+  // Stacked top to bottom on the page — a bottom-up list fills from the bottom, so reverse it.
+  const first = templateRows[0].anchor.y
+  const last = templateRows[templateRows.length - 1].anchor.y
+  const visual = assigned.map((entry, i) => ({ ...entry, content: contents[i] }))
+  if (first > last) {
+    visual.reverse()
+  }
+  for (const { index, content } of visual) {
+    const row = list.rows[index]
+    const fontSizes = new Map<string, number>()
+    for (const role of ['detail', 'item'] as const) {
+      if (scales[role] >= 1) {
+        continue
+      }
+      for (const id of collectRoleLeaves(row.node, role)) {
+        const text = findText(row.node, id)
+        if (text) {
+          fontSizes.set(id, Math.round(text.fontSize * scales[role] * 10) / 10)
+        }
+      }
+    }
+    // The row's box top sits `content.top` above where its content starts.
+    placed.set(index, { y: cursor - content.top + row.node.size.height / 2, fontSizes, shifts: content.shifts })
+    cursor += content.height + gap
+  }
+  return placed
+}
+
+function findText(node: PageElement, id: string): TextPlaceholder | null {
+  if (isTextElement(node)) {
+    return node.id === id ? node : null
+  }
+  return isGroupElement(node) ? (node.children.map((child) => findText(child, id)).find(Boolean) ?? null) : null
 }
 
 /** The whole subtree, not just the row itself — flattenTree-based renders (thumbnails, print
@@ -272,14 +512,34 @@ function hide(node: PageElement): PageElement {
     : { ...node, visible: false }
 }
 
-function setNumber(node: PageElement, numberIds: Set<string>, value: string): PageElement {
+/** Inside a placed row: number texts get `number`; with a text-height flow, texts get their shrunk
+ * `fontSizes` and elements their downward `shifts` (see rowLayout). The row node itself is moved by
+ * the caller. */
+function patchRowInside(
+  node: PageElement,
+  numberIds: Set<string>,
+  number: string,
+  fontSizes: Map<string, number>,
+  shifts: Map<string, number>,
+): PageElement {
+  const children = isGroupElement(node)
+    ? node.children.map((child) => {
+        const patched = patchRowInside(child, numberIds, number, fontSizes, shifts)
+        const shift = shifts.get(child.id)
+        return shift ? { ...patched, position: { ...patched.position, y: patched.position.y + shift } } : patched
+      })
+    : null
   if (isTextElement(node)) {
-    return numberIds.has(node.id) ? { ...node, defaultText: value } : node
+    const fontSize = fontSizes.get(node.id)
+    return numberIds.has(node.id) || fontSize !== undefined
+      ? {
+          ...node,
+          ...(numberIds.has(node.id) && { defaultText: number }),
+          ...(fontSize !== undefined && { fontSize }),
+        }
+      : node
   }
-  if (isGroupElement(node)) {
-    return { ...node, children: node.children.map((child) => setNumber(child, numberIds, value)) }
-  }
-  return node
+  return isGroupElement(node) && children ? { ...node, children } : node
 }
 
 /** A page-space offset expressed in a frame's own (possibly rotated) axes. */
@@ -288,9 +548,23 @@ function toFrameVector(dx: number, dy: number, frame: AbsoluteBox): Position {
   return { x: dx * Math.cos(rad) - dy * Math.sin(rad), y: dx * Math.sin(rad) + dy * Math.cos(rad) }
 }
 
-type RowChange = { hide: true } | { hide: false; dx: number; dy: number; number: string }
+type RowChange =
+  | { hide: true }
+  | {
+      hide: false
+      dx: number
+      dy: number
+      number: string
+      fontSizes: Map<string, number>
+      shifts: Map<string, number>
+    }
 
-function planList(list: ListInfo, foldX: number | null, isItemFilled: (id: string) => boolean): Map<string, RowChange> {
+function planList(
+  list: ListInfo,
+  foldX: number | null,
+  isItemFilled: (id: string) => boolean,
+  measure: MeasureTextHeight | undefined,
+): Map<string, RowChange> {
   const changes = new Map<string, RowChange>()
   // A row without any title/description text (decoration, a header) always counts as filled; one
   // with them counts as filled once either holds something.
@@ -303,17 +577,45 @@ function planList(list: ListInfo, foldX: number | null, isItemFilled: (id: strin
     return changes
   }
 
-  const targets = listTargets(list, filledCount, foldX)
-  let filledIndex = 0
+  const columns = splitColumns(list.rows, foldX)
+  const targets = listTargets(list, filledCount, foldX, columns)
+  const assigned: Array<{ index: number; target: ListTarget }> = []
+  list.rows.forEach((_, index) => {
+    if (filled[index]) {
+      assigned.push({ index, target: targets[assigned.length] })
+    }
+  })
+
+  // heightMode 'text': each column re-stacks its rows by real height (y only, x from the target).
+  const flowed = new Map<number, FlowPlace>()
+  if (list.settings.heightMode === 'text' && measure) {
+    columns.forEach((columnRows, c) => {
+      const inColumn = assigned.filter((entry) => entry.target.column === c)
+      for (const [index, place] of flowColumn(list, columnRows, inColumn, measure)) {
+        flowed.set(index, place)
+      }
+    })
+  }
+
   list.rows.forEach((row, index) => {
     if (!filled[index]) {
       changes.set(row.node.id, { hide: true })
-      return
     }
-    const target = targets[filledIndex]
-    filledIndex += 1
-    const local = toFrameVector(target.x - row.anchor.x, target.y - row.anchor.y, row.parentFrame)
-    changes.set(row.node.id, { hide: false, dx: local.x, dy: local.y, number: String(filledIndex) })
+  })
+  assigned.forEach(({ index, target }, order) => {
+    const row = list.rows[index]
+    const flow = flowed.get(index)
+    const y = flow?.y ?? target.point.y
+    const local = toFrameVector(target.point.x - row.anchor.x, y - row.anchor.y, row.parentFrame)
+    changes.set(row.node.id, {
+      hide: false,
+      dx: local.x,
+      dy: local.y,
+      number: String(order + 1),
+      fontSizes: flow?.fontSizes ?? new Map(),
+      // Even on fixed places, nothing inside a row may overlap a text that grew (see rowLayout).
+      shifts: flow?.shifts ?? (measure ? rowLayout(row.node, measure, (text) => text.fontSize).shifts : new Map()),
+    })
   })
   return changes
 }
@@ -365,7 +667,7 @@ export function distributeLists(elements: PageElement[], options: DistributeList
   const foldX = listFoldX(options.pageWidth, options.pageHeight)
   const changes = new Map<string, RowChange>()
   for (const list of lists) {
-    for (const [rowId, change] of planList(list, foldX, options.isItemFilled)) {
+    for (const [rowId, change] of planList(list, foldX, options.isItemFilled, options.measureTextHeight)) {
       changes.set(rowId, change)
     }
   }
@@ -380,7 +682,13 @@ export function distributeLists(elements: PageElement[], options: DistributeList
         return hide(node)
       }
       if (change) {
-        const numbered = setNumber(node, new Set(collectRoleLeaves(node, 'number')), change.number)
+        const numbered = patchRowInside(
+          node,
+          new Set(collectRoleLeaves(node, 'number')),
+          change.number,
+          change.fontSizes,
+          change.shifts,
+        )
         return { ...numbered, position: { x: node.position.x + change.dx, y: node.position.y + change.dy } }
       }
       return isGroupElement(node) ? { ...node, children: apply(node.children) } : node

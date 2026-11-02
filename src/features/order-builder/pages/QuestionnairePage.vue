@@ -217,8 +217,8 @@
                     :max="listShapeByKey.get(question.key)?.capacity ?? null"
                     :min="listMinByKey.get(question.key) ?? 0"
                     :with-details="listShapeByKey.get(question.key)?.hasDetails ?? false"
-                    :max-length="listShapeByKey.get(question.key)?.titleMaxLength ?? null"
-                    :detail-max-length="listShapeByKey.get(question.key)?.detailMaxLength ?? null"
+                    :title-limit="listShapeByKey.get(question.key)?.titleLimit ?? null"
+                    :detail-limit="listShapeByKey.get(question.key)?.detailLimit ?? null"
                     :can-suggest="!listSuggestDisabledKeys.has(question.key)"
                     :suggesting="suggestingListKey === question.key"
                     :placeholder="question.placeholder"
@@ -373,7 +373,7 @@ import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { normalizeCanvasData } from '@/modules/editor/models/canvas-data.model'
-import { isAiTextElement, isTextElement } from '@/modules/editor/models'
+import { isAiTextElement, isTextElement, type ListTextLimit } from '@/modules/editor/models'
 import { collectLists, listAnswerSlots } from '@/modules/editor/utils/list-distribution.util'
 import {
   fromListEntries,
@@ -537,37 +537,49 @@ interface ListQuestionShape {
   capacity: number
   /** The rows have description ('detail') texts — each item then gets a description input. */
   hasDetails: boolean
-  /** The strictest character limits of the titles' / descriptions' texts (template `maxLength`),
-   * so an item can't outgrow the row it lands in. */
-  titleMaxLength: number | null
-  detailMaxLength: number | null
+  /** Length limits of a title / description: the list's own (`titleLimit`/`detailLimit`, characters
+   * or words) when the admin set them, otherwise the strictest `maxLength` of those texts. */
+  titleLimit: ListTextLimit | null
+  detailLimit: ListTextLimit | null
 }
 
 /** questionKey → what the journal's list(s) for that LIST question look like. */
 const listShapeByKey = computed(() => {
   const shapes = new Map<string, ListQuestionShape>()
-  const tighter = (current: number | null, limit: number): number | null =>
-    limit > 0 ? Math.min(current ?? Infinity, limit) : current
+  const ownLimits = new Map<string, { title: ListTextLimit | null; detail: ListTextLimit | null }>()
+  // The texts' own maxLength — the fallback when the list sets no limit of its own.
+  const tighter = (current: ListTextLimit | null, maxLength: number): ListTextLimit | null =>
+    maxLength > 0 ? { unit: 'characters', max: Math.min(current?.max ?? Infinity, maxLength) } : current
   for (const page of store.order?.journalPages ?? []) {
     const elements = normalizeCanvasData(page.pageSnapshot).elements
+    for (const { settings } of collectLists(elements)) {
+      if (settings.questionKey && !ownLimits.has(settings.questionKey)) {
+        ownLimits.set(settings.questionKey, { title: settings.titleLimit ?? null, detail: settings.detailLimit ?? null })
+      }
+    }
     const keys = new Set<string>()
     for (const leaf of flattenTree(elements)) {
       if (!isTextElement(leaf) || !leaf.questionKey || (leaf.listRole !== 'item' && leaf.listRole !== 'detail')) {
         continue
       }
       keys.add(leaf.questionKey)
-      const shape = shapes.get(leaf.questionKey) ?? { capacity: 0, hasDetails: false, titleMaxLength: null, detailMaxLength: null }
+      const shape = shapes.get(leaf.questionKey) ?? { capacity: 0, hasDetails: false, titleLimit: null, detailLimit: null }
       if (leaf.listRole === 'detail') {
         shape.hasDetails = true
-        shape.detailMaxLength = tighter(shape.detailMaxLength, leaf.maxLength)
+        shape.detailLimit = tighter(shape.detailLimit, leaf.maxLength)
       } else {
-        shape.titleMaxLength = tighter(shape.titleMaxLength, leaf.maxLength)
+        shape.titleLimit = tighter(shape.titleLimit, leaf.maxLength)
       }
       shapes.set(leaf.questionKey, shape)
     }
     for (const key of keys) {
       shapes.get(key)!.capacity += new Set([...listAnswerSlots(elements, key).values()].map((slot) => slot.entry)).size
     }
+  }
+  for (const [key, shape] of shapes) {
+    const own = ownLimits.get(key)
+    shape.titleLimit = own?.title ?? shape.titleLimit
+    shape.detailLimit = own?.detail ?? shape.detailLimit
   }
   return shapes
 })

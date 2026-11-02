@@ -124,6 +124,16 @@ const DEFAULT_LIST_ITEM_MAX_LENGTH = 60;
 /** Length of a suggested item's description when its texts set no tighter limit. */
 const DEFAULT_LIST_DETAIL_MAX_LENGTH = 200;
 
+/** A suggested item cut to its limit — characters, or whole words. */
+function clampText(text: string, limit: { unit: 'characters' | 'words'; max: number | null }): string {
+  if (!limit.max) {
+    return text;
+  }
+  return limit.unit === 'words'
+    ? text.split(/\s+/).filter(Boolean).slice(0, limit.max).join(' ')
+    : text.slice(0, limit.max);
+}
+
 /** A list's suggestion prompt when the admin left it blank — mirrors the frontend's list.model.ts. */
 const DEFAULT_LIST_SUGGEST_PROMPT =
   'Пункты — короткие и тёплые, по делу, на языке ответов: 1–5 слов, без нумерации, без повторов, ' +
@@ -1144,8 +1154,13 @@ export class OrdersService {
       .filter(Boolean)
       .join('\n\n');
 
-    const titleConstraint = { unit: 'characters' as const, min: null, max: titleMax };
-    const detailConstraint = { unit: 'characters' as const, min: null, max: detailMax };
+    // The list's own limits (characters or words) when the admin set them; else the texts' maxLength.
+    const titleConstraint = settings?.titleLimit?.max
+      ? { unit: settings.titleLimit.unit, min: null, max: settings.titleLimit.max }
+      : { unit: 'characters' as const, min: null, max: titleMax };
+    const detailConstraint = settings?.detailLimit?.max
+      ? { unit: settings.detailLimit.unit, min: null, max: settings.detailLimit.max }
+      : { unit: 'characters' as const, min: null, max: detailMax };
     const constraints = withDetails
       ? Array.from({ length: count }, () => [titleConstraint, detailConstraint]).flat()
       : Array.from({ length: count }, () => titleConstraint);
@@ -1162,7 +1177,7 @@ export class OrdersService {
         ? { title: generated[index * 2] ?? '', text: generated[index * 2 + 1] ?? '' }
         : { title: generated[index] ?? '', text: '' },
     )
-      .map((entry) => ({ title: entry.title.trim().slice(0, titleMax), text: entry.text.trim().slice(0, detailMax) }))
+      .map((entry) => ({ title: clampText(entry.title.trim(), titleConstraint), text: clampText(entry.text.trim(), detailConstraint) }))
       .filter((entry) => (entry.title || entry.text) && !existingTitles.has(entry.title));
     if (items.length === 0) {
       await this.aiUsage.release(reservation);

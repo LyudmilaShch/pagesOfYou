@@ -17,6 +17,7 @@ import {
 } from '@/modules/editor/utils/element-stroke.util'
 import { mapTree } from '@/modules/editor/utils/element-tree.util'
 import { distributeLists } from '@/modules/editor/utils/list-distribution.util'
+import { measureListTextHeight } from '@/modules/editor/utils/list-text-measure.util'
 import { A4_PAGE_HEIGHT, A4_PAGE_WIDTH } from '@/modules/editor/constants/page.constants'
 import { buildAiTextElementPreview } from '@/modules/editor/utils/ai-text-preview.util'
 import type { PlaceholderJsonValue, PlaceholderValue } from '../types/order.types'
@@ -241,6 +242,7 @@ export function materializeCanvasData(
       isItemFilled,
       pageWidth: canvasData.pageWidth ?? A4_PAGE_WIDTH,
       pageHeight: canvasData.pageHeight ?? A4_PAGE_HEIGHT,
+      measureTextHeight: measureListTextHeight,
     }),
   }
 }
