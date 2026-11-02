@@ -752,6 +752,8 @@ const smartGuidesGroupConfig = computed(() => ({
 const AI_TEXT_CHAIN_COLOR = '#e85a93'
 const AI_TEXT_CHAIN_BADGE_RADIUS = 9
 const LIST_ROW_COLOR = '#4a7bd8'
+/** Screen pixels between a row's right edge and its number badge — clear of the selection handles. */
+const LIST_BADGE_OUTSET = 10
 
 // Same admin-context gate as the properties panels' own hasEditorQuestions — the customer editor
 // never provides questions, and its parts are just ordinary text blocks to the customer.
@@ -852,8 +854,12 @@ const aiTextChainOverlay = computed(() => {
       if (leaves.length === 0) {
         return
       }
-      const x = Math.max(...leaves.map((leaf) => leaf.position.x + leaf.size.width))
-      const y = Math.min(...leaves.map((leaf) => leaf.position.y))
+      // Just outside the row's right edge, a little below its top — the selection frame's corner and
+      // edge handles sit exactly on the row's corners and edge midpoints, and would cover it there.
+      const x =
+        Math.max(...leaves.map((leaf) => leaf.position.x + leaf.size.width)) +
+        (AI_TEXT_CHAIN_BADGE_RADIUS + LIST_BADGE_OUTSET) * inverseScale
+      const y = Math.min(...leaves.map((leaf) => leaf.position.y)) + AI_TEXT_CHAIN_BADGE_RADIUS * inverseScale
 
       badges.push({
         key: `${list.listId}-${row.id}`,
