@@ -295,8 +295,8 @@
             />
           </v-group>
 
-          <!-- Admin-only: reading-order badges on chained AI-text parts, plus (while a part is
-               selected) a dashed outline on its sibling parts. -->
+          <!-- Admin-only: reading-order badges on chained AI-text parts and on list rows, plus
+               (while a part is selected) a dashed outline on its sibling parts. -->
           <v-group :config="aiTextChainGroupConfig">
             <v-rect
               v-for="outline in aiTextChainOverlay.outlines"
@@ -415,7 +415,8 @@ import {
 } from '../../utils/marquee-selection.util'
 import { isPageBackgroundCropTransformerTarget, isPageBackgroundTarget } from '../../utils/canvas-background.util'
 import type { PageBackgroundCropTarget } from '../../utils/canvas-background.util'
-import { findNodeById, flattenTree, getElementAbsoluteBounds } from '../../utils/element-tree.util'
+import { findNodeById, flattenTree, getDescendants, getElementAbsoluteBounds } from '../../utils/element-tree.util'
+import { collectLists } from '../../utils/list-distribution.util'
 import { collectAiTextChains } from '../../utils/ai-text-chain.util'
 import { createEditorQuestion, editorQuestions } from '../../services/editor-questions'
 import EditorElementNode from './EditorElementNode.vue'
@@ -436,6 +437,7 @@ import { MIN_TEXT_BOX_WIDTH } from '../../constants/text.constants'
 import { getTextMaxWidth } from '../../utils/text-auto-size.util'
 import { isTextPlaceholderType } from '../../utils/normalize-text-placeholder.util'
 import type { PageElement } from '../../models'
+import { isGroupElement } from '../../models'
 
 // Only ever true for AdminOrderPrintPage.vue's headless-screenshot route (see its own doc comment)
 // — hides the toolbar/breadcrumb/preview-banner chrome below so a Puppeteer screenshot is just the
@@ -749,6 +751,7 @@ const smartGuidesGroupConfig = computed(() => ({
 
 const AI_TEXT_CHAIN_COLOR = '#e85a93'
 const AI_TEXT_CHAIN_BADGE_RADIUS = 9
+const LIST_ROW_COLOR = '#4a7bd8'
 
 // Same admin-context gate as the properties panels' own hasEditorQuestions — the customer editor
 // never provides questions, and its parts are just ordinary text blocks to the customer.
@@ -766,7 +769,8 @@ const aiTextChainOverlay = computed(() => {
   }
 
   const chains = collectAiTextChains(store.elements)
-  if (chains.size === 0) {
+  const lists = collectLists(store.elements)
+  if (chains.size === 0 && lists.length === 0) {
     return empty
   }
 
@@ -830,6 +834,50 @@ const aiTextChainOverlay = computed(() => {
       }
     })
 
+  }
+
+  // List rows: reading-order number at each row's top-right — the order the customer's items fill
+  // them in, which needn't match where the rows sit (see list-distribution.util.ts).
+  // Only for the list the selection is in — a page full of numbered circles otherwise.
+  const selectedListId = selectedId ? (store.findListOf(selectedId)?.listId ?? null) : null
+  for (const list of lists) {
+    const isActiveList = list.listId === selectedListId
+    if (!isActiveList) {
+      continue
+    }
+    list.rows.forEach(({ node: row }, index) => {
+      const leaves = (isGroupElement(row) ? getDescendants(row) : [row])
+        .map((node) => boxById.get(node.id))
+        .filter((leaf): leaf is NonNullable<typeof leaf> => Boolean(leaf) && leaf!.visible !== false)
+      if (leaves.length === 0) {
+        return
+      }
+      const x = Math.max(...leaves.map((leaf) => leaf.position.x + leaf.size.width))
+      const y = Math.min(...leaves.map((leaf) => leaf.position.y))
+
+      badges.push({
+        key: `${list.listId}-${row.id}`,
+        config: { x, y, scaleX: inverseScale, scaleY: inverseScale, listening: false },
+        circle: {
+          radius: AI_TEXT_CHAIN_BADGE_RADIUS,
+          fill: isActiveList ? LIST_ROW_COLOR : '#ffffff',
+          stroke: LIST_ROW_COLOR,
+          strokeWidth: 1.5,
+        },
+        text: {
+          text: String(index + 1),
+          x: -AI_TEXT_CHAIN_BADGE_RADIUS,
+          y: -AI_TEXT_CHAIN_BADGE_RADIUS,
+          width: AI_TEXT_CHAIN_BADGE_RADIUS * 2,
+          height: AI_TEXT_CHAIN_BADGE_RADIUS * 2,
+          align: 'center',
+          verticalAlign: 'middle',
+          fontSize: 11,
+          fontStyle: 'bold',
+          fill: isActiveList ? '#ffffff' : LIST_ROW_COLOR,
+        },
+      })
+    })
   }
 
   return { badges, outlines }

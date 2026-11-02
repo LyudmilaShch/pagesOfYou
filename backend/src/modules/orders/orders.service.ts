@@ -20,8 +20,15 @@ import { PrismaService } from '../../database';
 import { resolveAssetUrl } from '../../common/utils/asset-url.util';
 import { MIN_JOURNAL_SPREADS } from '../../shared/constants/journal.constants';
 import { normalizeCanvasData } from '../../shared/types/canvas-data.types';
-import type { CanvasAiTextPlaceholder, CanvasLeafElement } from '../../shared/types/canvas-data.types';
+import type { CanvasAiTextPlaceholder, CanvasLeafElement, CanvasTextPlaceholder } from '../../shared/types/canvas-data.types';
 import { findAiTextGroupOf, flattenTree, groupAiTextLeaves } from '../../shared/utils/element-tree.util';
+import {
+  compactListEntries,
+  findListSettings,
+  listAnswerSlots,
+  listEntriesText,
+  toListEntries,
+} from '../../shared/utils/list-order.util';
 import {
   buildJournalPromptContext,
   buildQuestionsPromptContext,
@@ -107,6 +114,20 @@ type OrderWithDetails = Prisma.OrderGetPayload<{ include: typeof ORDER_INCLUDE }
 /** `generateWithinLimit`'s "no generation left today" result — distinct from `null` (the
  * generation itself produced nothing). */
 const LIMIT_REACHED = Symbol('ai-limit-reached');
+
+/** Sanity cap on a LIST answer — far above any real template's row count. */
+const MAX_LIST_ANSWER_ITEMS = 50;
+
+/** Length of a suggested list item when its texts set no tighter limit — list items are short. */
+const DEFAULT_LIST_ITEM_MAX_LENGTH = 60;
+
+/** Length of a suggested item's description when its texts set no tighter limit. */
+const DEFAULT_LIST_DETAIL_MAX_LENGTH = 200;
+
+/** A list's suggestion prompt when the admin left it blank — mirrors the frontend's list.model.ts. */
+const DEFAULT_LIST_SUGGEST_PROMPT =
+  'Пункты — короткие и тёплые, по делу, на языке ответов: 1–5 слов, без нумерации, без повторов, ' +
+  'каждый о своём. Опирайся на факты из ответов, ничего не выдумывай.';
 
 @Injectable()
 export class OrdersService {
@@ -471,7 +492,9 @@ export class OrdersService {
 
   /** Validates one answer input against its `Question.type` and normalizes it into the shape
    * `QuestionAnswer` stores: TEXT/TEXTAREA/DATE/SELECT → `textValue`, IMAGE → `{ url }`,
-   * GALLERY → `{ urls }`. SELECT is additionally checked against the question's own options. */
+   * GALLERY → `{ urls }`, LIST → `{ items }` plus the items joined into `textValue` (so AI prompts
+   * and "is it answered" checks read a list like any text answer). SELECT is additionally checked
+   * against the question's own options. */
   private resolveQuestionAnswerInput(
     question: Prisma.QuestionGetPayload<{ include: { options: true } }>,
     input: QuestionAnswerInputDto,
@@ -514,6 +537,21 @@ export class OrdersService {
           isEmpty: urls.length === 0,
           textValue: null,
           jsonValue: urls.length > 0 ? ({ urls } as Prisma.InputJsonValue) : null,
+        };
+      }
+
+      case QuestionType.LIST: {
+        // Items are strings, or { title, text } when they have a description (list.model.ts).
+        const items = compactListEntries(toListEntries(input.jsonValue?.items));
+
+        if (items.length > MAX_LIST_ANSWER_ITEMS) {
+          throw new BadRequestException(`Too many items for question "${question.key}".`);
+        }
+
+        return {
+          isEmpty: items.length === 0,
+          textValue: items.length > 0 ? listEntriesText(toListEntries(items)) : null,
+          jsonValue: items.length > 0 ? ({ items } as unknown as Prisma.InputJsonValue) : null,
         };
       }
     }
@@ -577,10 +615,10 @@ export class OrdersService {
       return;
     }
 
-    const pagesWithLeaves = journalPages.map((page) => ({
-      page,
-      leaves: flattenTree(normalizeCanvasData(page.pageSnapshot).elements),
-    }));
+    const pagesWithLeaves = journalPages.map((page) => {
+      const elements = normalizeCanvasData(page.pageSnapshot).elements;
+      return { page, elements, leaves: flattenTree(elements) };
+    });
 
     const writes: Prisma.PrismaPromise<unknown>[] = [];
 
@@ -588,12 +626,21 @@ export class OrdersService {
       const answer = answerByKey.get(key) ?? null;
 
       const matches: Array<{ journalPageId: string; element: CanvasLeafElement }> = [];
-      for (const { page, leaves } of pagesWithLeaves) {
+      // A LIST answer fills its lists' rows one entry each, in reading order (`listOrder`, then the
+      // next page) — the row's 'item' text the title, its 'detail' text the description.
+      const listSlotByElementId = new Map<string, { entry: number; field: 'title' | 'text' }>();
+      let listEntryOffset = 0;
+      for (const { page, elements, leaves } of pagesWithLeaves) {
         for (const leaf of leaves) {
           if (this.matchesQuestionKey(leaf, key)) {
             matches.push({ journalPageId: page.id, element: leaf });
           }
         }
+        const { slots, rowCount } = listAnswerSlots(elements, key);
+        for (const [elementId, slot] of slots) {
+          listSlotByElementId.set(elementId, { ...slot, entry: listEntryOffset + slot.entry });
+        }
+        listEntryOffset += rowCount;
       }
 
       if (matches.length === 0) {
@@ -602,6 +649,9 @@ export class OrdersService {
 
       const galleryUrls = Array.isArray((answer?.jsonValue as { urls?: unknown } | null)?.urls)
         ? ((answer!.jsonValue as { urls: string[] }).urls)
+        : null;
+      const listEntries = Array.isArray((answer?.jsonValue as { items?: unknown } | null)?.items)
+        ? toListEntries((answer!.jsonValue as { items: unknown }).items)
         : null;
 
       matches.forEach(({ journalPageId, element }, index) => {
@@ -655,7 +705,10 @@ export class OrdersService {
           return;
         }
 
-        const textValue = answer?.textValue?.trim();
+        const listSlot = listEntries ? listSlotByElementId.get(element.id) : undefined;
+        const textValue = listSlot
+          ? listEntries![listSlot.entry]?.[listSlot.field]?.trim()
+          : answer?.textValue?.trim();
 
         if (!textValue) {
           if (existing) {
@@ -1016,6 +1069,106 @@ export class OrdersService {
       await this.aiUsage.release(reservation);
     }
     return result;
+  }
+
+  /**
+   * AI-suggested items for a LIST question, written from the order's other answers — returned, not
+   * saved: the questionnaire drops them into the empty inputs for the customer to keep or edit.
+   * Never more than the journal's lists have rows left for, each within the list items' character
+   * limit, and never a repeat of what the customer already wrote. A deliberate action, counted like
+   * a regeneration (429 at the limit).
+   */
+  async suggestListItems(orderId: string, userId: string, questionKey: string, requested: number) {
+    const order = await this.getOwnedOrderOrThrow(orderId, userId);
+    if (order.status !== OrderStatus.DRAFT) {
+      throw new BadRequestException('Only draft orders can be edited.');
+    }
+
+    const [questions, answers, journalPages] = await Promise.all([
+      this.prisma.question.findMany({
+        where: { magazineTypeId: order.magazineTypeId, deletedAt: null },
+        orderBy: { sortOrder: 'asc' },
+      }),
+      this.prisma.questionAnswer.findMany({ where: { orderId } }),
+      this.prisma.journalPage.findMany({ where: { orderId }, select: { pageSnapshot: true } }),
+    ]);
+    const question = questions.find((candidate) => candidate.key === questionKey);
+    if (!question || question.type !== QuestionType.LIST) {
+      throw new BadRequestException(`Question "${questionKey}" is not a list question.`);
+    }
+
+    const pageElements = journalPages.map((page) => normalizeCanvasData(page.pageSnapshot).elements);
+    const settings = pageElements.map((elements) => findListSettings(elements, questionKey)).find(Boolean) ?? null;
+    if (settings?.suggestEnabled === false) {
+      throw new BadRequestException('Для этого списка подсказки отключены.');
+    }
+
+    const boundTexts = pageElements
+      .flatMap((elements) => flattenTree(elements))
+      .filter(
+        (leaf): leaf is CanvasTextPlaceholder =>
+          (leaf.type === 'text-placeholder' || leaf.type === 'title-placeholder' || leaf.type === 'subtitle-placeholder') &&
+          leaf.questionKey === questionKey,
+      );
+    const titleTexts = boundTexts.filter((text) => text.listRole === 'item');
+    const detailTexts = boundTexts.filter((text) => text.listRole === 'detail');
+    const capacity = pageElements.reduce((sum, elements) => sum + listAnswerSlots(elements, questionKey).rowCount, 0);
+
+    const answerByKey = new Map(answers.map((answer) => [answer.questionKey, answer]));
+    const existing = toListEntries((answerByKey.get(questionKey)?.jsonValue as { items?: unknown } | null)?.items);
+    const count = Math.min(requested, capacity - existing.length);
+    if (count <= 0) {
+      throw new BadRequestException('В списке не осталось свободных строк.');
+    }
+    /** The strictest limit among those texts, capped by `fallback` (also used when none is set). */
+    const limitOf = (texts: CanvasTextPlaceholder[], fallback: number): number => {
+      const limits = texts.map((text) => text.maxLength).filter((limit) => limit > 0);
+      return Math.min(limits.length > 0 ? Math.min(...limits) : fallback, fallback);
+    };
+    const titleMax = limitOf(titleTexts, DEFAULT_LIST_ITEM_MAX_LENGTH);
+    const detailMax = limitOf(detailTexts, DEFAULT_LIST_DETAIL_MAX_LENGTH);
+    // With descriptions in the rows, each item is written as a pair of parts: title, description.
+    const withDetails = detailTexts.length > 0;
+
+    const answerLines = questions
+      .filter((candidate) => candidate.key !== questionKey && answerByKey.get(candidate.key)?.textValue?.trim())
+      .map((candidate) => `${candidate.label}: ${answerByKey.get(candidate.key)!.textValue!.trim()}`);
+    // The admin's prompt sits between the list's name and the facts; the job, length and format
+    // are appended by generateTextParts' 'list' mode.
+    const context = [
+      `Список для персонального журнала: «${question.label}».`,
+      settings?.suggestPrompt?.trim() || DEFAULT_LIST_SUGGEST_PROMPT,
+      answerLines.length > 0 ? `Ответы пользователя в анкете:\n${answerLines.join('\n')}` : null,
+      existing.length > 0 ? `Эти пункты пользователь уже написал — не повторяй их:\n${listEntriesText(existing)}` : null,
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+
+    const titleConstraint = { unit: 'characters' as const, min: null, max: titleMax };
+    const detailConstraint = { unit: 'characters' as const, min: null, max: detailMax };
+    const constraints = withDetails
+      ? Array.from({ length: count }, () => [titleConstraint, detailConstraint]).flat()
+      : Array.from({ length: count }, () => titleConstraint);
+    const hints = withDetails
+      ? Array.from({ length: count }, (_, index) => [`заголовок пункта ${index + 1}`, `описание пункта ${index + 1}`]).flat()
+      : [];
+
+    const reservation = await this.aiUsage.reserveOrThrow({ userId }, 'regenerate');
+    const generated =
+      (await this.aiTextGeneration.generateTextParts(context, constraints, hints, withDetails ? 'list-detailed' : 'list')) ?? [];
+    const existingTitles = new Set(existing.map((entry) => entry.title.trim()));
+    const items = Array.from({ length: count }, (_, index) =>
+      withDetails
+        ? { title: generated[index * 2] ?? '', text: generated[index * 2 + 1] ?? '' }
+        : { title: generated[index] ?? '', text: '' },
+    )
+      .map((entry) => ({ title: entry.title.trim().slice(0, titleMax), text: entry.text.trim().slice(0, detailMax) }))
+      .filter((entry) => (entry.title || entry.text) && !existingTitles.has(entry.title));
+    if (items.length === 0) {
+      await this.aiUsage.release(reservation);
+      throw new ServiceUnavailableException('Не удалось предложить пункты. Попробуйте ещё раз позже.');
+    }
+    return { items };
   }
 
   /** Prompt for rewriting one part of a chained text: loads every part's current text (generated

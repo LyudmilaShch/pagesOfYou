@@ -89,6 +89,8 @@ enum QuestionType {
   IMAGE
   GALLERY
   SELECT
+  /// Несколько пунктов (QuestionAnswer.jsonValue = { items }), раскладываются по строкам списка шаблона
+  LIST
 }
 
 /// Маркетинговый бейдж на карточке типа журнала

@@ -305,6 +305,8 @@
 
 
       <template v-if="store.isMultiSelection">
+        <EditorListSection />
+
         <div class="editor-properties__section">
           <p class="editor-properties__section-title">Множественное выделение</p>
           <p class="editor-properties__meta">
@@ -923,8 +925,9 @@
 
           />
 
+          <!-- A list item's question is the list's own — set on the list group. -->
           <EditorQuestionPickerField
-            v-if="hasEditorQuestions"
+            v-if="hasEditorQuestions && textElement.listRole !== 'item' && textElement.listRole !== 'detail'"
             :model-value="textElement.questionKey ? [textElement.questionKey] : []"
             hint="Элемент будет автоматически заполняться ответом на этот вопрос"
             @update:model-value="patchElement({ questionKey: $event[0] ?? null })"
@@ -1487,6 +1490,9 @@
 
 
 
+        <!-- Compact: the list's own settings open on their own screen (list-config). -->
+        <EditorListSection />
+
         <div class="editor-properties__section">
 
           <p class="editor-properties__section-title">Элемент</p>
@@ -1567,6 +1573,7 @@ import PropertiesPanelScreenHeader from './properties-panel/PropertiesPanelScree
 import { PANEL_SCREENS, type PanelScreenId } from './properties-panel/panel-screen-registry'
 import { createEditorQuestion, editorQuestions } from '../services/editor-questions'
 import EditorQuestionPickerField from './EditorQuestionPickerField.vue'
+import EditorListSection from './properties-panel/EditorListSection.vue'
 import { editorPlaceholderSync } from '../services/editor-placeholder-sync'
 import { extractApiErrorMessage } from '@/shared/utils/api-error.util'
 import { TEXT_EFFECT_CARDS, getTextEffectDemoStyle } from '../models/text-effect.model'
@@ -1659,6 +1666,16 @@ watch(
   () => selected.value?.id,
   (nextId, previousId) => {
     if (areAiTextChainSiblings(store.elements, previousId, nextId)) {
+      return
+    }
+    // Picking a row from the list's own settings screen keeps that screen open.
+    const previousList = previousId ? store.findListOf(previousId) : null
+    if (
+      panelStack.current.value.id === 'list-config' &&
+      previousList &&
+      nextId &&
+      store.findListOf(nextId)?.listId === previousList.listId
+    ) {
       return
     }
     panelStack.reset({ id: 'root' })

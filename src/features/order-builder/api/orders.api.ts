@@ -101,6 +101,20 @@ export const ordersApi = {
     return data.data.text
   },
 
+  /** AI-suggested items for a LIST question, from the order's other answers — not saved (the
+   * questionnaire drops them into the empty inputs). Counted like a regeneration: 429 at the limit. */
+  async suggestListItems(
+    orderId: string,
+    questionKey: string,
+    count: number,
+  ): Promise<Array<{ title: string; text: string }>> {
+    const { data } = await http.post<BackendResponse<{ items: Array<{ title: string; text: string }> }>>(
+      `/orders/${orderId}/list-items/suggest`,
+      { questionKey, count },
+    )
+    return data.data.items
+  },
+
   /** Brings the question-driven AI texts up to date with the saved answers — called when a
    * questionnaire step is left (saving an answer no longer generates). Best-effort server-side;
    * texts already written from these exact answers are skipped for free. See

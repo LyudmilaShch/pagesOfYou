@@ -18,6 +18,7 @@ import {
   type SpreadBackgroundMode,
 } from './page-background.model'
 import { migrateLegacyBackgroundElements } from '../utils/migrate-legacy-background.util'
+import { migrateLegacyListGroups } from '../utils/migrate-legacy-list-groups.util'
 import { isSpreadCanvas } from '../utils/spread.util'
 import { mapTree } from '../utils/element-tree.util'
 
@@ -67,7 +68,7 @@ function normalizeElementTree(elements: Array<PageElement & { zIndex?: number }>
   const sortedByLegacyZIndex = [...elements].sort((left, right) => (left.zIndex ?? 0) - (right.zIndex ?? 0))
   const withoutZIndex = sortedByLegacyZIndex.map(({ zIndex: _zIndex, ...rest }) => rest as PageElement)
 
-  return mapTree(withoutZIndex, (leaf) =>
+  return mapTree(migrateLegacyListGroups(withoutZIndex), (leaf) =>
     normalizeTocPlaceholderElement(
       normalizeAiTextPlaceholderElement(
         normalizePhotoPlaceholderElement(normalizeTextPlaceholderElement(leaf)),

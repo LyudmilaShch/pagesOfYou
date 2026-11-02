@@ -71,6 +71,16 @@
         <v-icon size="20">mdi-group</v-icon>
         Группировать
       </button>
+      <button
+        v-if="isTemplateEditor"
+        type="button"
+        class="ms-bar__btn ms-bar__btn--full"
+        :disabled="store.selectionCount < 2 || store.previewMode"
+        @click="onMakeList"
+      >
+        <v-icon size="20">mdi-format-list-numbered</v-icon>
+        Сделать списком
+      </button>
       <button type="button" class="ms-bar__btn" :disabled="store.selectionCount === 0" @click="onDuplicate">
         <v-icon size="20">mdi-content-copy</v-icon>
         Копировать
@@ -88,6 +98,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import { useEditorStore } from '../store/editor.store'
+import { createEditorQuestion, editorQuestions } from '../services/editor-questions'
 
 const store = useEditorStore()
 const barRootRef = ref<HTMLElement | null>(null)
@@ -116,6 +127,20 @@ function onGroup(): void {
 
   store.groupSelection()
   store.exitMultiSelectMode()
+}
+
+/** Same gate as the list settings themselves (EditorListSection.vue) — template editor only. */
+const isTemplateEditor = computed(() => editorQuestions.value.length > 0 || createEditorQuestion.value !== null)
+
+/** Each selected element becomes a row; the first row is then selected, so the properties dock
+ * opens on it with its "Список" chip. */
+function onMakeList(): void {
+  const listId = store.makeList([...store.selectedElementIds])
+  const first = listId ? store.findListById(listId)?.rows[0] : null
+  store.exitMultiSelectMode()
+  if (first) {
+    store.selectFromLayersPanel(first.node.id)
+  }
 }
 
 function onForward(): void {

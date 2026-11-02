@@ -153,6 +153,29 @@ const CONTINUOUS_INSTRUCTION = (count: number): string =>
   'связный текст: каждая следующая часть продолжает предыдущую, без повторов и без заголовков, ' +
   'каждая часть заканчивается законченным предложением.';
 
+/** `mode: 'list'` — items of a list the customer fills in the questionnaire ("Предложить пункты").
+ * Neither the warm-prose persona nor the cover-line one: the admin's own list prompt says what the
+ * items should be like; this only frames the job and the output format. */
+const LIST_SYSTEM_PROMPT =
+  'Ты помогаешь составить список для персонального печатного журнала. Пишешь только пункты ' +
+  'списка по заданию, опираясь на ответы пользователя — ничего не выдумываешь. В ответе только ' +
+  'сами пункты в заданном формате, без пояснений.';
+
+const LIST_INSTRUCTION = (count: number): string =>
+  count === 1
+    ? 'Напиши один пункт этого списка — он будет напечатан отдельной строкой.'
+    : `Напиши ${count} пунктов этого списка — каждый будет напечатан отдельной строкой.`;
+
+/** `mode: 'list-detailed'` — items with a title and a description: the parts come in pairs. */
+const LIST_DETAILED_INSTRUCTION = (partCount: number): string => {
+  const items = Math.max(1, Math.floor(partCount / 2));
+  return (
+    (items === 1 ? 'Напиши один пункт этого списка' : `Напиши ${items} пунктов этого списка`) +
+    ' — у каждого заголовок и описание к нему. Части идут парами: сначала заголовок пункта, ' +
+    'следом его описание; описание раскрывает свой заголовок, а не повторяет его.'
+  );
+};
+
 const PHRASES_INSTRUCTION = (count: number): string =>
   (count === 1
     ? 'Напиши один анонс для обложки персонального журнала об этом человеке — он будет напечатан ' +
@@ -282,8 +305,12 @@ export class AiTextGenerationService {
     constraints: CanvasLengthConstraint[],
     /** Per-part "what this part is about" notes (same order as `constraints`), '' for none. */
     hints: string[] = [],
-    mode: CanvasAiTextChainMode = 'continuous',
+    /** 'list' — separate list items (see LIST_SYSTEM_PROMPT), 'list-detailed' — items as
+     * title/description pairs of parts; otherwise a chain's own mode. */
+    mode: CanvasAiTextChainMode | 'list' | 'list-detailed' = 'continuous',
   ): Promise<string[] | null> {
+    const isList = mode === 'list' || mode === 'list-detailed';
+    const separate = mode !== 'continuous';
     // A lone phrase still goes through the marked-up path below — it needs the cover-line
     // instruction and cleanup just as much as a whole set does.
     if (constraints.length === 1 && mode === 'continuous') {
@@ -304,20 +331,28 @@ export class AiTextGenerationService {
     });
     const markupExample = constraints.map((_, index) => `[Часть ${index + 1}]\nтекст части ${index + 1}`).join('\n');
 
+    const systemPrompt = isList ? LIST_SYSTEM_PROMPT : mode === 'phrases' ? PHRASES_SYSTEM_PROMPT : SYSTEM_PROMPT;
+    const instruction =
+      mode === 'list-detailed'
+        ? LIST_DETAILED_INSTRUCTION(count)
+        : mode === 'list'
+          ? LIST_INSTRUCTION(count)
+          : mode === 'phrases'
+            ? PHRASES_INSTRUCTION(count)
+            : CONTINUOUS_INSTRUCTION(count);
     const messages: YandexGptMessage[] = [
-      { role: 'system', text: mode === 'phrases' ? PHRASES_SYSTEM_PROMPT : SYSTEM_PROMPT },
+      { role: 'system', text: systemPrompt },
       {
         role: 'user',
         text:
           `${promptContext}\n\n` +
-          `${mode === 'phrases' ? PHRASES_INSTRUCTION(count) : CONTINUOUS_INSTRUCTION(count)}\n\n` +
+          `${instruction}\n\n` +
           `Части:\n${partLines.join('\n')}\n\n` +
           'Перед каждой частью поставь отдельной строкой её метку — это единственное, что можно ' +
           `добавить к тексту. Формат ответа:\n${markupExample}`,
       },
     ];
-    const finalize = (parts: string[]): string[] =>
-      mode === 'phrases' ? unwrapUniformQuotes(parts.map(cleanPhrase)) : parts;
+    const finalize = (parts: string[]): string[] => (separate ? unwrapUniformQuotes(parts.map(cleanPhrase)) : parts);
 
     let lastText: string | null = null;
     let lastParts: string[] | null = null;
@@ -325,7 +360,8 @@ export class AiTextGenerationService {
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
       let text: string;
       try {
-        text = await this.complete(messages, mode);
+        // List items use the regular model and temperature — only cover lines need the "surprise" ones.
+        text = await this.complete(messages, isList ? 'continuous' : (mode as CanvasAiTextChainMode));
       } catch (err) {
         this.logger.warn(`YandexGPT request failed (attempt ${attempt}/${MAX_ATTEMPTS}): ${err}`);
         break;
@@ -356,7 +392,7 @@ export class AiTextGenerationService {
         }
         feedback =
           `Не уложились в длину: ${misses.join('; ')}. Перепиши эти части, сохранив стиль и факты` +
-          `${mode === 'phrases' ? '' : ' и связность'}, остальные оставь как есть. Верни все части в ` +
+          `${separate ? '' : ' и связность'}, остальные оставь как есть. Верни все части в ` +
           'том же формате с метками.';
       }
 
@@ -373,7 +409,7 @@ export class AiTextGenerationService {
       return null;
     }
     const fallback =
-      mode === 'phrases'
+      separate
         ? (splitByLines(lastText, count) ?? splitBySentences(lastText, constraints))
         : splitBySentences(lastText, constraints);
     return fallback ? finalize(fallback) : null;

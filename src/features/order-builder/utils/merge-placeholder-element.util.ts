@@ -16,6 +16,8 @@ import {
   normalizePhotoStrokeWidth,
 } from '@/modules/editor/utils/element-stroke.util'
 import { mapTree } from '@/modules/editor/utils/element-tree.util'
+import { distributeLists } from '@/modules/editor/utils/list-distribution.util'
+import { A4_PAGE_HEIGHT, A4_PAGE_WIDTH } from '@/modules/editor/constants/page.constants'
 import { buildAiTextElementPreview } from '@/modules/editor/utils/ai-text-preview.util'
 import type { PlaceholderJsonValue, PlaceholderValue } from '../types/order.types'
 
@@ -218,14 +220,27 @@ export function materializeCanvasData(
 ): CanvasData {
   const byElementId = new Map(placeholderValues.map((value) => [value.elementId, value]))
 
+  const merged = mapTree(canvasData.elements, (leaf) =>
+    mergeElementWithPlaceholderValue(
+      leaf,
+      byElementId.get(leaf.id),
+      localByElementId?.get(leaf.id),
+    ) as LeafElement,
+  )
+
+  // Lists are laid out for what's actually filled — after the merge, so a row moved by hand keeps
+  // its own offset — see list-distribution.util.ts.
+  const isItemFilled = (elementId: string): boolean => {
+    const local = localByElementId?.get(elementId)?.textValue
+    return Boolean((local !== undefined ? local : byElementId.get(elementId)?.textValue)?.trim())
+  }
+
   return {
     ...canvasData,
-    elements: mapTree(canvasData.elements, (leaf) =>
-      mergeElementWithPlaceholderValue(
-        leaf,
-        byElementId.get(leaf.id),
-        localByElementId?.get(leaf.id),
-      ) as LeafElement,
-    ),
+    elements: distributeLists(merged, {
+      isItemFilled,
+      pageWidth: canvasData.pageWidth ?? A4_PAGE_WIDTH,
+      pageHeight: canvasData.pageHeight ?? A4_PAGE_HEIGHT,
+    }),
   }
 }

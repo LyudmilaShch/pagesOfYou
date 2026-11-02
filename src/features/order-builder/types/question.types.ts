@@ -1,4 +1,4 @@
-export type QuestionType = 'TEXT' | 'TEXTAREA' | 'DATE' | 'IMAGE' | 'GALLERY' | 'SELECT'
+export type QuestionType = 'TEXT' | 'TEXTAREA' | 'DATE' | 'IMAGE' | 'GALLERY' | 'SELECT' | 'LIST'
 
 export interface QuestionOption {
   id: string

@@ -9,6 +9,7 @@ export const PANEL_SCREENS = {
   'photo-frame': defineAsyncComponent(() => import('./screens/EditorPhotoFrameScreen.vue')),
   'ai-text-config': defineAsyncComponent(() => import('./screens/EditorAiTextConfigScreen.vue')),
   'toc-config': defineAsyncComponent(() => import('./screens/EditorTocConfigScreen.vue')),
+  'list-config': defineAsyncComponent(() => import('./screens/EditorListConfigScreen.vue')),
 } as const
 
 export type PanelScreenId = keyof typeof PANEL_SCREENS

@@ -185,7 +185,7 @@
       <router-view />
     </main>
 
-    <v-snackbar v-model="snackbar.show" :color="snackbar.color" location="bottom center" :timeout="3000">
+    <v-snackbar v-model="snackbar.show" :color="snackbar.color" location="bottom center" :timeout="snackbar.timeout">
       {{ snackbar.text }}
     </v-snackbar>
   </div>
@@ -198,6 +198,8 @@ import type { RouteLocationRaw } from 'vue-router'
 
 import { useEditorStore } from '../store/editor.store'
 import { editorTopAction } from '../services/editor-top-action'
+import { createEditorQuestion, editorQuestions } from '../services/editor-questions'
+import { findListProblems } from '../utils/list-distribution.util'
 
 const props = withDefaults(
   defineProps<{
@@ -238,7 +240,8 @@ const resolvedBackTo = computed<RouteLocationRaw>(
 const snackbar = reactive({
   show: false,
   text: '',
-  color: 'success' as 'success' | 'error',
+  color: 'success' as 'success' | 'warning' | 'error',
+  timeout: 3000,
 })
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -358,12 +361,19 @@ function ungroupSelection(): void {
 async function handleSave(): Promise<void> {
   try {
     await store.saveCanvas()
-    snackbar.text = props.savedMessage
-    snackbar.color = 'success'
+    // Template editor only — the customer can't change a list's setup anyway.
+    const listProblems =
+      editorQuestions.value.length > 0 || createEditorQuestion.value !== null
+        ? findListProblems(store.elements)
+        : []
+    snackbar.text = listProblems.length > 0 ? `${props.savedMessage}, но: ${listProblems.join('; ')}` : props.savedMessage
+    snackbar.color = listProblems.length > 0 ? 'warning' : 'success'
+    snackbar.timeout = listProblems.length > 0 ? 8000 : 3000
     snackbar.show = true
   } catch {
     snackbar.text = props.saveErrorMessage
     snackbar.color = 'error'
+    snackbar.timeout = 3000
     snackbar.show = true
   }
 }

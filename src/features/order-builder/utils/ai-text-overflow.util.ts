@@ -1,5 +1,5 @@
 import type { CanvasData } from '@/modules/editor/models/canvas-data.model'
-import type { LeafElement } from '@/modules/editor/models'
+import type { AiTextPlaceholder, LeafElement } from '@/modules/editor/models'
 import { isAiTextElement, isPhotoElement, isTextElement, isTocElement } from '@/modules/editor/models'
 import { A4_PAGE_HEIGHT, PRINT_CROP_MARGIN } from '@/modules/editor/constants/page.constants'
 import {
@@ -50,12 +50,13 @@ export function buildAiTextFitContext(canvas: CanvasData, elementId: string): Ai
 }
 
 /**
- * Every ai-text block whose REAL text (generated or hand-edited — a block still showing its
- * pre-generation placeholder is skipped) causes an actual print problem: runs into a photo or
- * another text below it, or past the page's crop edge. A text merely taller than the admin's box,
- * with free space underneath, is NOT reported — it prints fine. `canvasDataByPageId` must be the
- * materialized canvas (see materializeCanvasData), so each leaf already carries its text in
- * `previewPlaceholderText` and its customer-adjusted typography.
+ * Every ai-text block — and every list item (a list row's 'item' text, filled from a LIST answer) —
+ * whose REAL text (generated, answered or hand-edited — a block still showing its placeholder is
+ * skipped) causes an actual print problem: runs into a photo or another text below it, or past the
+ * page's crop edge. A text merely taller than the admin's box, with free space underneath, is NOT
+ * reported — it prints fine. `canvasDataByPageId` must be the materialized canvas (see
+ * materializeCanvasData), so each leaf already carries its text (`previewPlaceholderText` /
+ * `defaultText`), its customer-adjusted typography and its distributed list position.
  */
 export function collectAiTextFitProblems(
   pages: JournalPage[],
@@ -76,10 +77,18 @@ export function collectAiTextFitProblems(
     )
 
     for (const leaf of flattenTree(canvas.elements)) {
-      if (!isAiTextElement(leaf) || !elementIdsWithText.has(leaf.id)) {
+      if (!elementIdsWithText.has(leaf.id) || !leaf.visible) {
         continue
       }
-      const fit = analyzeAiTextFit(leaf, leaf.previewPlaceholderText ?? '', buildAiTextFitContext(canvas, leaf.id))
+      // analyzeAiTextFit only reads the typography both text kinds share.
+      const fit = isAiTextElement(leaf)
+        ? analyzeAiTextFit(leaf, leaf.previewPlaceholderText ?? '', buildAiTextFitContext(canvas, leaf.id))
+        : isTextElement(leaf) && (leaf.listRole === 'item' || leaf.listRole === 'detail')
+          ? analyzeAiTextFit(leaf as unknown as AiTextPlaceholder, leaf.defaultText ?? '', buildAiTextFitContext(canvas, leaf.id))
+          : null
+      if (!fit) {
+        continue
+      }
       if (fit.issue) {
         problems.push({ journalPageId: page.id, elementId: leaf.id, issue: fit.issue, excessWords: fit.excessWords })
       }

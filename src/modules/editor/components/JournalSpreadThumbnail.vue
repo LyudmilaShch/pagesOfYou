@@ -114,9 +114,20 @@
           </v-tooltip>
         </div>
 
-        <div v-else-if="isTextElement(leaf)" class="spread-thumb__text">
-          <div class="spread-thumb__text-inner" :style="textInnerStyle(leaf)">{{ leaf.defaultText }}</div>
-        </div>
+        <template v-else-if="isTextElement(leaf)">
+          <div class="spread-thumb__text">
+            <div class="spread-thumb__text-inner" :style="textInnerStyle(leaf)">{{ leaf.defaultText }}</div>
+          </div>
+          <!-- A list item that doesn't fit (see ai-text-overflow.util.ts). -->
+          <v-tooltip v-if="textIssueMessages?.has(leaf.id)" location="top" content-class="editor-tooltip--arrow-top">
+            <template #activator="{ props: tooltipProps }">
+              <span v-bind="tooltipProps" class="spread-thumb__overflow-badge" :aria-label="textIssueMessages.get(leaf.id)">
+                <v-icon size="12" color="white">mdi-alert</v-icon>
+              </span>
+            </template>
+            {{ textIssueMessages.get(leaf.id) }}
+          </v-tooltip>
+        </template>
 
         <div
           v-else-if="isAiTextElement(leaf) && pendingElementIds.has(leaf.id)"

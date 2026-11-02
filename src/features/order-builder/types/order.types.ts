@@ -117,10 +117,13 @@ export interface PlaceholderInput {
   jsonValue?: PlaceholderJsonValue
 }
 
-/** { url } for IMAGE questions, { urls } for GALLERY questions. */
+/** { url } for IMAGE questions, { urls } for GALLERY questions, { items } for LIST questions (whose
+ * `textValue` also holds the items, newline-joined — see OrdersService.resolveQuestionAnswerInput). */
 export interface QuestionAnswerJsonValue {
   url?: string
   urls?: string[]
+  /** A string, or { title, text } when the item has a description (see list-answer.util.ts). */
+  items?: Array<string | { title: string; text: string }>
 }
 
 /** One saved answer to a questionnaire `Question`, at the order level — unlike

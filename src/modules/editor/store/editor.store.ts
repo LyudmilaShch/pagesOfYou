@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, ref, toRaw } from 'vue'
 
 import {
   A4_PAGE_HEIGHT,
@@ -45,9 +45,12 @@ import { createElementFromLibrary } from '../factories/create-element.factory'
 import type { LibraryElementType } from '../factories/create-element.factory'
 import { toStoredAssetPath } from '@/shared/config/assets'
 import type { PageElement } from '../models'
-import { isAiTextElement, isGroupElement } from '../models'
+import { isAiTextElement, isGroupElement, isTextElement } from '../models'
 import type { AiTextPlaceholder } from '../models/ai-text-placeholder.model'
 import type { GroupElement } from '../models/group-element.model'
+import type { ListLayoutMode, ListSettings } from '../models/list.model'
+import type { ListRole } from '../models/text-placeholder.model'
+import { collectLists, type ListInfo } from '../utils/list-distribution.util'
 import {
   generateAiTextChainId,
   getAiTextChainParts,
@@ -980,6 +983,7 @@ export const useEditorStore = defineStore('editor', () => {
     }
 
     relinkClonedAiTextChains(clones)
+    relinkClonedListRows(clones)
 
     selectedElementIds.value = clones.map((clone) => clone.id)
     isDirty.value = true
@@ -1040,6 +1044,7 @@ export const useEditorStore = defineStore('editor', () => {
     }
 
     relinkClonedAiTextChains(pasted)
+    relinkClonedListRows(pasted)
 
     walkTree(pasted, (node) => {
       if (isTextPlaceholderType(node.type)) {
@@ -1102,6 +1107,338 @@ export const useEditorStore = defineStore('editor', () => {
 
     for (const part of getAiTextSiblingParts(document.value.canvasData.elements, element)) {
       updateElement(part.id, patch)
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Lists — rows are ordinary elements sharing a `listId`, read in `listOrder`, laid out for the
+  // customer's filled items at render time (see list.model.ts / list-distribution.util.ts). No
+  // container: each row stays selectable on its own. List-wide settings are mirrored onto every
+  // row; roles and the question live on the rows' texts, so the backend's answer sync and every
+  // renderer read them like any other bound text.
+  // ---------------------------------------------------------------------------
+
+  /** The list `id` is a row of, or sits inside a row of, if any. */
+  function findListOf(id: string): ListInfo | null {
+    if (!document.value) {
+      return null
+    }
+    return (
+      collectLists(document.value.canvasData.elements).find((list) =>
+        list.rows.some((row) => row.node.id === id || getDescendants(row.node).some((node) => node.id === id)),
+      ) ?? null
+    )
+  }
+
+  function findListById(listId: string): ListInfo | null {
+    return document.value
+      ? (collectLists(document.value.canvasData.elements).find((list) => list.listId === listId) ?? null)
+      : null
+  }
+
+  function textsOfRow(row: PageElement): TextPlaceholder[] {
+    return (isGroupElement(row) ? getDescendants(row) : [row]).filter(isTextElement)
+  }
+
+  /** The given elements (those that exist), top to bottom then left to right — the reading order
+   * new rows start with. */
+  function nodesInReadingOrder(ids: string[]): PageElement[] {
+    if (!document.value) {
+      return []
+    }
+    const root = document.value.canvasData.elements
+    return ids
+      .map((id) => findNodeById(root, id))
+      .filter((node): node is PageElement => node !== null)
+      .map((node) => {
+        const box = getAbsoluteTransform(root, node.id)
+        return { node, x: box.x + node.size.width / 2, y: box.y + node.size.height / 2 }
+      })
+      .sort((a, b) => a.y - b.y || a.x - b.x)
+      .map(({ node }) => node)
+  }
+
+  /** Makes `node` a row of `listId` at `order`. Texts without a role get a guess — a text that's
+   * just a number is the row number; of the others, the topmost is the item's title and the next
+   * one down its description — and the title/description take the list's question. */
+  function attachListRow(node: PageElement, listId: string, order: number, settings: ListSettings): void {
+    updateElement(
+      node.id,
+      { listId, listOrder: order, list: settings, listColumnBreak: false },
+      { skipTextLayoutRecalc: true },
+    )
+    const texts = textsOfRow(node)
+    if (!texts.some((text) => text.listRole)) {
+      const number = texts.find((text) => /^\s*\d+[.)]?\s*$/.test(text.defaultText ?? ''))
+      const [item, detail] = texts
+        .filter((text) => text !== number)
+        .sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x)
+      if (number) {
+        updateElement(number.id, { listRole: 'number' }, { skipTextLayoutRecalc: true })
+      }
+      if (item) {
+        updateElement(item.id, { listRole: 'item' }, { skipTextLayoutRecalc: true })
+      }
+      if (detail) {
+        updateElement(detail.id, { listRole: 'detail' }, { skipTextLayoutRecalc: true })
+      }
+    }
+    // Re-read: the role updates above replaced the texts in the tree.
+    const current = document.value ? findNodeById(document.value.canvasData.elements, node.id) : null
+    for (const text of current && settings.questionKey ? textsOfRow(current) : []) {
+      if (text.listRole === 'item' || text.listRole === 'detail') {
+        updateElement(text.id, { questionKey: settings.questionKey }, { skipTextLayoutRecalc: true })
+      }
+    }
+  }
+
+  /** Turns the given elements into the rows of a new list, read top to bottom (then left to right)
+   * to start with. */
+  function makeList(ids: string[]): string | null {
+    if (!document.value || previewMode.value) {
+      return null
+    }
+    const nodes = nodesInReadingOrder(ids)
+    if (nodes.length === 0) {
+      return null
+    }
+    const listId = `list-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+    nodes.forEach((node, index) => attachListRow(node, listId, index, { questionKey: null }))
+    return listId
+  }
+
+  /** Appends the given elements to an existing list as its last rows (top to bottom among
+   * themselves); one that already is a row of another list moves over. */
+  function addToList(listId: string, ids: string[]): void {
+    const list = findListById(listId)
+    if (!list || previewMode.value) {
+      return
+    }
+    const nodes = nodesInReadingOrder(ids).filter((node) => node.listId !== listId)
+    let order = Math.max(-1, ...list.rows.map((row) => row.node.listOrder)) + 1
+    for (const node of nodes) {
+      if (node.listId) {
+        removeListRow(node.id)
+      }
+      // Re-read: detaching replaced the node (and its texts) in the tree.
+      const current = document.value ? findNodeById(document.value.canvasData.elements, node.id) : null
+      if (current) {
+        attachListRow(current, listId, order, list.settings)
+        order += 1
+      }
+    }
+  }
+
+  /** Takes `row` out of its list: its list fields, its texts' roles and the list's question
+   * binding are dropped. */
+  function detachListRow(row: PageElement, questionKey: string | null): void {
+    for (const text of textsOfRow(row)) {
+      if (text.listRole) {
+        const unbind = (text.listRole === 'item' || text.listRole === 'detail') && text.questionKey === questionKey
+        updateElement(text.id, { listRole: null, ...(unbind && { questionKey: null }) }, { skipTextLayoutRecalc: true })
+      }
+    }
+    updateElement(
+      row.id,
+      { listId: null, listOrder: undefined, list: null, listColumnBreak: false },
+      { skipTextLayoutRecalc: true },
+    )
+  }
+
+  /** Dissolves the whole list — every row becomes an ordinary element again. */
+  function removeList(listId: string): void {
+    const list = findListById(listId)
+    if (list) {
+      list.rows.forEach((row) => detachListRow(row.node, list.settings.questionKey))
+    }
+  }
+
+  /** Takes one row out of its list; the rest close up the reading order. */
+  function removeListRow(rowId: string): void {
+    const list = findListOf(rowId)
+    const row = list?.rows.find((candidate) => candidate.node.id === rowId)
+    if (!list || !row) {
+      return
+    }
+    detachListRow(row.node, list.settings.questionKey)
+    list.rows
+      .filter((candidate) => candidate !== row)
+      .forEach((candidate, index) => updateElement(candidate.node.id, { listOrder: index }, { skipTextLayoutRecalc: true }))
+  }
+
+  /** Writes list-wide settings onto every row (they're mirrored — see list.model.ts). */
+  function patchListSettings(listId: string, patch: Partial<ListSettings>): void {
+    const list = findListById(listId)
+    if (!list) {
+      return
+    }
+    const settings: ListSettings = { ...list.settings, ...patch }
+    for (const row of list.rows) {
+      updateElement(row.node.id, { list: settings }, { skipTextLayoutRecalc: true })
+    }
+  }
+
+  /** Binds the list to a LIST question — mirrored onto every row's title ('item') and description
+   * ('detail') texts. */
+  function setListQuestion(listId: string, questionKey: string | null): void {
+    const list = findListById(listId)
+    if (!list) {
+      return
+    }
+    patchListSettings(listId, { questionKey })
+    for (const row of list.rows) {
+      for (const text of textsOfRow(row.node)) {
+        if (text.listRole === 'item' || text.listRole === 'detail') {
+          updateElement(text.id, { questionKey }, { skipTextLayoutRecalc: true })
+        }
+      }
+    }
+  }
+
+  function setListMinItems(listId: string, minItems: number): void {
+    const list = findListById(listId)
+    if (list) {
+      patchListSettings(listId, { minItems: Math.max(0, Math.min(Math.round(minItems), list.rows.length)) })
+    }
+  }
+
+  function setListMode(listId: string, mode: ListLayoutMode): void {
+    patchListSettings(listId, { mode })
+  }
+
+  /** "Предложить пункты": shown or not, and the admin's prompt (undefined — back to the default). */
+  function setListSuggestSettings(
+    listId: string,
+    patch: Partial<Pick<ListSettings, 'suggestEnabled' | 'suggestPrompt'>>,
+  ): void {
+    patchListSettings(listId, patch)
+  }
+
+  /** The admin's own places for `count` items (row indices in reading order — stored as the rows'
+   * ids, so reordering keeps them), or null to go back to the mode's. */
+  function setListSlots(listId: string, count: number, slots: number[] | null): void {
+    const list = findListById(listId)
+    if (!list) {
+      return
+    }
+    const slotsByCount = { ...list.settings.slotsByCount }
+    if (slots) {
+      slotsByCount[String(count)] = slots
+        .filter((index) => index >= 0 && index < list.rows.length)
+        .map((index) => list.rows[index].node.id)
+    } else {
+      delete slotsByCount[String(count)]
+    }
+    patchListSettings(listId, { slotsByCount })
+  }
+
+  /** A text's role in its list row; a title/description takes the list's question, a text leaving
+   * those roles drops it. */
+  function setListRole(textId: string, role: ListRole | null): void {
+    const list = findListOf(textId)
+    const text = document.value ? findNodeById(document.value.canvasData.elements, textId) : null
+    if (!list || !text || !isTextElement(text)) {
+      return
+    }
+    const listKey = list.settings.questionKey
+    const fromAnswer = (value: ListRole | null | undefined): boolean => value === 'item' || value === 'detail'
+    const questionKey = fromAnswer(role)
+      ? listKey
+      : fromAnswer(text.listRole) && text.questionKey === listKey
+        ? null
+        : text.questionKey
+    updateElement(textId, { listRole: role, questionKey }, { skipTextLayoutRecalc: true })
+  }
+
+  /** Copies the typography of `rowId`'s texts onto the same-role texts of every other row of its
+   * list (number → numbers, title → titles, description → descriptions) — positions and sizes stay as each row has them. */
+  function applyListRowStyle(rowId: string): void {
+    const list = findListOf(rowId)
+    const source = list?.rows.find((row) => row.node.id === rowId)
+    if (!list || !source || previewMode.value) {
+      return
+    }
+    for (const role of ['number', 'item', 'detail'] as const) {
+      const model = textsOfRow(source.node).find((text) => text.listRole === role)
+      if (!model) {
+        continue
+      }
+      const style = {
+        fontFamily: model.fontFamily,
+        fontSize: model.fontSize,
+        fontWeight: model.fontWeight,
+        fontItalic: model.fontItalic,
+        lineHeight: model.lineHeight,
+        letterSpacing: model.letterSpacing,
+        textAlign: model.textAlign,
+        verticalAlign: model.verticalAlign,
+        textTransform: model.textTransform,
+        color: model.color,
+        effect: model.effect ? structuredClone(toRaw(model.effect)) : null,
+      }
+      for (const row of list.rows) {
+        if (row === source) {
+          continue
+        }
+        for (const text of textsOfRow(row.node)) {
+          if (text.listRole === role) {
+            updateElement(text.id, style)
+          }
+        }
+      }
+    }
+  }
+
+  /** Moves row `rowId` one step earlier/later in the list's reading order. */
+  function moveListRow(listId: string, rowId: string, direction: 'earlier' | 'later'): void {
+    const list = findListById(listId)
+    if (!list) {
+      return
+    }
+    const index = list.rows.findIndex((row) => row.node.id === rowId)
+    const target = direction === 'earlier' ? index - 1 : index + 1
+    if (index === -1 || target < 0 || target >= list.rows.length) {
+      return
+    }
+    updateElement(list.rows[index].node.id, { listOrder: target }, { skipTextLayoutRecalc: true })
+    updateElement(list.rows[target].node.id, { listOrder: index }, { skipTextLayoutRecalc: true })
+  }
+
+  function reverseListRows(listId: string): void {
+    const list = findListById(listId)
+    const last = (list?.rows.length ?? 0) - 1
+    list?.rows.forEach((row, index) =>
+      updateElement(row.node.id, { listOrder: last - index }, { skipTextLayoutRecalc: true }),
+    )
+  }
+
+  /** Same idea as relinkClonedAiTextChains: a lone cloned row joins its list as the new LAST row —
+   * so "duplicate" on a row doubles as "add a row" — while 2+ rows of one list cloned together
+   * become a list of their own. */
+  function relinkClonedListRows(clones: PageElement[]): void {
+    if (!document.value) {
+      return
+    }
+
+    const clonedRowsByList = new Map<string, PageElement[]>()
+    walkTree(clones, (node) => {
+      if (node.listId) {
+        const rows = clonedRowsByList.get(node.listId) ?? []
+        rows.push(node)
+        clonedRowsByList.set(node.listId, rows)
+      }
+    })
+
+    for (const [listId, clonedRows] of clonedRowsByList) {
+      if (clonedRows.length > 1) {
+        const freshListId = `list-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+        for (const row of clonedRows) {
+          row.listId = freshListId
+        }
+        continue
+      }
+      const others = findListById(listId)?.rows.filter((row) => row.node !== clonedRows[0]) ?? []
+      clonedRows[0].listOrder = Math.max(-1, ...others.map((row) => row.node.listOrder)) + 1
     }
   }
 
@@ -2615,6 +2952,21 @@ export const useEditorStore = defineStore('editor', () => {
     copySelection,
     pasteClipboard,
     updateAiTextShared,
+    findListOf,
+    findListById,
+    makeList,
+    addToList,
+    removeList,
+    removeListRow,
+    setListQuestion,
+    setListMinItems,
+    setListMode,
+    setListSuggestSettings,
+    setListSlots,
+    setListRole,
+    applyListRowStyle,
+    moveListRow,
+    reverseListRows,
     addAiTextChainPart,
     addCoverPhrase,
     unlinkAiTextChainPart,

@@ -5,6 +5,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { ApplyPromoCodeDto } from './dto/apply-promo-code.dto';
+import { SuggestListItemsDto } from './dto/suggest-list-items.dto';
 import { CalculateDeliveryDto } from './dto/calculate-delivery.dto';
 import { CreateDraftOrderDto } from './dto/create-draft-order.dto';
 import { GenerateAiTextsDto } from './dto/generate-ai-texts.dto';
@@ -68,6 +69,18 @@ export class OrdersController {
     @Param('elementId') elementId: string,
   ) {
     return this.ordersService.regenerateAiText(orderId, user.sub, journalPageId, elementId);
+  }
+
+  @Post(':orderId/list-items/suggest')
+  @ApiOperation({
+    summary: 'Suggest items for a LIST question from the other answers (not saved — the customer reviews them)',
+  })
+  suggestListItems(
+    @CurrentUser() user: JwtPayload,
+    @Param('orderId') orderId: string,
+    @Body() body: SuggestListItemsDto,
+  ) {
+    return this.ordersService.suggestListItems(orderId, user.sub, body.questionKey, body.count);
   }
 
   @Post(':orderId/ai-texts/generate')

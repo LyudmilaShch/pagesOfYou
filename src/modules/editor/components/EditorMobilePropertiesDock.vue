@@ -688,6 +688,11 @@
               </div>
             </template>
 
+            <!-- ============ LIST (any element / several elements) ============ -->
+            <template v-if="activeCategory === 'list'">
+              <EditorListSection />
+            </template>
+
           </template>
 
         </div>
@@ -754,7 +759,9 @@ import { usePropertiesPanelStack } from '../composables/use-properties-panel-sta
 import { PROPERTIES_PANEL_STACK_KEY } from '../composables/properties-panel-stack.context'
 import { provide } from 'vue'
 import PropertiesPanelScreenHeader from './properties-panel/PropertiesPanelScreenHeader.vue'
+import EditorListSection from './properties-panel/EditorListSection.vue'
 import { PANEL_SCREENS, type PanelScreenId } from './properties-panel/panel-screen-registry'
+import { collectLists } from '../utils/list-distribution.util'
 import { TEXT_EFFECT_CARDS, getTextEffectDemoStyle } from '../models/text-effect.model'
 import type { TextEffect, TextEffectCardDef } from '../models/text-effect.model'
 import {
@@ -950,6 +957,16 @@ watch(
     if (areAiTextChainSiblings(store.elements, previousId, nextId)) {
       return
     }
+    // Picking a row from the list's own settings screen keeps that screen open.
+    const previousList = previousId ? store.findListOf(previousId) : null
+    if (
+      panelStack.current.value.id === 'list-config' &&
+      previousList &&
+      nextId &&
+      store.findListOf(nextId)?.listId === previousList.listId
+    ) {
+      return
+    }
     panelStack.reset({ id: 'root' })
     activeCategory.value = 'content'
     expanded.value = false
@@ -1104,7 +1121,23 @@ function patchEffectParams(partial: Record<string, unknown>): void {
 const photoElement = computed(() => selected.value as import('../models/photo-placeholder.model').PhotoPlaceholder)
 const shapeElement = computed(() => selected.value as import('../models/shape-element.model').ShapeElement)
 
-const chips = computed<DockChip[]>(() => {
+const LIST_CHIP: DockChip = { id: 'list', label: 'Список', mdiIcon: 'mdi-format-list-numbered' }
+
+/** The "Список" chip (template editor only): on several selected elements (make a list of them),
+ * on a list row or a text in one, or on any element when the page already has a list to add to —
+ * the same cases EditorListSection.vue shows something for. */
+const showListChip = computed(() => {
+  if (!hasEditorQuestions.value) {
+    return false
+  }
+  if (store.isMultiSelection) {
+    return true
+  }
+  const page = store.document?.canvasData.elements ?? []
+  return Boolean(selected.value && (store.findListOf(selected.value.id) || collectLists(page).length > 0))
+})
+
+const typeChips = computed<DockChip[]>(() => {
   if (isAiTextElement.value) {
     return AI_TEXT_CHIPS
   }
@@ -1125,6 +1158,8 @@ const chips = computed<DockChip[]>(() => {
   }
   return []
 })
+
+const chips = computed<DockChip[]>(() => (showListChip.value ? [...typeChips.value, LIST_CHIP] : typeChips.value))
 
 const isTextBold = computed(() => Boolean(styleElement.value && styleElement.value.fontWeight >= 600))
 const isTextItalic = computed(() => Boolean(styleElement.value?.fontItalic))

@@ -53,6 +53,8 @@ import { provideEditorTopAction } from '@/modules/editor/services/editor-top-act
 import { provideEditorPhotoPicker } from '@/modules/editor/services/editor-photo-picker'
 import { provideEditorPlaceholderSync } from '@/modules/editor/services/editor-placeholder-sync'
 import { findNodeById } from '@/modules/editor/utils/element-tree.util'
+import { listAnswerSlots } from '@/modules/editor/utils/list-distribution.util'
+import { toListEntries } from '../utils/list-answer.util'
 import { useAuthStore } from '@/stores/auth.store'
 import AuthModal from '@/components/auth/AuthModal.vue'
 import { userEditorAssetsProvider } from '../services/user-editor-assets'
@@ -271,6 +273,15 @@ function revertToAnswer(elementId: string): boolean {
       return false
     }
     store.updateElement(elementId, { defaultImageUrl: answer.jsonValue.url })
+  } else if (answer.jsonValue?.items) {
+    // A list row's title/description: its own entry of the answer, by row order — as the backend
+    // sync fills it.
+    const slot = listAnswerSlots(store.document!.canvasData.elements, element.questionKey).get(elementId)
+    const item = slot ? toListEntries(answer.jsonValue.items)[slot.entry]?.[slot.field]?.trim() : undefined
+    if (!item) {
+      return false
+    }
+    store.updateElement(elementId, { defaultText: item })
   } else {
     if (!answer.textValue?.trim()) {
       return false

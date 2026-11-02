@@ -143,7 +143,7 @@
               >
                 <label class="questionnaire-page__field-label text-body">
                   {{ question.label }}
-                  <span v-if="question.isRequired" class="questionnaire-page__required">*</span>
+                  <span v-if="isRequiredQuestion(question)" class="questionnaire-page__required">*</span>
                 </label>
                 <p v-if="question.helpText" class="questionnaire-page__field-help text-body-sm text-secondary">
                   {{ question.helpText }}
@@ -209,6 +209,22 @@
                     :model-value="getGalleryUrls(question.key)"
                     :scope="galleryScope"
                     @update:model-value="setGalleryUrls(question.key, $event)"
+                  />
+
+                  <QuestionListField
+                    v-else-if="question.type === 'LIST'"
+                    :model-value="getListItems(question.key)"
+                    :max="listShapeByKey.get(question.key)?.capacity ?? null"
+                    :min="listMinByKey.get(question.key) ?? 0"
+                    :with-details="listShapeByKey.get(question.key)?.hasDetails ?? false"
+                    :max-length="listShapeByKey.get(question.key)?.titleMaxLength ?? null"
+                    :detail-max-length="listShapeByKey.get(question.key)?.detailMaxLength ?? null"
+                    :can-suggest="!listSuggestDisabledKeys.has(question.key)"
+                    :suggesting="suggestingListKey === question.key"
+                    :placeholder="question.placeholder"
+                    :autofocus="index === 0"
+                    @suggest="handleSuggestListItems(question.key)"
+                    @update:model-value="setListItems(question.key, $event)"
                   />
                 </div>
               </div>
@@ -357,7 +373,15 @@ import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { normalizeCanvasData } from '@/modules/editor/models/canvas-data.model'
-import { isAiTextElement } from '@/modules/editor/models'
+import { isAiTextElement, isTextElement } from '@/modules/editor/models'
+import { collectLists, listAnswerSlots } from '@/modules/editor/utils/list-distribution.util'
+import {
+  fromListEntries,
+  isListEntryFilled,
+  listEntriesText,
+  toListEntries,
+  type ListAnswerEntry,
+} from '../utils/list-answer.util'
 import type { AiTextPlaceholder, LengthConstraint } from '@/modules/editor/models'
 import { flattenTree } from '@/modules/editor/utils/element-tree.util'
 import { catalogApi } from '../api/catalog.api'
@@ -378,6 +402,7 @@ import type { Question } from '../types/question.types'
 import type { QuestionAnswer, QuestionAnswerJsonValue } from '../types/order.types'
 import QuestionImageField from '../components/questionnaire/QuestionImageField.vue'
 import QuestionGalleryField from '../components/questionnaire/QuestionGalleryField.vue'
+import QuestionListField from '../components/questionnaire/QuestionListField.vue'
 import QuestionnaireBook from '../components/questionnaire/QuestionnaireBook.vue'
 import AiTextEditModal from '../components/AiTextEditModal.vue'
 import { buildAiTextFitContext } from '../utils/ai-text-overflow.util'
@@ -389,6 +414,8 @@ import AuthModal from '@/components/auth/AuthModal.vue'
 import AuthPromptModal from '@/components/auth/AuthPromptModal.vue'
 import { answerMapOf, buildAiTextMarkers } from '../utils/draft-ai-texts.util'
 import { useAuthStore } from '@/stores/auth.store'
+import { extractApiErrorMessage } from '@/shared/utils/api-error.util'
+import { ordersApi } from '../api/orders.api'
 
 const route = useRoute()
 const router = useRouter()
@@ -499,6 +526,91 @@ function getImageUrl(key: string): string | null {
 
 function getGalleryUrls(key: string): string[] {
   return answers[key]?.jsonValue?.urls ?? []
+}
+
+function getListItems(key: string): ListAnswerEntry[] {
+  return toListEntries(answers[key]?.jsonValue?.items)
+}
+
+interface ListQuestionShape {
+  /** How many list rows the journal has for the question — the most items its answer can hold. */
+  capacity: number
+  /** The rows have description ('detail') texts — each item then gets a description input. */
+  hasDetails: boolean
+  /** The strictest character limits of the titles' / descriptions' texts (template `maxLength`),
+   * so an item can't outgrow the row it lands in. */
+  titleMaxLength: number | null
+  detailMaxLength: number | null
+}
+
+/** questionKey → what the journal's list(s) for that LIST question look like. */
+const listShapeByKey = computed(() => {
+  const shapes = new Map<string, ListQuestionShape>()
+  const tighter = (current: number | null, limit: number): number | null =>
+    limit > 0 ? Math.min(current ?? Infinity, limit) : current
+  for (const page of store.order?.journalPages ?? []) {
+    const elements = normalizeCanvasData(page.pageSnapshot).elements
+    const keys = new Set<string>()
+    for (const leaf of flattenTree(elements)) {
+      if (!isTextElement(leaf) || !leaf.questionKey || (leaf.listRole !== 'item' && leaf.listRole !== 'detail')) {
+        continue
+      }
+      keys.add(leaf.questionKey)
+      const shape = shapes.get(leaf.questionKey) ?? { capacity: 0, hasDetails: false, titleMaxLength: null, detailMaxLength: null }
+      if (leaf.listRole === 'detail') {
+        shape.hasDetails = true
+        shape.detailMaxLength = tighter(shape.detailMaxLength, leaf.maxLength)
+      } else {
+        shape.titleMaxLength = tighter(shape.titleMaxLength, leaf.maxLength)
+      }
+      shapes.set(leaf.questionKey, shape)
+    }
+    for (const key of keys) {
+      shapes.get(key)!.capacity += new Set([...listAnswerSlots(elements, key).values()].map((slot) => slot.entry)).size
+    }
+  }
+  return shapes
+})
+
+/** questionKeys whose list the admin turned "Предложить пункты" off for. */
+const listSuggestDisabledKeys = computed(() => {
+  const keys = new Set<string>()
+  for (const page of store.order?.journalPages ?? []) {
+    for (const { settings } of collectLists(normalizeCanvasData(page.pageSnapshot).elements)) {
+      if (settings.questionKey && settings.suggestEnabled === false) {
+        keys.add(settings.questionKey)
+      }
+    }
+  }
+  return keys
+})
+
+/** questionKey → the fewest items its list(s) ask for (the admin's `list.minItems`; the largest,
+ * if several lists share the question). */
+const listMinByKey = computed(() => {
+  const minimum = new Map<string, number>()
+  for (const page of store.order?.journalPages ?? []) {
+    for (const { settings } of collectLists(normalizeCanvasData(page.pageSnapshot).elements)) {
+      const { questionKey, minItems } = settings
+      if (questionKey && minItems) {
+        minimum.set(questionKey, Math.max(minimum.get(questionKey) ?? 0, minItems))
+      }
+    }
+  }
+  return minimum
+})
+
+/** A list with a minimum is required, and only answered once it holds that many items. */
+function isRequiredQuestion(question: Question): boolean {
+  return question.isRequired || (question.type === 'LIST' && (listMinByKey.value.get(question.key) ?? 0) > 0)
+}
+
+function isAnswered(question: Question): boolean {
+  if (question.type !== 'LIST') {
+    return isQuestionAnswered(question, answersAsMap.value)
+  }
+  const filled = getListItems(question.key).filter(isListEntryFilled).length
+  return filled >= Math.max(1, listMinByKey.value.get(question.key) ?? 0)
 }
 
 const AUTOSAVE_DEBOUNCE_MS = 2500
@@ -658,6 +770,15 @@ function setGalleryUrls(key: string, urls: string[]): void {
   markDirty(key)
 }
 
+/** Blank items stay in `jsonValue.items` while typing (the inputs mustn't vanish); `textValue`
+ * mirrors the filled ones, as the backend stores it — see resolveQuestionAnswerInput. */
+function setListItems(key: string, entries: ListAnswerEntry[]): void {
+  const text = listEntriesText(entries)
+  answers[key] = { textValue: text || null, jsonValue: { items: fromListEntries(entries) } }
+  pendingOverlayByKey[key] = answers[key]
+  markDirty(key)
+}
+
 /** Awaited by callers that need the save to be actually finished before acting on the result —
  * e.g. `requestAiGeneration`, which generates from the saved answers. `handleBeforeUnload` is the
  * one caller that can't await (the browser is already closing), so it fires this without
@@ -718,7 +839,7 @@ const isLastStep = computed(() => currentIndex.value >= totalSteps.value - 1)
 // Hides "Пропустить" — skipping a step with a required question would leave it unanswered with no
 // way back to it short of using "Назад" repeatedly, and the bottom bar's "Продолжить" is already
 // gated on every required question being filled in, so skipping past one here would just dead-end.
-const currentStepHasRequired = computed(() => Boolean(currentStep.value?.questions.some((q) => q.isRequired)))
+const currentStepHasRequired = computed(() => Boolean(currentStep.value?.questions.some(isRequiredQuestion)))
 // The step's own home page, plus every OTHER page any of its questions also happens to affect
 // (e.g. a question shared with another page via a duplicated template) — used to pulse every page
 // that visibly changed, not just the primary one.
@@ -779,9 +900,7 @@ const questionByKey = computed(() => new Map(allQuestions.value.map((question) =
 // Gates the bottom bar's "Продолжить" — vacuously true when there are no required questions (or
 // no questions at all), so it's never stuck disabled for a page with nothing to require.
 const allRequiredAnswered = computed(() =>
-  allQuestions.value
-    .filter((question) => question.isRequired)
-    .every((question) => isQuestionAnswered(question, answersAsMap.value)),
+  allQuestions.value.filter(isRequiredQuestion).every(isAnswered),
 )
 
 // Bottom-bar pill next to "Продолжить" — a heads-up, not a gate (unlike `allRequiredAnswered`
@@ -833,16 +952,29 @@ function pendingOverridesForPage(pageId: string): Map<string, LocalPlaceholderDr
     return overrides
   }
 
-  const leaves = flattenTree(normalizeCanvasData(page.pageSnapshot).elements)
-  for (const leaf of leaves) {
+  const elements = normalizeCanvasData(page.pageSnapshot).elements
+  // A LIST answer fills its rows one entry each, in the list's reading order — title into the
+  // 'item' text, description into the 'detail' text — as the backend sync does.
+  const listSlotsByKey = new Map<string, ReturnType<typeof listAnswerSlots>>()
+  for (const leaf of flattenTree(elements)) {
     const leafKey = 'questionKey' in leaf ? leaf.questionKey : undefined
     const draft = leafKey ? pendingOverlayByKey[leafKey] : undefined
-    if (draft) {
-      overrides.set(leaf.id, {
-        textValue: draft.textValue ?? undefined,
-        jsonValue: draft.jsonValue ?? undefined,
-      })
+    if (!draft || !leafKey) {
+      continue
     }
+    if (draft.jsonValue?.items) {
+      if (!listSlotsByKey.has(leafKey)) {
+        listSlotsByKey.set(leafKey, listAnswerSlots(elements, leafKey))
+      }
+      const slot = listSlotsByKey.get(leafKey)!.get(leaf.id)
+      const entry = slot ? toListEntries(draft.jsonValue.items)[slot.entry] : undefined
+      overrides.set(leaf.id, { textValue: (slot && entry?.[slot.field]?.trim()) || '' })
+      continue
+    }
+    overrides.set(leaf.id, {
+      textValue: draft.textValue ?? undefined,
+      jsonValue: draft.jsonValue ?? undefined,
+    })
   }
   return overrides
 }
@@ -1143,6 +1275,47 @@ async function saveAiTextEdit(text: string): Promise<void> {
  * `regenerateAiText`. Needs an account: a guest gets the sign-in prompt, and the regeneration
  * runs right after signing in. At the daily limit the store's error carries the server's
  * explanation; the manual edit above still works. */
+const AUTH_MESSAGE_SUGGEST = 'Чтобы ИИ предложил пункты, войдите в аккаунт'
+
+/** questionKey of the list whose items are being suggested right now. */
+const suggestingListKey = ref<string | null>(null)
+
+/** "Предложить пункты": the answer so far is saved first (the suggestions mustn't repeat it), then
+ * the suggested items fill the blank inputs and, past those, new ones — up to the list's rows. */
+async function handleSuggestListItems(questionKey: string): Promise<void> {
+  if (!authStore.isAuthenticated || store.isLocalDraft || !store.order) {
+    openAuthModal(AUTH_MESSAGE_SUGGEST)
+    return
+  }
+  const capacity = listShapeByKey.value.get(questionKey)?.capacity ?? 0
+  const current = getListItems(questionKey)
+  const missing = capacity - current.filter(isListEntryFilled).length
+  if (missing <= 0) {
+    return
+  }
+
+  suggestingListKey.value = questionKey
+  try {
+    await flushAnswers()
+    const suggested = toListEntries(await ordersApi.suggestListItems(store.order.id, questionKey, missing))
+    const next = [...current]
+    for (const entry of suggested) {
+      const blank = next.findIndex((value) => !isListEntryFilled(value))
+      if (blank !== -1) {
+        next[blank] = entry
+      } else if (next.length < capacity) {
+        next.push(entry)
+      }
+    }
+    setListItems(questionKey, next)
+  } catch (err) {
+    submitErrorMessage.value = extractApiErrorMessage(err, 'Не удалось предложить пункты.')
+  } finally {
+    suggestingListKey.value = null
+    void store.refreshAiUsage()
+  }
+}
+
 async function handleRegenerateAiText(journalPageId: string, elementId: string): Promise<void> {
   if (!authStore.isAuthenticated) {
     openAuthModal(AUTH_MESSAGE_REGENERATE, { journalPageId, elementId })

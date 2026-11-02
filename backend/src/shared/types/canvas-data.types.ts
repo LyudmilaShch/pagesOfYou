@@ -39,6 +39,15 @@ export interface CanvasElementBase {
   opacity: number;
   visible: boolean;
   locked: boolean;
+  /** As a list row: the list it belongs to, its place in the reading order, and the list-wide
+   * settings (mirrored on every row; the first row's are authoritative). Lists have no container —
+   * see the frontend's list.model.ts. */
+  listId?: string | null;
+  listOrder?: number;
+  list?: CanvasListSettings | null;
+  /** As a list row: starts a new column — the rows' path doesn't run across the jump from the
+   * previous row. */
+  listColumnBreak?: boolean;
 }
 
 /** Decorative 9-slice frame, copied from the PhotoFrame catalog when selected. */
@@ -212,7 +221,13 @@ export interface CanvasTextPlaceholder extends CanvasElementBase {
   /** Question.key this element auto-fills from (AUTO sync state, future phase). */
   questionKey?: string | null;
   effect: CanvasTextEffect | null;
+  /** Inside a list row: 'item' gets the title of one item of the list's LIST answer, 'detail' its
+   * description, 'number' the row's 1-based position among the filled rows — see the frontend's
+   * list-distribution.util.ts. */
+  listRole?: CanvasListRole | null;
 }
+
+export type CanvasListRole = 'number' | 'item' | 'detail';
 
 export type CanvasLengthConstraintUnit = 'characters' | 'words';
 
@@ -302,6 +317,22 @@ export type CanvasLeafElement =
   | CanvasTextPlaceholder
   | CanvasAiTextPlaceholder
   | CanvasShapeElement;
+
+/** An auto-distributed list's settings (frontend's list.model.ts / list-distribution.util.ts). */
+export interface CanvasListSettings {
+  /** The LIST question whose items fill the rows — mirrored onto every row's 'item' text. */
+  questionKey: string | null;
+  /** Fewest items the customer must fill (0/unset — none); enforced by the questionnaire. */
+  minItems?: number;
+  /** How k filled rows are placed among the template's rows; unset — 'slots'. */
+  mode?: 'slots' | 'path' | 'start' | 'center';
+  /** Admin-picked rows per item count (row ids; older templates: row indices) — overrides `mode`. */
+  slotsByCount?: Record<string, Array<string | number>>;
+  /** "Предложить пункты" in the questionnaire; unset — shown. */
+  suggestEnabled?: boolean;
+  /** The admin's instruction for suggested items; unset/blank — DEFAULT_LIST_SUGGEST_PROMPT. */
+  suggestPrompt?: string;
+}
 
 /** A plain container node — a group is not a separate mechanism, just a node with children. */
 export interface CanvasGroupElement extends CanvasElementBase {

@@ -23,7 +23,7 @@ export class QuestionAnswerInputDto {
   @ApiPropertyOptional({
     type: 'object',
     additionalProperties: true,
-    description: '{ url } for IMAGE questions, { urls } for GALLERY questions',
+    description: '{ url } for IMAGE questions, { urls } for GALLERY questions, { items } for LIST questions',
   })
   @IsOptional()
   @IsObject()

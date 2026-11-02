@@ -24,6 +24,7 @@ export {
   lerpCorrection,
 } from './photo-filter.model'
 export type {
+  ListRole,
   TextAlign,
   TextPlaceholder,
   TextSizingMode,
@@ -78,6 +79,7 @@ export type {
 } from './effect-descriptor.model'
 export { findDescriptor } from './effect-descriptor.model'
 export type { GroupElement } from './group-element.model'
+export type { ListLayoutMode, ListSettings } from './list.model'
 export type { EditorDocument } from './page-template.model'
 export type { CanvasData } from './canvas-data.model'
 export { CANVAS_DATA_VERSION, createEmptyCanvasData, normalizeCanvasData } from './canvas-data.model'
@@ -92,6 +94,7 @@ import type { TextPlaceholder } from './text-placeholder.model'
 import type { AiTextPlaceholder } from './ai-text-placeholder.model'
 import type { TocPlaceholder } from './toc-placeholder.model'
 import type { GroupElement } from './group-element.model'
+import type { ListSettings } from './list.model'
 
 /** Leaf node — everything that isn't a container. */
 export type LeafElement =
@@ -107,6 +110,13 @@ export type PageElement = LeafElement | GroupElement
 
 export function isGroupElement(element: PageElement): element is GroupElement {
   return element.type === 'group'
+}
+
+/** A list row — any element carrying a list's id and settings (see list.model.ts). */
+export function isListRow(
+  element: PageElement,
+): element is PageElement & { listId: string; listOrder: number; list: ListSettings } {
+  return Boolean(element.listId && element.list)
 }
 
 export function isTextElement(

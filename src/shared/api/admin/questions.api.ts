@@ -1,7 +1,7 @@
 import { adminHttp } from '@/features/admin/api/admin-http'
 import type { BackendResponse } from '@/types/api.types'
 
-export type QuestionType = 'TEXT' | 'TEXTAREA' | 'DATE' | 'IMAGE' | 'GALLERY' | 'SELECT'
+export type QuestionType = 'TEXT' | 'TEXTAREA' | 'DATE' | 'IMAGE' | 'GALLERY' | 'SELECT' | 'LIST'
 
 export const QUESTION_TYPE_LABELS: Record<QuestionType, string> = {
   TEXT: 'Короткий текст',
@@ -10,6 +10,7 @@ export const QUESTION_TYPE_LABELS: Record<QuestionType, string> = {
   IMAGE: 'Фотография',
   GALLERY: 'Галерея фотографий',
   SELECT: 'Выбор из списка',
+  LIST: 'Список пунктов',
 }
 
 export interface AdminQuestionOption {
