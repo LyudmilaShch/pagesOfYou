@@ -21,7 +21,7 @@ import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
-import { ClaimGuestPhotosDto, SetFavoriteDto, UploadImageDto } from './dto/gallery.dto';
+import { ClaimGuestPhotosDto, SetFavoriteDto, TouchGuestGalleryDto, UploadImageDto } from './dto/gallery.dto';
 
 @ApiTags('Files')
 @ApiBearerAuth()
@@ -112,6 +112,14 @@ export class FilesController {
     @Query('guestId') guestId?: string,
   ) {
     return this.filesService.deleteFile(id, { userId: user?.sub, guestId });
+  }
+
+  @Public()
+  @Post('guest-gallery/touch')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Refresh a guest gallery so its photos are not purged with abandoned drafts' })
+  touchGuestGallery(@Body() body: TouchGuestGalleryDto) {
+    return this.filesService.touchGuestGallery(body.guestId);
   }
 
   @UseGuards(JwtAuthGuard)
