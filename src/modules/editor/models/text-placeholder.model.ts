@@ -22,6 +22,9 @@ export interface TextPlaceholder extends PageElementBase {
   verticalAlign: TextVerticalAlign
   textTransform: TextTransform
   textSizingMode: TextSizingMode
+  /** Journal editor only: the template font size shrink-to-fit is allowed to grow back to.
+   * Absent until the customer edits the text. The template editor never writes it. */
+  designFontSize?: number
   color: string
   maxLength: number
   required: boolean

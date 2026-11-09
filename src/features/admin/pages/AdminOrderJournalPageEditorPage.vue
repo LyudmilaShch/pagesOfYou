@@ -131,13 +131,14 @@ async function loadCurrentPage(): Promise<void> {
 }
 
 onMounted(async () => {
+  // Same fill behaviour as the customer's journal editor: the frame stays, the font shrinks.
+  store.setTextFitMode('shrink')
+
   // Runs alongside the page fetch below, not blocking it — the font picker fills in reactively
   // once this resolves (mirrors MagazinePageEditorPage.vue).
-  const fontsReady = ensureCustomFontsLoaded()
+  void ensureCustomFontsLoaded()
 
   await loadCurrentPage()
-
-  void fontsReady.then(() => store.recalculateAllTextElementSizes())
 })
 
 // The "Структура" panel switches :journalPageId on this same route instead of navigating to a

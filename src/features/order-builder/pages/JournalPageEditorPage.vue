@@ -373,13 +373,15 @@ async function loadCurrentPage(): Promise<void> {
 }
 
 onMounted(async () => {
+  // Customer's answers stay inside the template frame and the font shrinks to fit.
+  // The template editor leaves this at 'grow' (the box gets taller instead).
+  store.setTextFitMode('shrink')
+
   // Runs alongside the page fetch below, not blocking it — the font picker fills in reactively
   // once this resolves (mirrors MagazinePageEditorPage.vue).
-  const fontsReady = ensureCustomFontsLoaded()
+  void ensureCustomFontsLoaded()
 
   await loadCurrentPage()
-
-  void fontsReady.then(() => store.recalculateAllTextElementSizes())
 })
 
 // The "Структура" panel switches :journalPageId on this same route instead of navigating to a

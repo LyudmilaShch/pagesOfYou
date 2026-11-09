@@ -41,9 +41,12 @@ const magazineTypeId = route.params.magazineTypeId as string
 const pageId = route.params.pageId as string
 
 onMounted(async () => {
+  // Template editor: the box grows downward. The journal editor switches this to 'shrink'.
+  store.setTextFitMode('grow')
+
   // Runs alongside the page fetch below, not blocking it — the font picker fills in reactively
   // once this resolves (see mergedFontOptions).
-  const fontsReady = ensureCustomFontsLoaded()
+  void ensureCustomFontsLoaded()
 
   try {
     await store.fetchAndLoad(
@@ -56,10 +59,6 @@ onMounted(async () => {
       'Не удалось загрузить страницу'
     loadError.value = message
   }
-
-  // Text elements already on the page may have been measured (above) before their custom font
-  // finished registering — fix up their wrap width/height now that it has.
-  void fontsReady.then(() => store.recalculateAllTextElementSizes())
 
   void loadQuestions()
 })

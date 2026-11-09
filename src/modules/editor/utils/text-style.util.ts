@@ -18,7 +18,3 @@ export function resolveKonvaFontStyle(element: TextPlaceholder): string {
 
   return 'normal'
 }
-
-export function buildCanvasFont(element: TextPlaceholder): string {
-  return `${resolveKonvaFontStyle(element)} ${element.fontSize}px ${element.fontFamily}`
-}

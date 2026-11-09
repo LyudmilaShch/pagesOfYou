@@ -32,8 +32,12 @@ import {
   applyTextContentChange,
   resolveTextEditingDraft,
 } from '../../utils/text-layout.util'
+import { measureTextBox } from '../../utils/text-measure.util'
 import { spreadLogicalXToVisual } from '../../utils/spread.util'
-import { findNodeById, getAbsoluteTransform } from '../../utils/element-tree.util'
+import {
+  findNodeById,
+  getAbsoluteTransform,
+} from '../../utils/element-tree.util'
 
 const props = defineProps<{
   pageOffset: { x: number; y: number }
@@ -48,7 +52,9 @@ const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const draft = ref('')
 
 const textEditingElementId = computed(() =>
-  orderCanvas ? orderCanvas.textEditingElementId : editorStore.textEditingElementId,
+  orderCanvas
+    ? orderCanvas.textEditingElementId
+    : editorStore.textEditingElementId,
 )
 
 /** Tree-aware lookup — `store.elements` (the shared editor/order-canvas interface) is root-level
@@ -58,7 +64,9 @@ function findElementById(id: string): TextPlaceholder | null {
     ? store.elements.find((item) => item.id === id)
     : findNodeById(editorStore.elements, id)
 
-  return found && isTextPlaceholderElement(found) ? (found as TextPlaceholder) : null
+  return found && isTextPlaceholderElement(found)
+    ? (found as TextPlaceholder)
+    : null
 }
 
 const element = computed(() => {
@@ -77,7 +85,11 @@ const absoluteBox = computed(() => {
   }
 
   if (orderCanvas) {
-    return { x: element.value.position.x, y: element.value.position.y, rotationDeg: 0 }
+    return {
+      x: element.value.position.x,
+      y: element.value.position.y,
+      rotationDeg: 0,
+    }
   }
 
   return getAbsoluteTransform(editorStore.elements, element.value.id)
@@ -110,6 +122,27 @@ const overlayStyle = computed(() => {
   }
 })
 
+/** Block height in page units, from the same Konva wrap the canvas uses, so the caret and the
+ * glyphs break on the same word. */
+const blockHeight = computed(() => {
+  if (!element.value) {
+    return 0
+  }
+
+  const textEl = element.value
+  const shown =
+    textEl.textTransform === 'uppercase'
+      ? draft.value.toUpperCase()
+      : draft.value
+  const measured = measureTextBox(textEl, shown)
+  const width = textEl.size.width
+  const singleLine = Math.ceil(measured.naturalWidth)
+
+  return singleLine <= width
+    ? measured.naturalHeight
+    : measured.heightAtWidth(width)
+})
+
 const textareaStyle = computed(() => {
   if (!element.value) {
     return undefined
@@ -117,6 +150,12 @@ const textareaStyle = computed(() => {
 
   const scale = props.pageScale
   const textEl = element.value
+  const justify =
+    textEl.verticalAlign === 'bottom'
+      ? 'flex-end'
+      : textEl.verticalAlign === 'middle'
+        ? 'center'
+        : 'flex-start'
 
   return {
     fontFamily: textEl.fontFamily,
@@ -124,10 +163,23 @@ const textareaStyle = computed(() => {
     fontWeight: textEl.fontWeight >= 600 ? 700 : 400,
     fontStyle: textEl.fontItalic ? 'italic' : 'normal',
     lineHeight: String(textEl.lineHeight),
-    letterSpacing: `${textEl.letterSpacing}px`,
+    // Konva's letterSpacing is in the same units as fontSize. The stage is scaled, so both
+    // have to be scaled or the overlay wraps earlier/later than the canvas.
+    letterSpacing: `${textEl.letterSpacing * scale}px`,
     textAlign: textEl.textAlign,
     color: textEl.color,
     textTransform: textEl.textTransform === 'uppercase' ? 'uppercase' : 'none',
+    height: `${Math.max(blockHeight.value, textEl.fontSize * textEl.lineHeight) * scale}px`,
+    alignSelf:
+      justify === 'flex-end'
+        ? 'flex-end'
+        : justify === 'center'
+          ? 'center'
+          : 'flex-start',
+    marginTop:
+      justify === 'flex-end' ? 'auto' : justify === 'center' ? 'auto' : '0',
+    marginBottom:
+      justify === 'flex-end' ? '0' : justify === 'center' ? 'auto' : '0',
   }
 })
 
@@ -162,7 +214,11 @@ function handleInput(event: Event): void {
 
   const value = (event.target as HTMLTextAreaElement).value
   draft.value = value
-  applyTextContentChange(store.updateElement.bind(store), element.value.id, value)
+  applyTextContentChange(
+    store.updateElement.bind(store),
+    element.value.id,
+    value,
+  )
 }
 
 function handleBlur(): void {
@@ -182,6 +238,8 @@ function handleKeydown(event: KeyboardEvent): void {
   position: absolute;
   z-index: 3;
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
   border: 1px solid $text-primary;
   background: transparent;
   pointer-events: auto;
@@ -189,7 +247,6 @@ function handleKeydown(event: KeyboardEvent): void {
 
 .editor-text-edit__input {
   width: 100%;
-  height: 100%;
   margin: 0;
   padding: 0;
   border: none;
@@ -197,5 +254,9 @@ function handleKeydown(event: KeyboardEvent): void {
   resize: none;
   background: transparent;
   overflow: hidden;
+  // Konva wrap:'word' breaks on spaces and keeps long words intact.
+  white-space: pre-wrap;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 </style>

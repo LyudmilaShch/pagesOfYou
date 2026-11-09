@@ -1578,10 +1578,6 @@ function handleDragEnd(event: Konva.KonvaEventObject<DragEvent>): void {
   store.updateElement(props.element.id, {
     position: nextPosition,
   })
-
-  if (isTextPlaceholderElement(props.element)) {
-    store.recalculateTextElementSize(props.element.id)
-  }
 }
 
 function bakeBoxTransformFromNode(
@@ -1659,10 +1655,8 @@ function applyTextTransformFromNode(
   if (renderedText) {
     // The store commit below would normally push the new wrap width to this node reactively (via
     // textConfig), but that only lands on Vue's next flush — reading .height() now would still
-    // reflect last tick's wrap, one tick stale, which is exactly what let the frame cut into
-    // fast-moving text. Setting .width() imperatively triggers Konva's own synchronous re-wrap
-    // (Text listens for widthChange) immediately, so the height read right after already matches
-    // what we're about to commit below. The later reactive write is then a no-op.
+    // reflect last tick's wrap. Setting .width() reflows Konva synchronously. The node has no
+    // fixed height, so .height() is the wrapped block, not a frame.
     renderedText.width(Math.max(1, newWidth - TEXT_BOX_PADDING * 2))
   }
   const newHeight = renderedText
@@ -1815,6 +1809,10 @@ function handleTransformEnd(event: Konva.KonvaEventObject<Event>): void {
               },
         { skipTextLayoutRecalc: true },
       )
+      // Journal fill keeps the width the handle just set and only changes the font.
+      if (editorStore.textFitMode === 'shrink' && isResizing && !isTextRotation) {
+        editorStore.refitTextFontToFrame(props.element.id)
+      }
     } else {
       store.updateElement(props.element.id, {
         position: topLeft,

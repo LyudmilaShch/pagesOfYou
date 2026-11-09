@@ -2,8 +2,14 @@ import type { PageElement } from '../models'
 import type { TextPlaceholder } from '../models/text-placeholder.model'
 import type { ElementPatch } from '../store/editor.store'
 import { isTextPlaceholderType } from './normalize-text-placeholder.util'
-import { computeTextBoxLayout, type TextLayoutResult } from './text-auto-size.util'
+import {
+  computeTextBoxLayout,
+  type TextLayoutResult,
+} from './text-auto-size.util'
 
+/** Fields that change how the glyphs wrap. `verticalAlign` is not here: it only moves lines
+ * inside the existing frame. `size` is not here either — width and height are applied by the
+ * caller, so a height edit cannot loop back into a measurement that moves the box. */
 export const TEXT_LAYOUT_PATCH_KEYS = new Set([
   'defaultText',
   'fontFamily',
@@ -13,13 +19,14 @@ export const TEXT_LAYOUT_PATCH_KEYS = new Set([
   'lineHeight',
   'letterSpacing',
   'textAlign',
-  'verticalAlign',
   'textTransform',
   'textSizingMode',
-  'size',
 ])
 
-export function shouldRecalculateTextLayout(patch: ElementPatch, element: PageElement): boolean {
+export function shouldRecalculateTextLayout(
+  patch: ElementPatch,
+  element: PageElement,
+): boolean {
   if (!isTextPlaceholderType(element.type)) {
     return false
   }
@@ -31,17 +38,17 @@ export interface RecalculateTextLayoutInput {
   element: TextPlaceholder
   displayText?: string | null
   pageWidth: number
-  pageHeight: number
-  adjustAnchor?: boolean
+  fit?: 'hug' | 'grow'
 }
 
-export function recalculateTextLayout(input: RecalculateTextLayoutInput): TextLayoutResult {
+export function recalculateTextLayout(
+  input: RecalculateTextLayoutInput,
+): TextLayoutResult {
   return computeTextBoxLayout({
     element: input.element,
     displayText: input.displayText,
     pageWidth: input.pageWidth,
-    pageHeight: input.pageHeight,
-    adjustAnchor: input.adjustAnchor ?? false,
+    fit: input.fit ?? 'grow',
   })
 }
 

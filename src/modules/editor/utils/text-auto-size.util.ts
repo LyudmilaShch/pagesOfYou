@@ -1,33 +1,28 @@
 import {
   MIN_TEXT_BOX_HEIGHT,
   MIN_TEXT_BOX_WIDTH,
-  TEXT_BOX_PADDING,
 } from '../constants/text.constants'
 import type { Position, Size } from '../models/geometry.model'
-import type { PageElement } from '../models'
 import type { TextPlaceholder } from '../models/text-placeholder.model'
-import {
-  resolveTextContent,
-} from '../adapters/konva/element-node.adapter'
-import { isTextPlaceholderType } from './normalize-text-placeholder.util'
-import {
-  measureKonvaText,
-  measureTextLineWidthWithBuffer,
-} from './text-measure.util'
+import { resolveTextContent } from '../adapters/konva/element-node.adapter'
+import type { TextMeasureSnapshot } from './text-measure.util'
+import { measureTextBox } from './text-measure.util'
 
 export interface TextLayoutInput {
   element: TextPlaceholder
   displayText?: string | null
   pageWidth: number
-  pageHeight: number
-  adjustAnchor?: boolean
+  /** 'hug' replaces the box with the measured text (a newly created element).
+   * 'grow' never shrinks the saved box: width only grows, up to the page edge, and height only
+   * grows downward. That is what keeps typing from breathing or snapping the frame. */
+  fit?: 'hug' | 'grow'
 }
 
 export interface TextLayoutResult {
   size: Size
-  position?: Partial<Position>
 }
 
+/** How wide a text may become before it wraps: from its left edge to the right edge of the page. */
 export function getTextMaxWidth(
   anchorX: number,
   pageWidth: number,
@@ -36,130 +31,120 @@ export function getTextMaxWidth(
   return Math.max(MIN_TEXT_BOX_WIDTH, pageWidth - anchorX)
 }
 
-function getAvailableWidth(
-  element: TextPlaceholder,
-  pageWidth: number,
-  pageHeight: number,
-): number {
-  return getTextMaxWidth(element.position.x, pageWidth, pageHeight)
+export interface LayoutTextBoxInput {
+  mode: TextPlaceholder['textSizingMode']
+  fit: 'hug' | 'grow'
+  current: Size
+  anchorX: number
+  pageWidth: number
+  measure: TextMeasureSnapshot
 }
 
-function adjustPositionForSizeChange(
-  element: TextPlaceholder,
-  oldSize: Size,
-  newSize: Size,
-): Partial<Position> | undefined {
-  const patch: Partial<Position> = {}
+/**
+ * The box around a text, from a single measurement.
+ * Auto width grows with the line until the page edge, then the width stays at that edge and the
+ * text wraps. It does not shrink back when characters are deleted — shrinking is what made the
+ * frame breathe and snap between "one long line" and "full page width".
+ * Fixed width (the user dragged a side handle or typed W) never changes here.
+ * Height follows the wrapped block and, in 'grow', never gets shorter than the box already saved.
+ * Position is not this function's job: the top-left stays put (see `positionForTopLeftAnchor`).
+ */
+export function layoutTextBox(input: LayoutTextBoxInput): Size {
+  const available = getTextMaxWidth(input.anchorX, input.pageWidth)
+  const singleLineWidth = Math.max(
+    MIN_TEXT_BOX_WIDTH,
+    Math.ceil(input.measure.naturalWidth),
+  )
 
-  if (newSize.width !== oldSize.width && element.textSizingMode === 'auto') {
-    const deltaWidth = newSize.width - oldSize.width
-
-    if (element.textAlign === 'center') {
-      patch.x = element.position.x - deltaWidth / 2
-    } else if (element.textAlign === 'right') {
-      patch.x = element.position.x - deltaWidth
-    }
+  let width: number
+  if (input.mode === 'fixed') {
+    width = Math.max(MIN_TEXT_BOX_WIDTH, input.current.width)
+  } else if (input.fit === 'hug') {
+    width = Math.min(singleLineWidth, available)
+  } else {
+    const grown = Math.max(
+      input.current.width,
+      Math.min(singleLineWidth, available),
+    )
+    width = singleLineWidth > available ? available : grown
   }
 
-  if (newSize.height !== oldSize.height) {
-    const deltaHeight = newSize.height - oldSize.height
+  width = Math.round(width)
 
-    if (element.verticalAlign === 'middle') {
-      patch.y = element.position.y - deltaHeight / 2
-    } else if (element.verticalAlign === 'bottom') {
-      patch.y = element.position.y - deltaHeight
-    }
-  }
+  const contentHeight = Math.max(
+    MIN_TEXT_BOX_HEIGHT,
+    Math.ceil(
+      singleLineWidth <= width
+        ? input.measure.naturalHeight
+        : input.measure.heightAtWidth(width),
+    ),
+  )
 
-  return Object.keys(patch).length > 0 ? patch : undefined
+  const height =
+    input.fit === 'hug'
+      ? contentHeight
+      : Math.max(Math.round(input.current.height), contentHeight)
+
+  return { width, height: Math.round(height) }
 }
 
 export function computeTextBoxLayout(input: TextLayoutInput): TextLayoutResult {
-  const { element, pageWidth, adjustAnchor = false } = input
-  const text = resolveTextContent(element, input.displayText)
-  const padding = TEXT_BOX_PADDING * 2
-  const availableWidth = getAvailableWidth(element, pageWidth, input.pageHeight)
-  const oldSize = { ...element.size }
-
-  if (element.textSizingMode === 'fixed') {
-    // Fixed mode: the box WIDTH is user-set and must never change here — only height (from
-    // re-wrapping) does. `wrapWidth` is the CONTENT area (box width minus padding), matching what
-    // getTextConfig actually feeds Konva.Text as its wrap width; measuring against the full box
-    // width instead (as this used to) made lines wrap slightly wider than they're actually
-    // rendered. The previous version also fed that box-sized `wrapWidth` back through the shared
-    // `ceil(contentWidth + padding + 2)` formula below — meant for converting a *content*
-    // measurement into a box size — which re-added padding on every recalculation, growing the box
-    // by ~10 units each time it was called (e.g. on every element move, since drag-end
-    // unconditionally recalculates text size).
-    const boxWidth = Math.max(MIN_TEXT_BOX_WIDTH, Math.min(element.size.width, availableWidth))
-    const wrapWidth = Math.max(1, boxWidth - padding)
-    const measured = measureKonvaText({
-      text,
-      element,
-      maxWidth: wrapWidth,
-    })
-
-    return {
-      size: {
-        width: boxWidth,
-        height: Math.max(MIN_TEXT_BOX_HEIGHT, Math.ceil(measured.textHeight + padding + 2)),
-      },
-    }
-  }
-
-  let contentWidth: number
-  let contentHeight: number
-
-  const singleLineWidth = measureTextLineWidthWithBuffer(text, element)
-  const maxContentWidth = Math.max(MIN_TEXT_BOX_WIDTH, availableWidth - padding)
-
-  if (singleLineWidth <= maxContentWidth) {
-    contentWidth = singleLineWidth
-    contentHeight = measureKonvaText({ text, element }).textHeight
-  } else {
-    contentWidth = maxContentWidth
-    const wrapped = measureKonvaText({
-      text,
-      element,
-      maxWidth: contentWidth,
-    })
-    contentHeight = wrapped.textHeight
-  }
-
-  const size: Size = {
-    width: Math.max(MIN_TEXT_BOX_WIDTH, Math.ceil(contentWidth + padding + 2)),
-    height: Math.max(MIN_TEXT_BOX_HEIGHT, Math.ceil(contentHeight + padding + 2)),
-  }
-
-  if (!adjustAnchor) {
-    return { size }
-  }
-
-  const position = adjustPositionForSizeChange(element, oldSize, size)
-
-  return { size, position }
-}
-
-export function applyTextLayoutToElement(
-  element: PageElement,
-  displayText: string | null | undefined,
-  pageWidth: number,
-  pageHeight: number,
-): PageElement {
-  if (!isTextPlaceholderType(element.type)) {
-    return element
-  }
-
-  const layout = computeTextBoxLayout({
-    element: element as TextPlaceholder,
-    displayText,
-    pageWidth,
-    pageHeight,
-    adjustAnchor: false,
-  })
+  const text = resolveTextContent(input.element, input.displayText)
+  const fit = input.fit ?? 'grow'
 
   return {
-    ...element,
-    size: layout.size,
+    size: layoutTextBox({
+      mode: input.element.textSizingMode,
+      fit,
+      current: input.element.size,
+      anchorX: input.element.position.x,
+      pageWidth: input.pageWidth,
+      measure: measureTextBox(input.element, text),
+    }),
+  }
+}
+
+/**
+ * Keeps the element's local top-left corner on the same page point when the box size changes.
+ * Rotation is around the box center, so a taller box would swing that corner unless the stored
+ * top-left shifts by the same amount. With no rotation the shift is zero — x/y stay as they are.
+ */
+export function positionForTopLeftAnchor(
+  position: Position,
+  oldSize: Size,
+  newSize: Size,
+  rotationDeg: number,
+): Position {
+  if (
+    !rotationDeg ||
+    (oldSize.width === newSize.width && oldSize.height === newSize.height)
+  ) {
+    return position
+  }
+
+  const rad = (rotationDeg * Math.PI) / 180
+  const cos = Math.cos(rad)
+  const sin = Math.sin(rad)
+  const rotate = (x: number, y: number) => ({
+    x: x * cos - y * sin,
+    y: x * sin + y * cos,
+  })
+
+  const oldOffset = rotate(-oldSize.width / 2, -oldSize.height / 2)
+  const newOffset = rotate(-newSize.width / 2, -newSize.height / 2)
+
+  return {
+    x: Math.round(
+      position.x +
+        (oldSize.width - newSize.width) / 2 +
+        oldOffset.x -
+        newOffset.x,
+    ),
+    y: Math.round(
+      position.y +
+        (oldSize.height - newSize.height) / 2 +
+        oldOffset.y -
+        newOffset.y,
+    ),
   }
 }
