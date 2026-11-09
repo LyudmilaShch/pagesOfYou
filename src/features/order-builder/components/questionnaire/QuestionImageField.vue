@@ -31,6 +31,7 @@
     </div>
     <div class="question-image-field__hint">
       <PhotoUploadFormatsHint />
+      <PhotoUploadErrorList :messages="uploadErrors" />
     </div>
 
     <PhotoGalleryPickerDialog
@@ -47,9 +48,11 @@ import { ref } from 'vue'
 
 import { getImageDimensions } from '@/shared/utils/image-dimensions.util'
 import { PHOTO_FILE_ACCEPT } from '@/shared/constants/photo-upload.constants'
+import { runPhotoUploads } from '@/shared/utils/photo-upload-error.util'
 import { photoGalleryApi, type PhotoGalleryScope } from '../../api/photo-gallery.api'
 import PhotoGalleryPickerDialog from '../PhotoGalleryPickerDialog.vue'
 import PhotoUploadFormatsHint from '../PhotoUploadFormatsHint.vue'
+import PhotoUploadErrorList from '../PhotoUploadErrorList.vue'
 
 const props = defineProps<{
   modelValue: string | null
@@ -62,6 +65,7 @@ const emit = defineEmits<{
 
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const uploading = ref(false)
+const uploadErrors = ref<string[]>([])
 const pickerOpen = ref(false)
 
 async function handleFileSelected(event: Event): Promise<void> {
@@ -74,10 +78,13 @@ async function handleFileSelected(event: Event): Promise<void> {
   }
 
   uploading.value = true
+  uploadErrors.value = []
   try {
-    const dimensions = await getImageDimensions(file).catch(() => undefined)
-    const uploaded = await photoGalleryApi.upload(props.scope, file, dimensions)
-    emit('update:modelValue', uploaded.url)
+    uploadErrors.value = await runPhotoUploads([file], async (selected) => {
+      const dimensions = await getImageDimensions(selected).catch(() => undefined)
+      const uploaded = await photoGalleryApi.upload(props.scope, selected, dimensions)
+      emit('update:modelValue', uploaded.url)
+    })
   } finally {
     uploading.value = false
   }

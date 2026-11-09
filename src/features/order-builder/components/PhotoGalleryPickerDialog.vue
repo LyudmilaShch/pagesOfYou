@@ -42,6 +42,7 @@
         </div>
 
         <PhotoUploadFormatsHint />
+        <PhotoUploadErrorList :messages="uploadErrors" />
         <input
           ref="fileInputRef"
           type="file"
@@ -60,8 +61,10 @@ import { ref, watch } from 'vue'
 
 import { getImageDimensions } from '@/shared/utils/image-dimensions.util'
 import { PHOTO_FILE_ACCEPT } from '@/shared/constants/photo-upload.constants'
+import { runPhotoUploads } from '@/shared/utils/photo-upload-error.util'
 import { photoGalleryApi, type GalleryPhoto, type PhotoGalleryScope } from '../api/photo-gallery.api'
 import PhotoUploadFormatsHint from './PhotoUploadFormatsHint.vue'
+import PhotoUploadErrorList from './PhotoUploadErrorList.vue'
 
 const props = defineProps<{
   open: boolean
@@ -77,6 +80,7 @@ const photos = ref<GalleryPhoto[]>([])
 const loading = ref(false)
 const uploading = ref(false)
 const fileInputRef = ref<HTMLInputElement | null>(null)
+const uploadErrors = ref<string[]>([])
 
 async function loadPhotos(): Promise<void> {
   loading.value = true
@@ -116,16 +120,13 @@ async function handleFilesSelected(event: Event): Promise<void> {
   }
 
   uploading.value = true
+  uploadErrors.value = []
   try {
-    for (const file of files) {
-      try {
-        const dimensions = await getImageDimensions(file).catch(() => undefined)
-        const uploaded = await photoGalleryApi.upload(props.scope, file, dimensions)
-        photos.value = [uploaded, ...photos.value]
-      } catch {
-        // Best-effort per file — a failed upload just doesn't get added.
-      }
-    }
+    uploadErrors.value = await runPhotoUploads(files, async (file) => {
+      const dimensions = await getImageDimensions(file).catch(() => undefined)
+      const uploaded = await photoGalleryApi.upload(props.scope, file, dimensions)
+      photos.value = [uploaded, ...photos.value]
+    })
   } finally {
     uploading.value = false
   }

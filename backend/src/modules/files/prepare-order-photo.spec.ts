@@ -2,11 +2,8 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { BadRequestException } from '@nestjs/common';
 import type SharpType from 'sharp';
-import {
-  HEIC_CONVERT_FAILED_MESSAGE,
-  isAllowedOrderPhoto,
-  prepareOrderPhoto,
-} from './prepare-order-photo';
+import { orderPhotoHeicFailedMessage } from './photo-upload-error';
+import { isAllowedOrderPhoto, prepareOrderPhoto } from './prepare-order-photo';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const sharp: typeof SharpType = require('sharp');
@@ -147,6 +144,6 @@ describe('prepareOrderPhoto', () => {
       prepareOrderPhoto(
         asUpload(Buffer.from('not a photo'), { mimetype: 'image/heif', originalname: 'bad.heif' }),
       ),
-    ).rejects.toThrow(HEIC_CONVERT_FAILED_MESSAGE);
+    ).rejects.toThrow(orderPhotoHeicFailedMessage('bad.heif'));
   });
 });

@@ -23,6 +23,7 @@
       </span>
     </div>
     <PhotoUploadFormatsHint />
+    <PhotoUploadErrorList :messages="uploadErrors" />
 
     <div v-if="loading" class="question-gallery-field__state">
       <v-progress-circular indeterminate color="primary" size="24" />
@@ -55,8 +56,10 @@ import { onMounted, ref } from 'vue'
 
 import { getImageDimensions } from '@/shared/utils/image-dimensions.util'
 import { PHOTO_FILE_ACCEPT } from '@/shared/constants/photo-upload.constants'
+import { runPhotoUploads } from '@/shared/utils/photo-upload-error.util'
 import { photoGalleryApi, type GalleryPhoto, type PhotoGalleryScope } from '../../api/photo-gallery.api'
 import PhotoUploadFormatsHint from '../PhotoUploadFormatsHint.vue'
+import PhotoUploadErrorList from '../PhotoUploadErrorList.vue'
 
 const props = defineProps<{
   modelValue: string[]
@@ -70,6 +73,7 @@ const emit = defineEmits<{
 const photos = ref<GalleryPhoto[]>([])
 const loading = ref(false)
 const uploading = ref(false)
+const uploadErrors = ref<string[]>([])
 const fileInputRef = ref<HTMLInputElement | null>(null)
 
 function selectedIndex(url: string): number {
@@ -108,17 +112,14 @@ async function handleFilesSelected(event: Event): Promise<void> {
   }
 
   uploading.value = true
+  uploadErrors.value = []
   try {
-    for (const file of files) {
-      try {
-        const dimensions = await getImageDimensions(file).catch(() => undefined)
-        const uploaded = await photoGalleryApi.upload(props.scope, file, dimensions)
-        photos.value = [uploaded, ...photos.value]
-        emit('update:modelValue', [...props.modelValue, uploaded.url])
-      } catch {
-        // Best-effort per file — a failed upload just doesn't get added or selected.
-      }
-    }
+    uploadErrors.value = await runPhotoUploads(files, async (file) => {
+      const dimensions = await getImageDimensions(file).catch(() => undefined)
+      const uploaded = await photoGalleryApi.upload(props.scope, file, dimensions)
+      photos.value = [uploaded, ...photos.value]
+      emit('update:modelValue', [...props.modelValue, uploaded.url])
+    })
   } finally {
     uploading.value = false
   }

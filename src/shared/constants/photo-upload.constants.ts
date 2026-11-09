@@ -1,6 +1,5 @@
 import {
   formatMaxImageUploadSizeLabel,
-  getMaxImageUploadSizeErrorMessage,
   MAX_IMAGE_UPLOAD_SIZE_BYTES,
 } from '@/shared/constants/upload.constants'
 
@@ -44,8 +43,12 @@ export function getPhotoUploadHint(): string {
   return `Поддерживаемые форматы: ${PHOTO_UPLOAD_FORMATS_LABEL}. До ${formatMaxImageUploadSizeLabel()}. Загружайте фото в максимальном качестве.`
 }
 
-export function getUnsupportedPhotoFormatMessage(): string {
-  return `Неподдерживаемый формат. Разрешены: ${PHOTO_UPLOAD_FORMATS_LABEL}.`
+export function fileTooLargeMessage(fileName: string): string {
+  return `Файл «${fileName}» больше ${formatMaxImageUploadSizeLabel()}`
+}
+
+export function unsupportedPhotoFormatMessage(fileName: string): string {
+  return `Файл «${fileName}»: формат не поддерживается`
 }
 
 function photoFileExtension(name: string): string {
@@ -71,17 +74,17 @@ export function isSupportedPhotoFile(file: {
   return mime === '' || mime === 'application/octet-stream'
 }
 
-/** `null` when the file can be uploaded. The message is already in Russian. */
+/** `null` when the file can be uploaded. The message names the file and the reason. */
 export function validatePhotoFile(file: {
   name: string
   type: string
   size: number
 }): string | null {
   if (!isSupportedPhotoFile(file)) {
-    return getUnsupportedPhotoFormatMessage()
+    return unsupportedPhotoFormatMessage(file.name)
   }
   if (file.size > MAX_IMAGE_UPLOAD_SIZE_BYTES) {
-    return getMaxImageUploadSizeErrorMessage()
+    return fileTooLargeMessage(file.name)
   }
   return null
 }

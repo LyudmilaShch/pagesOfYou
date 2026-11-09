@@ -29,6 +29,7 @@
         Загружено {{ uploadedCount }} из {{ uploadTotal }}
       </p>
       <PhotoUploadFormatsHint />
+      <PhotoUploadErrorList :messages="uploadErrors" />
 
       <v-btn
         block
@@ -91,13 +92,14 @@ import { useRoute } from 'vue-router'
 import { useEditorStore } from '@/modules/editor/store/editor.store'
 import { getImageDimensions } from '@/shared/utils/image-dimensions.util'
 import { PHOTO_FILE_ACCEPT } from '@/shared/constants/photo-upload.constants'
-import { getUploadErrorMessage } from '@/shared/utils/api-error.util'
+import { runPhotoUploads } from '@/shared/utils/photo-upload-error.util'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
 import { photoGalleryApi, type GalleryPhoto } from '../api/photo-gallery.api'
 import { ordersApi } from '../api/orders.api'
 import { getGalleryScope } from '../utils/photo-gallery-scope.util'
 import { applyAutoFillToJournalPages } from '../utils/auto-fill-photos.util'
 import PhotoUploadFormatsHint from './PhotoUploadFormatsHint.vue'
+import PhotoUploadErrorList from './PhotoUploadErrorList.vue'
 
 const route = useRoute()
 const store = useOrderBuilderStore()
@@ -112,6 +114,7 @@ const uploadedCount = ref(0)
 const uploadTotal = ref(0)
 const autoFilling = ref(false)
 const fileInputRef = ref<HTMLInputElement | null>(null)
+const uploadErrors = ref<string[]>([])
 
 const snackbar = reactive({
   show: false,
@@ -148,31 +151,20 @@ async function handleFilesSelected(event: Event): Promise<void> {
   uploading.value = true
   uploadTotal.value = files.length
   uploadedCount.value = 0
-  let failedCount = 0
-  let failureMessage = ''
+  uploadErrors.value = []
 
   try {
-    for (const file of files) {
+    uploadErrors.value = await runPhotoUploads(files, async (file) => {
       try {
         const dimensions = await getImageDimensions(file).catch(() => undefined)
         const uploaded = await photoGalleryApi.upload(scope.value, file, dimensions)
         photos.value = [uploaded, ...photos.value]
-      } catch (err: unknown) {
-        failedCount += 1
-        failureMessage = getUploadErrorMessage(err)
       } finally {
         uploadedCount.value += 1
       }
-    }
+    })
   } finally {
     uploading.value = false
-  }
-
-  if (failedCount > 0) {
-    snackbar.text =
-      failedCount === 1 ? failureMessage : `Не удалось загрузить ${failedCount} из ${files.length} фото`
-    snackbar.color = 'error'
-    snackbar.show = true
   }
 }
 

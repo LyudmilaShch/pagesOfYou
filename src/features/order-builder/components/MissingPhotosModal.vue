@@ -61,7 +61,7 @@
           </div>
 
           <PhotoUploadFormatsHint />
-          <p v-if="uploadError" class="missing-photos__upload-error" role="alert">{{ uploadError }}</p>
+          <PhotoUploadErrorList :messages="uploadErrors" />
 
           <div class="missing-photos__stats">
             <span class="missing-photos__stats-count">Загружено {{ photos.length }} фото</span>
@@ -182,8 +182,8 @@ import { normalizeCanvasData } from '@/modules/editor/models/canvas-data.model'
 import { isPhotoElement } from '@/modules/editor/models'
 import { flattenTree } from '@/modules/editor/utils/element-tree.util'
 import { getImageDimensions } from '@/shared/utils/image-dimensions.util'
-import { PHOTO_FILE_ACCEPT, validatePhotoFile } from '@/shared/constants/photo-upload.constants'
-import { getUploadErrorMessage } from '@/shared/utils/api-error.util'
+import { PHOTO_FILE_ACCEPT } from '@/shared/constants/photo-upload.constants'
+import { runPhotoUploads } from '@/shared/utils/photo-upload-error.util'
 import { photoGalleryApi, type GalleryPhoto } from '../api/photo-gallery.api'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
 import { getGalleryScope } from '../utils/photo-gallery-scope.util'
@@ -192,6 +192,7 @@ import { materializeCanvasData } from '../utils/merge-placeholder-element.util'
 import { collectPhotoSlotPreview, countEmptyPhotoSlots } from '../utils/missing-photos.util'
 import QuestionnaireBook from './questionnaire/QuestionnaireBook.vue'
 import PhotoUploadFormatsHint from './PhotoUploadFormatsHint.vue'
+import PhotoUploadErrorList from './PhotoUploadErrorList.vue'
 import PhotoGalleryPickerDialog from './PhotoGalleryPickerDialog.vue'
 
 // Same reasoning as PhotoUploadPage.vue's own stable-empty-instances comment — QuestionnaireBook's
@@ -213,7 +214,7 @@ const galleryScope = computed(() => getGalleryScope(store))
 
 const photos = ref<GalleryPhoto[]>([])
 const uploading = ref(false)
-const uploadError = ref<string | null>(null)
+const uploadErrors = ref<string[]>([])
 const isDragActive = ref(false)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const manualPlacementMode = ref(false)
@@ -414,38 +415,17 @@ async function uploadFiles(files: File[]): Promise<void> {
     return
   }
 
-  const problems: string[] = []
-  const accepted: File[] = []
-  for (const file of files) {
-    const problem = validatePhotoFile(file)
-    if (problem) {
-      problems.push(problem)
-    } else {
-      accepted.push(file)
-    }
-  }
-
-  if (accepted.length === 0) {
-    uploadError.value = problems[0] ?? null
-    return
-  }
-
   uploading.value = true
-  uploadError.value = null
+  uploadErrors.value = []
   try {
-    for (const file of accepted) {
-      try {
-        const dimensions = await getImageDimensions(file).catch(() => undefined)
-        const uploaded = await photoGalleryApi.upload(galleryScope.value, file, dimensions)
-        photos.value = [uploaded, ...photos.value]
-        await autoPlacePhoto(uploaded.url)
-      } catch (err: unknown) {
-        problems.push(getUploadErrorMessage(err))
-      }
-    }
+    uploadErrors.value = await runPhotoUploads(files, async (file) => {
+      const dimensions = await getImageDimensions(file).catch(() => undefined)
+      const uploaded = await photoGalleryApi.upload(galleryScope.value, file, dimensions)
+      photos.value = [uploaded, ...photos.value]
+      await autoPlacePhoto(uploaded.url)
+    })
   } finally {
     uploading.value = false
-    uploadError.value = problems[0] ?? null
   }
 }
 
@@ -628,14 +608,6 @@ onBeforeUnmount(() => {
   margin: 0;
   font-size: $font-size-caption;
   color: $text-secondary;
-}
-
-.missing-photos__upload-error {
-  margin: $spacing-2 0 0;
-  font-size: $font-size-caption;
-  line-height: 1.4;
-  color: #c62828;
-  text-align: center;
 }
 
 .missing-photos__stats {

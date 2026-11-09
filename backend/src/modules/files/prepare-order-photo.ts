@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { extname } from 'path';
 import type SharpType from 'sharp';
+import { orderPhotoHeicFailedMessage, orderPhotoHeicTooLargeMessage } from './photo-upload-error';
 
 // Same require() pattern as pdf-export.service.ts — sharp's CJS build has no `.default`.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -18,17 +19,6 @@ const sharp: typeof SharpType = require('sharp');
 const decodeHeic = require('heic-decode') as (input: {
   buffer: Buffer;
 }) => Promise<{ width: number; height: number; data: Uint8ClampedArray }>;
-
-/** Labels shown to customers. JPG and JPEG are both accepted extensions of image/jpeg. */
-export const ORDER_PHOTO_FORMATS_LABEL = 'JPG, JPEG, PNG, WebP, HEIC, HEIF';
-
-export const UNSUPPORTED_ORDER_PHOTO_MESSAGE = `Неподдерживаемый формат. Разрешены: ${ORDER_PHOTO_FORMATS_LABEL}.`;
-
-export const HEIC_CONVERT_FAILED_MESSAGE =
-  'Не удалось прочитать фото HEIC/HEIF. Сохраните его как JPEG максимального качества и загрузите снова.';
-
-export const HEIC_TOO_LARGE_MESSAGE =
-  'Фото слишком большое по разрешению. Загрузите JPEG в максимальном качестве.';
 
 /** Matches pdf-export.service.ts `toCmykJpeg` — the stored master should not be softer than the print file. */
 const ORDER_PHOTO_JPEG_QUALITY = 95;
@@ -141,14 +131,17 @@ async function sniffBrowserImage(
   }
 }
 
-async function convertHeifToJpeg(buffer: Buffer): Promise<PreparedOrderPhoto> {
+async function convertHeifToJpeg(
+  buffer: Buffer,
+  originalName?: string,
+): Promise<PreparedOrderPhoto> {
   const decoded = await decodeHeic({ buffer });
   const pixels = decoded.width * decoded.height;
   if (!decoded.width || !decoded.height || decoded.data.length !== pixels * 4) {
     throw new Error('HEIC decode returned an unexpected pixel buffer');
   }
   if (pixels > MAX_HEIC_PIXELS) {
-    throw new BadRequestException(HEIC_TOO_LARGE_MESSAGE);
+    throw new BadRequestException(orderPhotoHeicTooLargeMessage(originalName));
   }
 
   // display() in libheif already applies irot/imir, so the JPEG must not be rotated again.
@@ -181,7 +174,7 @@ export async function prepareOrderPhoto(file: Express.Multer.File): Promise<Prep
   }
 
   try {
-    return await convertHeifToJpeg(file.buffer);
+    return await convertHeifToJpeg(file.buffer, file.originalname);
   } catch (error) {
     if (error instanceof BadRequestException) {
       throw error;
@@ -198,6 +191,6 @@ export async function prepareOrderPhoto(file: Express.Multer.File): Promise<Prep
         convertedFromHeic: false,
       };
     }
-    throw new BadRequestException(HEIC_CONVERT_FAILED_MESSAGE);
+    throw new BadRequestException(orderPhotoHeicFailedMessage(file.originalname));
   }
 }
