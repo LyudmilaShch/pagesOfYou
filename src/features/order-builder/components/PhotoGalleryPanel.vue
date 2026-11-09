@@ -54,7 +54,18 @@
 
     <div v-else class="photo-gallery__grid">
       <div v-for="photo in photos" :key="photo.id" class="photo-gallery__item">
-        <img :src="photo.url" :alt="photo.originalName ?? ''" class="photo-gallery__thumb" />
+        <img
+          :src="photo.url"
+          :alt="photo.originalName ?? ''"
+          class="photo-gallery__thumb"
+          @load="onImageLoad(photo.id, $event)"
+        />
+        <span v-if="uploadWarningLevel(photo)" class="photo-gallery__resolution">
+          <PrintResolutionBadge
+            :level="uploadWarningLevel(photo)!"
+            :message="uploadResolutionMessage(uploadWarningLevel(photo)!)"
+          />
+        </span>
 
         <button
           type="button"
@@ -94,9 +105,13 @@ import { photoGalleryApi, type GalleryPhoto } from '../api/photo-gallery.api'
 import { ordersApi } from '../api/orders.api'
 import { getGalleryScope } from '../utils/photo-gallery-scope.util'
 import { applyAutoFillToJournalPages } from '../utils/auto-fill-photos.util'
+import PrintResolutionBadge from '@/modules/editor/components/PrintResolutionBadge.vue'
+import { useUploadResolutionWarning } from '@/modules/editor/composables/use-upload-resolution-warning'
+import { uploadResolutionMessage } from '@/modules/editor/utils/print-resolution.util'
 
 const route = useRoute()
 const store = useOrderBuilderStore()
+const { onImageLoad, uploadWarningLevel } = useUploadResolutionWarning()
 const editorStore = useEditorStore()
 
 const scope = computed(() => getGalleryScope(store))
@@ -380,6 +395,13 @@ onMounted(loadPhotos)
   height: 100%;
   object-fit: cover;
   display: block;
+}
+
+.photo-gallery__resolution {
+  position: absolute;
+  left: $spacing-1;
+  bottom: $spacing-1;
+  z-index: 1;
 }
 
 .photo-gallery__favorite,
