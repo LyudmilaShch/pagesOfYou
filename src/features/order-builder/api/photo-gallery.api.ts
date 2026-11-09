@@ -98,8 +98,13 @@ export const photoGalleryApi = {
     return toDomain(data.data)
   },
 
-  /** Re-parents a guest's gallery photos onto a real order — unused until the guest→real-order
-   * conversion flow itself exists (a separate, not-yet-built step). */
+  /** Tells the server this guest gallery is still in use, so its photos are not purged with
+   * abandoned galleries (same 14-day window as a local draft). */
+  async touchGuestGallery(guestId: string): Promise<void> {
+    await http.post('/files/guest-gallery/touch', { guestId })
+  },
+
+  /** Re-parents a guest's gallery photos onto a real order. */
   async claimGuestPhotos(guestId: string, orderId: string): Promise<{ count: number }> {
     const { data } = await http.post<BackendResponse<{ count: number }>>(
       '/files/claim-guest-photos',

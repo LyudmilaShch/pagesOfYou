@@ -14,6 +14,7 @@ import {
   MAX_IMAGE_UPLOAD_SIZE_BYTES,
   MAX_IMAGE_UPLOAD_SIZE_MB,
 } from '../../shared/constants/upload.constants';
+import { guestGalleryCutoff } from './guest-gallery-ttl.util';
 
 export interface RequestUploadUrlDto {
   /** Original file name — stored for display purposes */
@@ -224,6 +225,7 @@ export class FilesService {
         userId: data.userId,
         orderId: data.orderId,
         guestId: data.guestId,
+        guestTouchedAt: data.guestId ? new Date() : null,
         storageKey: key,
         url,
         originalName: file.originalname,
@@ -319,6 +321,44 @@ export class FilesService {
     return { count: result.count };
   }
 
+  /** Refreshes the 14-day window for every photo still owned by this guest gallery. */
+  async touchGuestGallery(guestId: string): Promise<{ count: number }> {
+    await this.purgeAbandonedGuestPhotos();
+    const result = await this.prisma.uploadedFile.updateMany({
+      where: { guestId, orderId: null, deletedAt: null },
+      data: { guestTouchedAt: new Date() },
+    });
+    return { count: result.count };
+  }
+
+  /**
+   * Soft-deletes guest photos whose gallery has not been touched for 14 days (the guest draft
+   * lifetime). Claimed photos (`orderId` set) are kept.
+   *
+   * TODO(owner): this runs when a guest gallery is listed or touched, not on a clock. Photos of
+   * a guest who never returns stay until something else lists a guest gallery. Say if you want
+   * a scheduled job instead.
+   */
+  async purgeAbandonedGuestPhotos(now = new Date()): Promise<{ count: number }> {
+    const cutoff = guestGalleryCutoff(now);
+    const result = await this.prisma.uploadedFile.updateMany({
+      where: {
+        guestId: { not: null },
+        orderId: null,
+        deletedAt: null,
+        OR: [
+          { guestTouchedAt: { lt: cutoff } },
+          { guestTouchedAt: null, createdAt: { lt: cutoff } },
+        ],
+      },
+      data: { deletedAt: now },
+    });
+    if (result.count > 0) {
+      this.logger.log(`Purged ${result.count} abandoned guest photo(s)`);
+    }
+    return { count: result.count };
+  }
+
   private async getOwnedFileOrThrow(fileId: string, identity: GalleryIdentity & GalleryScope) {
     const file = await this.prisma.uploadedFile.findFirst({
       where: { id: fileId, deletedAt: null },
@@ -357,6 +397,10 @@ export class FilesService {
     }
 
     if (scope.guestId) {
+      // Opportunistic purge: there is no scheduler in this service. Galleries nobody opens
+      // stay until the next list/touch. A dedicated cron would only matter for guests who
+      // never come back — see the TODO on `purgeAbandonedGuestPhotos`.
+      await this.purgeAbandonedGuestPhotos();
       return this.prisma.uploadedFile.findMany({
         where: { guestId: scope.guestId, deletedAt: null },
         orderBy: { createdAt: 'desc' },
