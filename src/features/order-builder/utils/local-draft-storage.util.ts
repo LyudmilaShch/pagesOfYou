@@ -15,19 +15,32 @@ export interface StoredLocalDraft {
    * optional so older stored snapshots (saved before trash existed) still load fine, just with an
    * empty bin, instead of being discarded outright. */
   trash?: TrashedJournalPage[]
+  /** Guest photo-gallery token for this draft only. Absent on drafts saved before galleries were
+   * per-journal — those uploads still belong to the browser guest id (see `guest-gallery.util.ts`). */
+  galleryGuestId?: string
   savedAt: string
 }
 
 /** A guest's in-progress journal lives only in Pinia memory (see `order-builder.store.ts`'s
  * `isLocalDraft` local-draft functions) — this mirrors it into a single localStorage slot so it
  * survives a reload/reopen for a while. One slot per browser: a guest only ever has one active
- * local draft at a time (a second "Начать новый" simply overwrites it). */
-export function saveLocalDraft(magazineTypeId: string, order: OrderDetail, trash: TrashedJournalPage[] = []): void {
+ * local draft at a time (a second "Начать новый" simply overwrites it). `galleryGuestId` is that
+ * draft's photo gallery; a new journal passes a new token so the previous journal's uploads are
+ * not listed again. */
+export function saveLocalDraft(
+  magazineTypeId: string,
+  order: OrderDetail,
+  trash: TrashedJournalPage[] = [],
+  galleryGuestId?: string | null,
+): void {
   const stored: StoredLocalDraft = {
     schemaVersion: SCHEMA_VERSION,
     magazineTypeId,
     order,
     trash,
+    ...(galleryGuestId?.trim()
+      ? { galleryGuestId: galleryGuestId.trim() }
+      : {}),
     savedAt: new Date().toISOString(),
   }
 

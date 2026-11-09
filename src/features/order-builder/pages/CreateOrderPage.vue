@@ -309,9 +309,12 @@ async function onResumeContinue(orderId?: string): Promise<void> {
 
 function onResumeStartNew(): void {
   resumeModal.open = false
+  // Drop the in-memory journal too. Clearing only localStorage left the previous journal (and,
+  // for a guest, its gallery) reachable from the stepper and from the next photo step.
   if (resumeModal.mode === 'guest') {
     clearLocalDraft()
   }
+  store.resetOrderFlow()
 }
 
 // Covers the whole operation, not just `store.isLoadingOrder` (which the button's own :loading

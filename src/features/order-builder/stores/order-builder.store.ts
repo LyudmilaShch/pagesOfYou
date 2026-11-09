@@ -27,6 +27,7 @@ import { aiAnswersSignature } from '../utils/ai-answers-signature.util'
 import { isAxiosError } from 'axios'
 import { extractApiErrorMessage } from '@/shared/utils/api-error.util'
 import { getOrCreateGuestId } from '@/shared/utils/guest-id.util'
+import { createGuestGalleryId, galleryIdForRestoredDraft } from '../utils/guest-gallery.util'
 import { clearLocalDraft, saveLocalDraft, type StoredLocalDraft } from '../utils/local-draft-storage.util'
 import { calculateJournalPrice } from '../utils/pricing.util'
 import { useAuthStore } from '@/stores/auth.store'
@@ -77,6 +78,23 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
   // server-side trash (`deletedAt` on JournalPage) but has to live here instead, since a local
   // draft has no backend row yet. Only ever populated/read while `isLocalDraft` is true.
   const trashedJournalPages = ref<TrashedJournalPage[]>([])
+  // Photo-gallery token for the guest journal currently in memory. A new journal mints a new one
+  // (`loadLocalDraft`); resuming a draft reuses the token saved with it (`restoreLocalDraft`).
+  // Null when there is no guest journal — signed-in orders are scoped by order id instead.
+  const guestGalleryId = ref<string | null>(null)
+
+  function persistLocalDraft(): void {
+    if (!order.value || !isLocalDraft.value) {
+      return
+    }
+
+    saveLocalDraft(
+      order.value.magazineTypeId,
+      order.value,
+      trashedJournalPages.value,
+      guestGalleryId.value,
+    )
+  }
 
   const groupedTemplates = computed(() => groupTemplatesByPageType(templateCatalog.value))
 
@@ -181,6 +199,9 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     isLoadingOrder.value = true
     orderError.value = null
     isLocalDraft.value = true
+    // Always a new gallery: this builds a journal from scratch and overwrites the single guest
+    // draft slot. Reusing the previous token is what made the last journal's photos reappear.
+    guestGalleryId.value = createGuestGalleryId()
 
     try {
       const { magazineType, pages } = await loadTemplatesForMagazineType(magazineTypeId)
@@ -238,7 +259,7 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
       }
       trashedJournalPages.value = []
 
-      saveLocalDraft(magazineTypeId, order.value)
+      persistLocalDraft()
     } catch (err: unknown) {
       if (!orderError.value) {
         orderError.value =
@@ -265,6 +286,10 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
       selectedMagazineType.value = magazineType
       order.value = stored.order
       trashedJournalPages.value = stored.trash ?? []
+      guestGalleryId.value = galleryIdForRestoredDraft(stored.galleryGuestId, getOrCreateGuestId())
+      // Stamp the token onto older drafts (saved before per-journal galleries) so the next save
+      // doesn't drop the association that their existing uploads still depend on.
+      persistLocalDraft()
     } catch {
       if (!orderError.value) {
         orderError.value = 'Не удалось восстановить черновик.'
@@ -352,7 +377,7 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     }
 
     if (isLocalDraft.value) {
-      saveLocalDraft(order.value.magazineTypeId, order.value, trashedJournalPages.value)
+      persistLocalDraft()
     }
   }
 
@@ -400,7 +425,7 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     }
 
     if (isLocalDraft.value) {
-      saveLocalDraft(order.value.magazineTypeId, order.value, trashedJournalPages.value)
+      persistLocalDraft()
     }
   }
 
@@ -464,7 +489,7 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     }
 
     order.value.questionAnswers = [...byKey.values()]
-    saveLocalDraft(order.value.magazineTypeId, order.value, trashedJournalPages.value)
+    persistLocalDraft()
   }
 
   async function saveQuestionnaireAnswers(answers: QuestionAnswerInput[]): Promise<void> {
@@ -527,7 +552,7 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
       placeholderValues: [...byElementId.values()],
     }
 
-    saveLocalDraft(order.value.magazineTypeId, order.value, trashedJournalPages.value)
+    persistLocalDraft()
   }
 
   /** Direct placeholder write — the advanced editor's simple-fill mode, and now also the photo
@@ -616,7 +641,7 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
       })
     }
     order.value.journalPages[pageIndex] = { ...page, placeholderValues: [...byElementId.values()] }
-    saveLocalDraft(order.value.magazineTypeId, order.value, trashedJournalPages.value)
+    persistLocalDraft()
   }
 
   /** One draft generation request — keeps `aiUsage` in step with what the server reports, and
@@ -941,7 +966,7 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     }
 
     if (isLocalDraft.value) {
-      saveLocalDraft(order.value.magazineTypeId, order.value, trashedJournalPages.value)
+      persistLocalDraft()
     }
   }
 
@@ -992,7 +1017,7 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     }))
 
     if (isLocalDraft.value) {
-      saveLocalDraft(order.value.magazineTypeId, order.value, trashedJournalPages.value)
+      persistLocalDraft()
     }
   }
 
@@ -1049,7 +1074,7 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     }
 
     if (isLocalDraft.value) {
-      saveLocalDraft(order.value.magazineTypeId, order.value, trashedJournalPages.value)
+      persistLocalDraft()
     }
   }
 
@@ -1110,7 +1135,7 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     }
 
     if (isLocalDraft.value) {
-      saveLocalDraft(order.value.magazineTypeId, order.value, trashedJournalPages.value)
+      persistLocalDraft()
     }
   }
 
@@ -1301,7 +1326,10 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     clearLocalDraft()
 
     try {
-      await photoGalleryApi.claimGuestPhotos(getOrCreateGuestId(), order.value.id)
+      await photoGalleryApi.claimGuestPhotos(
+        guestGalleryId.value ?? getOrCreateGuestId(),
+        order.value.id,
+      )
     } catch {
       // Best-effort — the order itself is already created; the guest's gallery photos just stay
       // under the old guestId and won't show up in this order's gallery. Not fatal.
@@ -1390,6 +1418,7 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     templateCatalog.value = []
     configuredDefaultSpreads.value = []
     isLocalDraft.value = false
+    guestGalleryId.value = null
     orderError.value = null
   }
 
@@ -1405,6 +1434,7 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     groupedTemplates,
     order,
     isLocalDraft,
+    guestGalleryId,
     isLoadingOrder,
     isSaving,
     isSubmitting,
