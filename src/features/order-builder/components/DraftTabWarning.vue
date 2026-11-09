@@ -9,50 +9,69 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { useOrderBuilderStore } from '../stores/order-builder.store'
 import {
+  PRESENCE_HEARTBEAT_MS,
   createTabId,
-  isForeignDraftLock,
-  readDraftLock,
-  subscribeDraftLocks,
-  writeDraftLock,
-  type DraftLock,
+  hasOtherTabOnDraft,
+  mergePresences,
+  readDraftPresences,
+  subscribeDraftPresences,
+  writeDraftPresence,
+  type TabPresence,
 } from '../utils/draft-tab-lock.util'
-
-const HEARTBEAT_MS = 4_000
 
 const store = useOrderBuilderStore()
 const tabId = createTabId()
-const foreignLock = ref<DraftLock | null>(null)
+const presences = ref<TabPresence[]>([])
+const now = ref(Date.now())
 
 const draftId = computed(() => (store.isLocalDraft ? store.order?.id ?? null : null))
-const visible = computed(() => isForeignDraftLock(foreignLock.value, tabId, draftId.value))
+const visible = computed(() => hasOtherTabOnDraft(presences.value, tabId, draftId.value, now.value))
+
+function apply(incoming: TabPresence[]): void {
+  const at = Date.now()
+  now.value = at
+  presences.value = mergePresences(presences.value, incoming, at)
+}
+
+function beat(left = false): void {
+  const at = Date.now()
+  now.value = at
+  const presence: TabPresence = {
+    tabId,
+    draftId: left ? null : draftId.value,
+    at,
+    left,
+  }
+  const next = mergePresences(mergePresences(presences.value, readDraftPresences(), at), [presence], at)
+  presences.value = next
+  writeDraftPresence(next, presence)
+}
 
 function publish(): void {
-  const id = draftId.value
-  if (!id) {
+  if (!draftId.value) {
     return
   }
-  writeDraftLock({ draftId: id, tabId, at: Date.now() })
+  beat(false)
 }
 
 function release(): void {
-  const current = readDraftLock()
-  if (current?.tabId === tabId) {
-    writeDraftLock({ ...current, at: 0 })
-  }
-}
-
-function onLock(lock: DraftLock | null): void {
-  foreignLock.value = lock
+  beat(true)
 }
 
 let stop: (() => void) | null = null
 let heartbeat: ReturnType<typeof setInterval> | null = null
+let clock: ReturnType<typeof setInterval> | null = null
 
 onMounted(() => {
-  stop = subscribeDraftLocks(onLock)
-  foreignLock.value = readDraftLock()
+  stop = subscribeDraftPresences(apply)
+  apply(readDraftPresences())
   publish()
-  heartbeat = setInterval(publish, HEARTBEAT_MS)
+  heartbeat = setInterval(publish, PRESENCE_HEARTBEAT_MS)
+  // Re-check TTL even when no message arrives, so a crashed tab's banner eventually hides.
+  clock = setInterval(() => {
+    now.value = Date.now()
+    presences.value = mergePresences(presences.value, [], now.value)
+  }, 1_000)
   window.addEventListener('beforeunload', release)
 })
 
@@ -61,13 +80,21 @@ onBeforeUnmount(() => {
   if (heartbeat) {
     clearInterval(heartbeat)
   }
+  if (clock) {
+    clearInterval(clock)
+  }
   window.removeEventListener('beforeunload', release)
   release()
 })
 
-watch(draftId, () => {
-  foreignLock.value = readDraftLock()
-  publish()
+watch(draftId, (id, previous) => {
+  if (id) {
+    publish()
+    return
+  }
+  if (previous) {
+    release()
+  }
 })
 </script>
 

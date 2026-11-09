@@ -1,79 +1,144 @@
-const STORAGE_KEY = 'pagesOfYou.draftLock'
-const CHANNEL_NAME = 'pagesOfYou.draftLock'
-/** A tab that stops heartbeating (closed, crashed) stops counting as "open" after this. */
-export const DRAFT_LOCK_STALE_MS = 12_000
+const STORAGE_KEY = 'pagesOfYou.draftPresence'
+const CHANNEL_NAME = 'pagesOfYou.draftPresence'
 
-export interface DraftLock {
-  draftId: string
+/** How often a tab refreshes its presence. */
+export const PRESENCE_HEARTBEAT_MS = 4_000
+/**
+ * A peer counts as open until this long after its last heartbeat. Three missed beats still
+ * keep the banner up, so a late timer cannot hide it between heartbeats.
+ */
+export const PRESENCE_TTL_MS = PRESENCE_HEARTBEAT_MS * 4
+
+export interface TabPresence {
   tabId: string
+  /** Null when this tab is not editing a guest draft. `left` removes it immediately. */
+  draftId: string | null
   at: number
+  /** The tab closed or navigated away. Other tabs drop it instead of waiting for the TTL. */
+  left?: boolean
 }
 
 export function createTabId(): string {
   return crypto.randomUUID()
 }
 
-export function isForeignDraftLock(
-  lock: DraftLock | null | undefined,
+export function isPresenceFresh(presence: TabPresence, now: number, ttlMs = PRESENCE_TTL_MS): boolean {
+  return typeof presence.at === 'number' && now - presence.at < ttlMs
+}
+
+/** True while some other tab's fresh presence is for this same draft. Our own heartbeats do not count. */
+export function hasOtherTabOnDraft(
+  presences: readonly TabPresence[],
   tabId: string,
   draftId: string | null,
   now = Date.now(),
-  staleMs = DRAFT_LOCK_STALE_MS,
+  ttlMs = PRESENCE_TTL_MS,
 ): boolean {
-  if (!lock || !draftId) {
+  if (!draftId) {
     return false
   }
-  if (lock.draftId !== draftId || lock.tabId === tabId) {
-    return false
-  }
-  return now - lock.at < staleMs
+  return presences.some(
+    (presence) =>
+      presence.tabId !== tabId &&
+      presence.draftId === draftId &&
+      !presence.left &&
+      isPresenceFresh(presence, now, ttlMs),
+  )
 }
 
-export function readDraftLock(): DraftLock | null {
+/** Merge by tabId. A newer beat replaces that tab only. A `left` beat removes it. Stale rows drop out. */
+export function mergePresences(
+  current: readonly TabPresence[],
+  incoming: readonly TabPresence[],
+  now = Date.now(),
+  ttlMs = PRESENCE_TTL_MS,
+): TabPresence[] {
+  const byId = new Map<string, TabPresence>()
+
+  for (const presence of current) {
+    if (!presence?.tabId || presence.left || !isPresenceFresh(presence, now, ttlMs)) {
+      continue
+    }
+    byId.set(presence.tabId, presence)
+  }
+
+  for (const presence of incoming) {
+    if (!presence?.tabId || typeof presence.at !== 'number') {
+      continue
+    }
+    if (presence.left) {
+      byId.delete(presence.tabId)
+      continue
+    }
+    if (!isPresenceFresh(presence, now, ttlMs)) {
+      continue
+    }
+    const previous = byId.get(presence.tabId)
+    if (!previous || presence.at >= previous.at) {
+      byId.set(presence.tabId, {
+        tabId: presence.tabId,
+        draftId: presence.draftId ?? null,
+        at: presence.at,
+      })
+    }
+  }
+
+  return [...byId.values()]
+}
+
+export function readDraftPresences(): TabPresence[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) {
-      return null
+      return []
     }
-    const parsed = JSON.parse(raw) as DraftLock
-    if (!parsed?.draftId || !parsed.tabId || typeof parsed.at !== 'number') {
-      return null
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) {
+      return []
     }
-    return parsed
+    return parsed.filter(
+      (item): item is TabPresence =>
+        Boolean(item) &&
+        typeof item.tabId === 'string' &&
+        (typeof item.draftId === 'string' || item.draftId === null) &&
+        typeof item.at === 'number',
+    )
   } catch {
-    return null
+    return []
   }
 }
 
-export function writeDraftLock(lock: DraftLock): void {
+export function writeDraftPresence(presences: readonly TabPresence[], beat: TabPresence): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(lock))
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(presences))
   } catch {
-    // Private mode: the banner can't cross tabs, editing in this tab still works.
+    // Private mode: other tabs still hear the BroadcastChannel beat when it is available.
   }
   try {
     const channel = new BroadcastChannel(CHANNEL_NAME)
-    channel.postMessage(lock)
+    channel.postMessage(beat)
     channel.close()
   } catch {
     // BroadcastChannel missing — the storage event still reaches other tabs.
   }
 }
 
-export function subscribeDraftLocks(onLock: (lock: DraftLock | null) => void): () => void {
+export function subscribeDraftPresences(onPresence: (incoming: TabPresence[]) => void): () => void {
   const onStorage = (event: StorageEvent) => {
     if (event.key !== STORAGE_KEY) {
       return
     }
-    onLock(readDraftLock())
+    onPresence(readDraftPresences())
   }
   window.addEventListener('storage', onStorage)
 
   let channel: BroadcastChannel | null = null
   try {
     channel = new BroadcastChannel(CHANNEL_NAME)
-    channel.onmessage = (event: MessageEvent<DraftLock>) => {
-      onLock(event.data ?? null)
+    channel.onmessage = (event: MessageEvent<TabPresence>) => {
+      if (event.data?.tabId) {
+        onPresence([event.data])
+      }
     }
   } catch {
     channel = null
