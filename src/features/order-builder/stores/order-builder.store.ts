@@ -27,10 +27,25 @@ import { aiAnswersSignature } from '../utils/ai-answers-signature.util'
 import { isAxiosError } from 'axios'
 import { extractApiErrorMessage } from '@/shared/utils/api-error.util'
 import { getOrCreateGuestId } from '@/shared/utils/guest-id.util'
-import { createGuestGalleryId, galleryIdForRestoredDraft } from '../utils/guest-gallery.util'
-import { clearLocalDraft, saveLocalDraft, type StoredLocalDraft } from '../utils/local-draft-storage.util'
+import {
+  claimedGalleryCovers,
+  createGuestGalleryId,
+  galleryIdForRestoredDraft,
+  retryAsync,
+} from '../utils/guest-gallery.util'
+import {
+  LocalDraftStorageError,
+  markLocalDraftAdopted,
+  readLocalDraft,
+  readLocalDrafts,
+  removeLocalDraft,
+  saveLocalDraft,
+  type StoredLocalDraft,
+} from '../utils/local-draft-storage.util'
+import { stripPhotoUrlFromJournalPages } from '../utils/strip-photo-url.util'
 import { calculateJournalPrice } from '../utils/pricing.util'
 import { useAuthStore } from '@/stores/auth.store'
+import { useErrorMessageModal } from '@/shared/composables/useErrorMessageModal'
 import { MIN_JOURNAL_SPREADS } from '../constants/journal.constants'
 import { normalizeCanvasData, type CanvasData } from '@/modules/editor/models/canvas-data.model'
 import { isAiTextElement } from '@/modules/editor/models'
@@ -82,18 +97,40 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
   // (`loadLocalDraft`); resuming a draft reuses the token saved with it (`restoreLocalDraft`).
   // Null when there is no guest journal — signed-in orders are scoped by order id instead.
   const guestGalleryId = ref<string | null>(null)
+  let storageErrorShown = false
 
-  function persistLocalDraft(): void {
+  function persistLocalDraft(): boolean {
     if (!order.value || !isLocalDraft.value) {
-      return
+      return true
     }
 
-    saveLocalDraft(
-      order.value.magazineTypeId,
-      order.value,
-      trashedJournalPages.value,
-      guestGalleryId.value,
-    )
+    try {
+      saveLocalDraft(
+        order.value.magazineTypeId,
+        order.value,
+        trashedJournalPages.value,
+        guestGalleryId.value,
+      )
+      storageErrorShown = false
+      const galleryId = guestGalleryId.value
+      if (galleryId) {
+        // Keeps this journal's server photos inside the same 14-day window as the draft.
+        // A failed touch must not block editing; the purge uses createdAt when touch never landed.
+        void photoGalleryApi.touchGuestGallery(galleryId).catch(() => undefined)
+      }
+      return true
+    } catch (err) {
+      if (!(err instanceof LocalDraftStorageError)) {
+        throw err
+      }
+      orderError.value =
+        'Не удалось сохранить черновик. Хранилище браузера недоступно или переполнено.'
+      if (!storageErrorShown) {
+        storageErrorShown = true
+        useErrorMessageModal().showErrorMessageModal(orderError.value, 'Черновик не сохранён')
+      }
+      return false
+    }
   }
 
   const groupedTemplates = computed(() => groupTemplatesByPageType(templateCatalog.value))
@@ -225,7 +262,7 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
       const totalPrice = calculateJournalPrice(magazineType, countSpreadSlots(journalPages))
 
       order.value = {
-        id: `local-${magazineTypeId}`,
+        id: `local-${crypto.randomUUID()}`,
         status: 'DRAFT',
         magazineTypeId,
         totalPrice: String(totalPrice),
@@ -1288,15 +1325,73 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     return null
   }
 
-  /** Turns a guest's in-memory draft into a real order — persists exactly the pages/content
-   * already assembled locally (spreads, templates, placed photos/text) instead of seeding fresh
-   * default pages. Best-effort re-parents the guest's gallery photos onto the new order; a
-   * failure there doesn't block the order itself (see `claimGuestPhotos`'s own doc comment). */
+  /** Removes one gallery photo from every spread slot that still shows it. */
+  async function removePhotoFromJournal(url: string): Promise<void> {
+    if (!order.value || !url.trim()) {
+      return
+    }
+
+    const pages = stripPhotoUrlFromJournalPages(order.value.journalPages, url)
+    const trash = stripPhotoUrlFromJournalPages(trashedJournalPages.value, url)
+    if (!pages.changed && !trash.changed) {
+      return
+    }
+
+    order.value = { ...order.value, journalPages: pages.pages }
+    trashedJournalPages.value = trash.pages
+
+    if (isLocalDraft.value) {
+      persistLocalDraft()
+      return
+    }
+
+    const snapshotChanged = new Set(pages.snapshotChangedPageIds)
+    for (const page of pages.pages) {
+      if (!snapshotChanged.has(page.id) || !order.value) {
+        continue
+      }
+      order.value = await ordersApi.saveJournalPageCanvas(order.value.id, page.id, page.pageSnapshot)
+      if (page.placeholderValues.length > 0 && order.value) {
+        order.value = await ordersApi.savePlaceholders(
+          order.value.id,
+          page.id,
+          page.placeholderValues.map((value) => ({
+            elementId: value.elementId,
+            valueType: value.valueType,
+            textValue: value.textValue ?? undefined,
+            jsonValue: value.jsonValue ?? undefined,
+          })),
+        )
+      }
+    }
+
+    for (const clear of pages.clearedPlaceholderElementIdsByPageId) {
+      if (snapshotChanged.has(clear.pageId) || !order.value) {
+        continue
+      }
+      order.value = await ordersApi.savePlaceholders(
+        order.value.id,
+        clear.pageId,
+        clear.elementIds.map((elementId) => ({
+          elementId,
+          valueType: 'PHOTO',
+          jsonValue: { url: '' },
+        })),
+      )
+    }
+  }
+
+  /** Moves one guest journal onto a real order, including its gallery. The local draft stays
+   * until the gallery claim and the saved answers/texts have succeeded, so a retry cannot leave
+   * an empty gallery or create a second order (`adoptedOrderId`). */
   async function convertLocalDraftToOrder(): Promise<OrderDetail> {
     if (!order.value || !selectedMagazineType.value) {
       throw new Error('Order is not loaded')
     }
 
+    const localId = order.value.id
+    const galleryId = guestGalleryId.value ?? getOrCreateGuestId()
+    const magazineTypeId = selectedMagazineType.value.id
     const journalPages: CreateOrderJournalPagePayload[] = order.value.journalPages.map((page) => ({
       slotType: page.slotType,
       layoutMode: page.layoutMode,
@@ -1305,12 +1400,7 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
       sortOrder: page.sortOrder,
       pageSnapshot: page.pageSnapshot,
     }))
-    // Captured before `order.value` is replaced below — the guest's locally-held answers (see
-    // `applyLocalQuestionAnswers`) have nowhere else to come from once this local draft is gone.
     const localAnswers = order.value.questionAnswers
-    // The AI texts the guest already saw (generated through the draft endpoint, or edited by
-    // hand), keyed by page position — the new order's pages get fresh ids but keep sortOrder and
-    // element ids (same pageSnapshot).
     const localAiTextsBySortOrder = new Map(
       order.value.journalPages.map((page) => {
         const aiTextIds = new Set(aiTextGroupsOf(page).flat().map((part) => part.id))
@@ -1319,63 +1409,94 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
       }),
     )
 
-    order.value = await ordersApi.createDraft(selectedMagazineType.value.id, journalPages)
-    isLocalDraft.value = false
-    // This local draft is now a real backend order — its localStorage mirror (if any) would
-    // otherwise wrongly resurface as "continue your draft?" on a later visit to /order/create.
-    clearLocalDraft()
+    let serverOrder: OrderDetail
+    const adoptedId = readLocalDraft(localId)?.adoptedOrderId
+    if (adoptedId) {
+      try {
+        serverOrder = await ordersApi.getOne(adoptedId)
+      } catch {
+        serverOrder = await ordersApi.createDraft(magazineTypeId, journalPages)
+        markLocalDraftAdopted(localId, serverOrder.id)
+      }
+    } else {
+      serverOrder = await ordersApi.createDraft(magazineTypeId, journalPages)
+      markLocalDraftAdopted(localId, serverOrder.id)
+    }
 
     try {
-      await photoGalleryApi.claimGuestPhotos(
-        guestGalleryId.value ?? getOrCreateGuestId(),
-        order.value.id,
-      )
+      serverOrder = await retryAsync(async () => {
+        const before = await photoGalleryApi.list({ guestId: galleryId })
+        if (before.length > 0) {
+          await photoGalleryApi.claimGuestPhotos(galleryId, serverOrder.id)
+          const after = await photoGalleryApi.list({ orderId: serverOrder.id })
+          if (!claimedGalleryCovers(before.map((photo) => photo.id), after.map((photo) => photo.id))) {
+            throw new Error('GUEST_GALLERY_CLAIM_INCOMPLETE')
+          }
+        }
+
+        let current = serverOrder
+        for (const page of current.journalPages) {
+          const values = localAiTextsBySortOrder.get(page.sortOrder) ?? []
+          if (values.length === 0) {
+            continue
+          }
+          current = await ordersApi.savePlaceholders(
+            current.id,
+            page.id,
+            values.map((value) => ({
+              elementId: value.elementId,
+              valueType: 'TEXT',
+              textValue: value.textValue ?? '',
+            })),
+          )
+        }
+        if (localAnswers.length > 0) {
+          current = await ordersApi.saveQuestionnaireAnswers(
+            current.id,
+            localAnswers.map((answer) => ({
+              questionKey: answer.questionKey,
+              textValue: answer.textValue ?? undefined,
+              jsonValue: answer.jsonValue ?? undefined,
+            })),
+          )
+        }
+        return current
+      })
     } catch {
-      // Best-effort — the order itself is already created; the guest's gallery photos just stay
-      // under the old guestId and won't show up in this order's gallery. Not fatal.
+      orderError.value =
+        'Не удалось перенести фото и данные журнала в аккаунт. Черновик сохранён — попробуйте ещё раз.'
+      throw new Error(orderError.value)
     }
 
-    // Saved as hand-placed (OVERRIDDEN, see upsertPlaceholders), so no later generation rewrites
-    // them — the customer keeps exactly the texts they reviewed, and doesn't pay a second time.
-    for (const page of order.value.journalPages) {
-      const values = localAiTextsBySortOrder.get(page.sortOrder) ?? []
-      if (values.length === 0) {
-        continue
-      }
-      try {
-        order.value = await ordersApi.savePlaceholders(
-          order.value.id,
-          page.id,
-          values.map((value) => ({ elementId: value.elementId, valueType: 'TEXT', textValue: value.textValue ?? '' })),
-        )
-      } catch {
-        // Best-effort — those texts just get written from the answers below instead.
-      }
-    }
+    removeLocalDraft(localId)
+    order.value = serverOrder
+    isLocalDraft.value = false
+    guestGalleryId.value = null
 
-    if (localAnswers.length > 0) {
-      try {
-        order.value = await ordersApi.saveQuestionnaireAnswers(
-          order.value.id,
-          localAnswers.map((answer) => ({
-            questionKey: answer.questionKey,
-            textValue: answer.textValue ?? undefined,
-            jsonValue: answer.jsonValue ?? undefined,
-          })),
-        )
-      } catch {
-        // Best-effort, same reasoning as claimGuestPhotos above — the order already exists; the
-        // user can re-fill the questionnaire if this push fails.
-      }
-    }
-
-    // A guest's questionnaire is already finished by now (this runs from the review step), so any
-    // text still missing — and the cover lines — are written right away instead of waiting for a
-    // step that won't come again. Both skip what's already there.
     await generateAiTextsForAnswers([])
     await generateJournalAiTexts()
 
     return order.value
+  }
+
+  /** Turns every guest journal still stored in this browser into a real order. The one open in
+   * this tab is converted last, so it stays the current order afterwards. */
+  async function adoptAllGuestDrafts(): Promise<void> {
+    if (isLocalDraft.value && order.value && !persistLocalDraft()) {
+      throw new Error(orderError.value ?? 'Не удалось сохранить черновик.')
+    }
+
+    const currentId = isLocalDraft.value ? order.value?.id ?? null : null
+    const drafts = readLocalDrafts()
+    const ordered = [
+      ...drafts.filter((draft) => draft.id !== currentId && draft.order.id !== currentId),
+      ...drafts.filter((draft) => draft.id === currentId || draft.order.id === currentId),
+    ]
+
+    for (const draft of ordered) {
+      await restoreLocalDraft(draft)
+      await convertLocalDraftToOrder()
+    }
   }
 
   async function submitOrder(): Promise<OrderDetail> {
@@ -1464,6 +1585,8 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     getSubmitValidationError,
     collectIncompletePages,
     convertLocalDraftToOrder,
+    adoptAllGuestDrafts,
+    removePhotoFromJournal,
     submitOrder,
     resetOrderFlow,
   }

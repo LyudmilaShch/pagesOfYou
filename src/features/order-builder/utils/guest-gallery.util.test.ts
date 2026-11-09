@@ -2,9 +2,11 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
 import {
+  claimedGalleryCovers,
   createGuestGalleryId,
   galleryIdForRestoredDraft,
   resolvePhotoGalleryScope,
+  retryAsync,
 } from './guest-gallery.util.ts'
 import { readLocalDraft, saveLocalDraft } from './local-draft-storage.util.ts'
 import type { OrderDetail } from '../types/order.types'
@@ -103,6 +105,25 @@ describe('guest photo gallery scope', () => {
       }),
       { orderId: 'order-new' },
     )
+  })
+
+  it('treats a claim as done only when every guest photo is on the order', () => {
+    assert.equal(claimedGalleryCovers(['a', 'b'], ['b', 'a', 'c']), true)
+    assert.equal(claimedGalleryCovers(['a', 'b'], ['a']), false)
+    assert.equal(claimedGalleryCovers([], ['a']), true)
+  })
+
+  it('retries a failed transfer and then returns the success', async () => {
+    let calls = 0
+    const result = await retryAsync(async () => {
+      calls += 1
+      if (calls < 3) {
+        throw new Error('not yet')
+      }
+      return 'ok'
+    })
+    assert.equal(result, 'ok')
+    assert.equal(calls, 3)
   })
 
   it('stores the gallery token on the guest draft and reads it back', () => {

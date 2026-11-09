@@ -36,3 +36,24 @@ export function resolvePhotoGalleryScope(input: {
   const guestId = input.guestGalleryId?.trim() || input.legacyGuestId
   return { guestId }
 }
+
+/** Every photo that was in the guest gallery must show up on the order after claim. */
+export function claimedGalleryCovers(beforeIds: string[], afterIds: string[]): boolean {
+  const claimed = new Set(afterIds)
+  return beforeIds.every((id) => claimed.has(id))
+}
+
+export async function retryAsync<T>(fn: () => Promise<T>, attempts = 3, delayMs = 0): Promise<T> {
+  let lastError: unknown
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await fn()
+    } catch (err) {
+      lastError = err
+      if (attempt < attempts - 1 && delayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs * (attempt + 1)))
+      }
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('retry failed')
+}

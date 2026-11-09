@@ -150,7 +150,7 @@
       :open="resumeModal.open"
       :mode="resumeModal.mode"
       :drafts="resumeModal.drafts"
-      :guest-draft="resumeModal.guestDraft"
+      :guest-drafts="resumeModal.guestDrafts"
       @continue="onResumeContinue"
       @start-new="onResumeStartNew"
       @close="resumeModal.open = false"
@@ -167,7 +167,7 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth.store'
 import { ordersApi } from '../api/orders.api'
 import type { OrderSummary } from '../types/order.types'
-import { clearLocalDraft, readLocalDraft, type StoredLocalDraft } from '../utils/local-draft-storage.util'
+import { readLocalDraft, readLocalDrafts, type StoredLocalDraft } from '../utils/local-draft-storage.util'
 import { resolveResumeRoute, resumeOrder } from '../utils/resume-order.util'
 import { collectPhotoSlotPreview } from '../utils/missing-photos.util'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
@@ -232,16 +232,19 @@ function goToStep(step: number): void {
 }
 
 const checkingDrafts = ref(true)
+/** Set only by «Начать новый». The footer «Продолжить» then creates another journal.
+ * Without this flag, that button reopens the journal already started for the selected type. */
+const startingNew = ref(false)
 const resumeModal = reactive<{
   open: boolean
   mode: 'authenticated' | 'guest'
   drafts: OrderSummary[]
-  guestDraft: StoredLocalDraft | null
+  guestDrafts: StoredLocalDraft[]
 }>({
   open: false,
   mode: 'authenticated',
   drafts: [],
-  guestDraft: null,
+  guestDrafts: [],
 })
 
 onMounted(async () => {
@@ -258,16 +261,15 @@ async function checkForDrafts(): Promise<void> {
   checkingDrafts.value = true
 
   try {
-    const guestDraft = readLocalDraft()
+    const guestDrafts = readLocalDrafts()
 
     if (authStore.isAuthenticated) {
-      if (guestDraft) {
+      if (guestDrafts.length > 0) {
         try {
-          await store.restoreLocalDraft(guestDraft)
-          await store.convertLocalDraftToOrder()
+          await store.adoptAllGuestDrafts()
         } catch {
-          // Best-effort adoption — if it fails, fall through to the normal drafts check below;
-          // the guest draft stays in localStorage and nothing is lost.
+          store.orderError =
+            'Не удалось перенести начатые журналы в аккаунт. Черновики сохранены в браузере — попробуйте ещё раз.'
         }
       }
 
@@ -278,9 +280,9 @@ async function checkForDrafts(): Promise<void> {
         resumeModal.drafts = drafts
         resumeModal.open = true
       }
-    } else if (guestDraft) {
+    } else if (guestDrafts.length > 0) {
       resumeModal.mode = 'guest'
-      resumeModal.guestDraft = guestDraft
+      resumeModal.guestDrafts = guestDrafts
       resumeModal.open = true
     }
   } finally {
@@ -295,12 +297,13 @@ async function onResumeContinue(orderId?: string): Promise<void> {
   try {
     if (resumeModal.mode === 'authenticated' && orderId) {
       await resumeOrder(router, orderId)
-    } else if (resumeModal.mode === 'guest' && resumeModal.guestDraft) {
-      await store.restoreLocalDraft(resumeModal.guestDraft)
-      const target = store.order ? resolveResumeRoute(store.order) : null
-      if (target) {
-        await router.push(target)
+    } else if (resumeModal.mode === 'guest' && orderId) {
+      const draft = readLocalDraft(orderId)
+      if (!draft) {
+        store.orderError = 'Не удалось открыть черновик.'
+        return
       }
+      await openGuestDraft(draft)
     }
   } catch {
     store.orderError = 'Не удалось открыть черновик.'
@@ -309,12 +312,18 @@ async function onResumeContinue(orderId?: string): Promise<void> {
 
 function onResumeStartNew(): void {
   resumeModal.open = false
-  // Drop the in-memory journal too. Clearing only localStorage left the previous journal (and,
-  // for a guest, its gallery) reachable from the stepper and from the next photo step.
-  if (resumeModal.mode === 'guest') {
-    clearLocalDraft()
-  }
+  // A new journal is an extra draft. The ones already in the list stay, each with its own gallery.
+  startingNew.value = true
   store.resetOrderFlow()
+}
+
+async function openGuestDraft(draft: StoredLocalDraft): Promise<void> {
+  startingNew.value = false
+  await store.restoreLocalDraft(draft)
+  const target = store.order ? resolveResumeRoute(store.order) : null
+  if (target) {
+    await router.push(target)
+  }
 }
 
 // Covers the whole operation, not just `store.isLoadingOrder` (which the button's own :loading
@@ -329,10 +338,34 @@ async function handleNext(): Promise<void> {
   }
 
   store.orderError = null
+  const magazineTypeId = store.selectedMagazineType.id
+
+  if (!authStore.isAuthenticated && !startingNew.value) {
+    const matches = readLocalDrafts().filter((draft) => draft.magazineTypeId === magazineTypeId)
+    if (matches.length === 1) {
+      navigatingNext.value = true
+      try {
+        await openGuestDraft(matches[0])
+      } catch {
+        store.orderError = 'Не удалось открыть черновик.'
+      } finally {
+        navigatingNext.value = false
+      }
+      return
+    }
+    if (matches.length > 1) {
+      resumeModal.mode = 'guest'
+      resumeModal.guestDrafts = matches
+      resumeModal.open = true
+      return
+    }
+  }
+
   navigatingNext.value = true
 
   try {
-    await store.startDraft(store.selectedMagazineType.id)
+    startingNew.value = false
+    await store.startDraft(magazineTypeId)
 
     if (!store.order) {
       return

@@ -94,6 +94,9 @@ import { photoGalleryApi, type GalleryPhoto } from '../api/photo-gallery.api'
 import { ordersApi } from '../api/orders.api'
 import { getGalleryScope } from '../utils/photo-gallery-scope.util'
 import { applyAutoFillToJournalPages } from '../utils/auto-fill-photos.util'
+import { samePhotoUrl } from '../utils/strip-photo-url.util'
+import { flattenTree } from '@/modules/editor/utils/element-tree.util'
+import { isPhotoElement } from '@/modules/editor/models'
 
 const route = useRoute()
 const store = useOrderBuilderStore()
@@ -183,6 +186,18 @@ async function toggleFavorite(photo: GalleryPhoto): Promise<void> {
   }
 }
 
+function clearLiveEditorPhoto(url: string): void {
+  const elements = editorStore.document?.canvasData?.elements
+  if (!elements) {
+    return
+  }
+  for (const element of flattenTree(elements)) {
+    if (isPhotoElement(element) && element.defaultImageUrl && samePhotoUrl(element.defaultImageUrl, url)) {
+      editorStore.updateElement(element.id, { defaultImageUrl: null, cropX: 0, cropY: 0, imageScale: 1 })
+    }
+  }
+}
+
 async function removePhoto(photo: GalleryPhoto): Promise<void> {
   if (!window.confirm('Удалить фото из галереи?')) {
     return
@@ -190,6 +205,8 @@ async function removePhoto(photo: GalleryPhoto): Promise<void> {
 
   try {
     await photoGalleryApi.remove(photo.id, scope.value)
+    clearLiveEditorPhoto(photo.url)
+    await store.removePhotoFromJournal(photo.url)
     photos.value = photos.value.filter((item) => item.id !== photo.id)
   } catch {
     snackbar.text = 'Не удалось удалить фото'

@@ -458,6 +458,7 @@ async function removePhoto(photo: GalleryPhoto): Promise<void> {
   photos.value = photos.value.filter((item) => item.id !== photo.id)
   try {
     await photoGalleryApi.remove(photo.id, galleryScope.value)
+    await store.removePhotoFromJournal(photo.url)
   } catch {
     photos.value = previous
   }
