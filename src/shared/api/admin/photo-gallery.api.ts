@@ -1,5 +1,7 @@
 import { adminHttp } from '@/features/admin/api/admin-http'
 import { resolveAssetUrl } from '@/shared/config/assets'
+import { validatePhotoFile } from '@/shared/constants/photo-upload.constants'
+import { PHOTO_UPLOAD_TIMEOUT_MS } from '@/shared/utils/photo-upload-error.util'
 import type { BackendResponse } from '@/types/api.types'
 
 /** Admin counterpart of `order-builder`'s `photoGalleryApi` — always scoped to a specific order
@@ -44,6 +46,11 @@ export const adminPhotoGalleryApi = {
     file: File,
     dimensions?: { width: number; height: number },
   ): Promise<GalleryPhoto> {
+    const problem = validatePhotoFile(file)
+    if (problem) {
+      throw new Error(problem)
+    }
+
     const formData = new FormData()
     formData.append('file', file)
 
@@ -55,7 +62,7 @@ export const adminPhotoGalleryApi = {
     const { data } = await adminHttp.post<BackendResponse<RawUploadedFile>>(
       `/admin/orders/${orderId}/photos`,
       formData,
-      { headers: { 'Content-Type': 'multipart/form-data' } },
+      { headers: { 'Content-Type': 'multipart/form-data' }, timeout: PHOTO_UPLOAD_TIMEOUT_MS },
     )
 
     return toDomain(data.data)

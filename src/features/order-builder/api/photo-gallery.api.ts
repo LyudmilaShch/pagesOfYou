@@ -1,5 +1,7 @@
 import { resolveAssetUrl } from '@/shared/config/assets'
 import { http } from '@/shared/api/http'
+import { validatePhotoFile } from '@/shared/constants/photo-upload.constants'
+import { PHOTO_UPLOAD_TIMEOUT_MS } from '@/shared/utils/photo-upload-error.util'
 import type { BackendResponse } from '@/types/api.types'
 
 /** Either a real order's gallery (requires the caller to be signed in and own the order) or a
@@ -50,6 +52,11 @@ export const photoGalleryApi = {
     file: File,
     dimensions?: { width: number; height: number },
   ): Promise<GalleryPhoto> {
+    const problem = validatePhotoFile(file)
+    if (problem) {
+      throw new Error(problem)
+    }
+
     const formData = new FormData()
     formData.append('file', file)
 
@@ -66,6 +73,7 @@ export const photoGalleryApi = {
 
     const { data } = await http.post<BackendResponse<RawUploadedFile>>('/files/image', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: PHOTO_UPLOAD_TIMEOUT_MS,
     })
 
     return toDomain(data.data)

@@ -10,7 +10,7 @@
       <input
         ref="fileInputRef"
         type="file"
-        accept="image/*"
+        :accept="PHOTO_FILE_ACCEPT"
         multiple
         class="admin-photo-gallery__file-input"
         @change="handleFilesSelected"
@@ -28,6 +28,8 @@
       <p v-if="uploading" class="admin-photo-gallery__upload-progress">
         Загружено {{ uploadedCount }} из {{ uploadTotal }}
       </p>
+      <PhotoUploadFormatsHint />
+      <PhotoUploadErrorList :messages="uploadErrors" />
     </div>
 
     <div v-if="loading" class="admin-photo-gallery__state">
@@ -75,7 +77,11 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { getImageDimensions } from '@/shared/utils/image-dimensions.util'
+import { PHOTO_FILE_ACCEPT } from '@/shared/constants/photo-upload.constants'
+import { runPhotoUploads } from '@/shared/utils/photo-upload-error.util'
 import { adminPhotoGalleryApi, type GalleryPhoto } from '@/shared/api/admin/photo-gallery.api'
+import PhotoUploadFormatsHint from '@/features/order-builder/components/PhotoUploadFormatsHint.vue'
+import PhotoUploadErrorList from '@/features/order-builder/components/PhotoUploadErrorList.vue'
 
 const route = useRoute()
 const orderId = computed(() => route.params.orderId as string)
@@ -86,6 +92,7 @@ const uploading = ref(false)
 const uploadedCount = ref(0)
 const uploadTotal = ref(0)
 const fileInputRef = ref<HTMLInputElement | null>(null)
+const uploadErrors = ref<string[]>([])
 
 const snackbar = reactive({
   show: false,
@@ -122,28 +129,20 @@ async function handleFilesSelected(event: Event): Promise<void> {
   uploading.value = true
   uploadTotal.value = files.length
   uploadedCount.value = 0
-  let failedCount = 0
+  uploadErrors.value = []
 
   try {
-    for (const file of files) {
+    uploadErrors.value = await runPhotoUploads(files, async (file) => {
       try {
         const dimensions = await getImageDimensions(file).catch(() => undefined)
         const uploaded = await adminPhotoGalleryApi.upload(orderId.value, file, dimensions)
         photos.value = [uploaded, ...photos.value]
-      } catch {
-        failedCount += 1
       } finally {
         uploadedCount.value += 1
       }
-    }
+    })
   } finally {
     uploading.value = false
-  }
-
-  if (failedCount > 0) {
-    snackbar.text = `Не удалось загрузить ${failedCount} из ${files.length} фото`
-    snackbar.color = 'error'
-    snackbar.show = true
   }
 }
 

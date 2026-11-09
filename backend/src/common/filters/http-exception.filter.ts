@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
+import { messageForMulterError } from '../../modules/files/photo-upload-error';
 
 interface ErrorResponse {
   success: false;
@@ -30,7 +31,11 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     let message = 'Internal server error';
     let errors: string[] = [];
 
-    if (exception instanceof HttpException) {
+    const multerFailure = messageForMulterError(exception, request.url ?? '');
+    if (multerFailure) {
+      statusCode = multerFailure.statusCode;
+      message = multerFailure.message;
+    } else if (exception instanceof HttpException) {
       statusCode = exception.getStatus();
       const exceptionResponse = exception.getResponse();
 

@@ -177,7 +177,7 @@
               <input
                 ref="fileInputRef"
                 type="file"
-                accept="image/*"
+                :accept="PHOTO_FILE_ACCEPT"
                 multiple
                 class="photo-upload-page__file-input"
                 @change="handleFilesSelected"
@@ -192,6 +192,9 @@
                 или нажмите, чтобы выбрать с устройства
               </p>
             </div>
+
+            <PhotoUploadFormatsHint />
+            <PhotoUploadErrorList :messages="uploadErrors" />
 
             <div class="photo-upload-page__stats">
               <span class="photo-upload-page__stats-count">Загружено {{ photos.length }} фото</span>
@@ -413,6 +416,8 @@ import { isPhotoElement, type PhotoFitMode } from '@/modules/editor/models'
 import { A4_PAGE_HEIGHT, A4_PAGE_WIDTH } from '@/modules/editor/constants/page.constants'
 import { flattenTree } from '@/modules/editor/utils/element-tree.util'
 import { getImageDimensions } from '@/shared/utils/image-dimensions.util'
+import { PHOTO_FILE_ACCEPT } from '@/shared/constants/photo-upload.constants'
+import { runPhotoUploads } from '@/shared/utils/photo-upload-error.util'
 import { computePhotoPageVisibleArea, type PhotoCropState } from '@/modules/editor/utils/photo-crop.util'
 import { photoGalleryApi, type GalleryPhoto } from '../api/photo-gallery.api'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
@@ -421,6 +426,8 @@ import { getJournalPageDisplayName } from '../utils/journal-structure.util'
 import { materializeCanvasData } from '../utils/merge-placeholder-element.util'
 import { collectPhotoSlotPreview } from '../utils/missing-photos.util'
 import QuestionnaireBook from '../components/questionnaire/QuestionnaireBook.vue'
+import PhotoUploadFormatsHint from '../components/PhotoUploadFormatsHint.vue'
+import PhotoUploadErrorList from '../components/PhotoUploadErrorList.vue'
 import PhotoGalleryPickerDialog from '../components/PhotoGalleryPickerDialog.vue'
 import PhotoCropModal from '../components/PhotoCropModal.vue'
 import BaseModal from '@/components/ui/BaseModal.vue'
@@ -457,6 +464,7 @@ const isLoading = ref(true)
 const loadErrorMessage = ref<string | null>(null)
 const photos = ref<GalleryPhoto[]>([])
 const uploading = ref(false)
+const uploadErrors = ref<string[]>([])
 const isDragActive = ref(false)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 // Photos auto-place as they upload (see `autoPlacePhoto`) — this just lets the user override that
@@ -732,18 +740,14 @@ async function uploadFiles(files: File[]): Promise<void> {
   }
 
   uploading.value = true
+  uploadErrors.value = []
   try {
-    for (const file of files) {
-      try {
-        const dimensions = await getImageDimensions(file).catch(() => undefined)
-        const uploaded = await photoGalleryApi.upload(galleryScope.value, file, dimensions)
-        photos.value = [uploaded, ...photos.value]
-        await autoPlacePhoto(uploaded.url)
-      } catch {
-        // Best-effort per file — a failed upload just doesn't get added, same as
-        // QuestionGalleryField.vue's own bulk-upload loop.
-      }
-    }
+    uploadErrors.value = await runPhotoUploads(files, async (file) => {
+      const dimensions = await getImageDimensions(file).catch(() => undefined)
+      const uploaded = await photoGalleryApi.upload(galleryScope.value, file, dimensions)
+      photos.value = [uploaded, ...photos.value]
+      await autoPlacePhoto(uploaded.url)
+    })
   } finally {
     uploading.value = false
   }
@@ -759,7 +763,7 @@ function handleFilesSelected(event: Event): void {
 function handleDrop(event: DragEvent): void {
   isDragActive.value = false
   const files = event.dataTransfer?.files ? Array.from(event.dataTransfer.files) : []
-  void uploadFiles(files.filter((file) => file.type.startsWith('image/')))
+  void uploadFiles(files)
 }
 
 /** Starts dragging an already-uploaded photo out of the grid — only while manual placement mode is

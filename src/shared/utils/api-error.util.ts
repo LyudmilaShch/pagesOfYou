@@ -4,6 +4,7 @@ const API_ERROR_MESSAGES_RU: Record<string, string> = {
   'File too large': getMaxImageUploadSizeErrorMessage(),
   'File too small': 'Файл слишком маленький или повреждён.',
   'Unexpected field': 'Неверный формат запроса загрузки.',
+  'Network Error': 'Не удалось загрузить изображение. Попробуйте ещё раз.',
 }
 
 function readApiErrorMessage(err: unknown): string {

@@ -46,7 +46,7 @@
             <input
               ref="fileInputRef"
               type="file"
-              accept="image/*"
+              :accept="PHOTO_FILE_ACCEPT"
               multiple
               class="missing-photos__file-input"
               @change="handleFilesSelected"
@@ -59,6 +59,9 @@
             <p class="missing-photos__dropzone-title">Перетащите фото сюда</p>
             <p class="missing-photos__dropzone-hint">или нажмите, чтобы выбрать с устройства</p>
           </div>
+
+          <PhotoUploadFormatsHint />
+          <PhotoUploadErrorList :messages="uploadErrors" />
 
           <div class="missing-photos__stats">
             <span class="missing-photos__stats-count">Загружено {{ photos.length }} фото</span>
@@ -179,6 +182,8 @@ import { normalizeCanvasData } from '@/modules/editor/models/canvas-data.model'
 import { isPhotoElement } from '@/modules/editor/models'
 import { flattenTree } from '@/modules/editor/utils/element-tree.util'
 import { getImageDimensions } from '@/shared/utils/image-dimensions.util'
+import { PHOTO_FILE_ACCEPT } from '@/shared/constants/photo-upload.constants'
+import { runPhotoUploads } from '@/shared/utils/photo-upload-error.util'
 import { photoGalleryApi, type GalleryPhoto } from '../api/photo-gallery.api'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
 import { getGalleryScope } from '../utils/photo-gallery-scope.util'
@@ -186,6 +191,8 @@ import { getJournalPageDisplayName } from '../utils/journal-structure.util'
 import { materializeCanvasData } from '../utils/merge-placeholder-element.util'
 import { collectPhotoSlotPreview, countEmptyPhotoSlots } from '../utils/missing-photos.util'
 import QuestionnaireBook from './questionnaire/QuestionnaireBook.vue'
+import PhotoUploadFormatsHint from './PhotoUploadFormatsHint.vue'
+import PhotoUploadErrorList from './PhotoUploadErrorList.vue'
 import PhotoGalleryPickerDialog from './PhotoGalleryPickerDialog.vue'
 
 // Same reasoning as PhotoUploadPage.vue's own stable-empty-instances comment — QuestionnaireBook's
@@ -207,6 +214,7 @@ const galleryScope = computed(() => getGalleryScope(store))
 
 const photos = ref<GalleryPhoto[]>([])
 const uploading = ref(false)
+const uploadErrors = ref<string[]>([])
 const isDragActive = ref(false)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const manualPlacementMode = ref(false)
@@ -408,17 +416,14 @@ async function uploadFiles(files: File[]): Promise<void> {
   }
 
   uploading.value = true
+  uploadErrors.value = []
   try {
-    for (const file of files) {
-      try {
-        const dimensions = await getImageDimensions(file).catch(() => undefined)
-        const uploaded = await photoGalleryApi.upload(galleryScope.value, file, dimensions)
-        photos.value = [uploaded, ...photos.value]
-        await autoPlacePhoto(uploaded.url)
-      } catch {
-        // Best-effort per file — a failed upload just doesn't get added.
-      }
-    }
+    uploadErrors.value = await runPhotoUploads(files, async (file) => {
+      const dimensions = await getImageDimensions(file).catch(() => undefined)
+      const uploaded = await photoGalleryApi.upload(galleryScope.value, file, dimensions)
+      photos.value = [uploaded, ...photos.value]
+      await autoPlacePhoto(uploaded.url)
+    })
   } finally {
     uploading.value = false
   }
@@ -434,7 +439,7 @@ function handleFilesSelected(event: Event): void {
 function handleDrop(event: DragEvent): void {
   isDragActive.value = false
   const files = event.dataTransfer?.files ? Array.from(event.dataTransfer.files) : []
-  void uploadFiles(files.filter((file) => file.type.startsWith('image/')))
+  void uploadFiles(files)
 }
 
 function handleDragStart(event: DragEvent, photo: GalleryPhoto): void {
