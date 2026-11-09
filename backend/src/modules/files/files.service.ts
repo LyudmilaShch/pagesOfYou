@@ -9,6 +9,7 @@ import { randomUUID } from 'crypto';
 import { extname } from 'path';
 import { PrismaService } from '../../database';
 import { YandexStorageProvider } from '../../shared/storage/yandex-storage.provider';
+import { prepareOrderPhoto } from './prepare-order-photo';
 import {
   MAX_IMAGE_UPLOAD_SIZE_BYTES,
   MAX_IMAGE_UPLOAD_SIZE_MB,
@@ -43,6 +44,8 @@ export interface GalleryScope {
   guestId?: string;
 }
 
+// Presigned uploads go straight to object storage and skip `prepareOrderPhoto`, so HEIC
+// must not be allowed here — nothing would convert it, and Chrome could not display it.
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
 @Injectable()
@@ -198,10 +201,23 @@ export class FilesService {
   // customer or admin uploaded this way silently vanished the next time the service redeployed.
   private async persistUploadedFile(
     file: Express.Multer.File,
-    data: { userId: string | null; orderId: string | null; guestId: string | null; width?: number; height?: number },
+    data: {
+      userId: string | null;
+      orderId: string | null;
+      guestId: string | null;
+      width?: number;
+      height?: number;
+    },
   ) {
-    const key = `order-photos/${randomUUID()}${extname(file.originalname)}`;
-    const url = await this.storage.uploadBuffer(key, file.buffer, file.mimetype);
+    const prepared = await prepareOrderPhoto(file);
+    if (prepared.convertedFromHeic) {
+      this.logger.log(
+        `Converted HEIC/HEIF "${file.originalname}" (${file.size} bytes) to JPEG ${prepared.width}x${prepared.height} (${prepared.buffer.length} bytes)`,
+      );
+    }
+
+    const key = `order-photos/${randomUUID()}${prepared.extension ?? extname(file.originalname)}`;
+    const url = await this.storage.uploadBuffer(key, prepared.buffer, prepared.mimetype);
 
     return this.prisma.uploadedFile.create({
       data: {
@@ -211,10 +227,12 @@ export class FilesService {
         storageKey: key,
         url,
         originalName: file.originalname,
-        mimeType: file.mimetype,
-        size: file.size,
-        width: data.width ?? null,
-        height: data.height ?? null,
+        mimeType: prepared.mimetype,
+        size: prepared.buffer.length,
+        // Converted HEIC carries dimensions from the decoder (browsers other than Safari
+        // cannot measure a HEIC file). Everything else keeps the client measurement.
+        width: prepared.width ?? data.width ?? null,
+        height: prepared.height ?? data.height ?? null,
       },
     });
   }
@@ -233,11 +251,7 @@ export class FilesService {
     this.logger.log(`File soft-deleted: ${fileId}`);
   }
 
-  async setFavorite(
-    fileId: string,
-    identity: GalleryIdentity & GalleryScope,
-    isFavorite: boolean,
-  ) {
+  async setFavorite(fileId: string, identity: GalleryIdentity & GalleryScope, isFavorite: boolean) {
     const file = await this.getOwnedFileOrThrow(fileId, identity);
 
     return this.prisma.uploadedFile.update({

@@ -1,5 +1,6 @@
 import { resolveAssetUrl } from '@/shared/config/assets'
 import { http } from '@/shared/api/http'
+import { validatePhotoFile } from '@/shared/constants/photo-upload.constants'
 import type { BackendResponse } from '@/types/api.types'
 
 /** Either a real order's gallery (requires the caller to be signed in and own the order) or a
@@ -50,6 +51,11 @@ export const photoGalleryApi = {
     file: File,
     dimensions?: { width: number; height: number },
   ): Promise<GalleryPhoto> {
+    const problem = validatePhotoFile(file)
+    if (problem) {
+      throw new Error(problem)
+    }
+
     const formData = new FormData()
     formData.append('file', file)
 

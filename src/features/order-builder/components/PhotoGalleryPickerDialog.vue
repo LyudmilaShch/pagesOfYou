@@ -41,10 +41,11 @@
           </button>
         </div>
 
+        <PhotoUploadFormatsHint />
         <input
           ref="fileInputRef"
           type="file"
-          accept="image/*"
+          :accept="PHOTO_FILE_ACCEPT"
           multiple
           class="photo-gallery-picker__file-input"
           @change="handleFilesSelected"
@@ -58,7 +59,9 @@
 import { ref, watch } from 'vue'
 
 import { getImageDimensions } from '@/shared/utils/image-dimensions.util'
+import { PHOTO_FILE_ACCEPT } from '@/shared/constants/photo-upload.constants'
 import { photoGalleryApi, type GalleryPhoto, type PhotoGalleryScope } from '../api/photo-gallery.api'
+import PhotoUploadFormatsHint from './PhotoUploadFormatsHint.vue'
 
 const props = defineProps<{
   open: boolean

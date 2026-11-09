@@ -3,8 +3,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import type { FileFilterCallback } from 'multer';
 import { MAX_IMAGE_UPLOAD_SIZE_BYTES } from '../../shared/constants/upload.constants';
-
-const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+import { isAllowedOrderPhoto, UNSUPPORTED_ORDER_PHOTO_MESSAGE } from './prepare-order-photo';
 
 /** Shared multer config for order photo gallery uploads — used by both the customer-facing
  * `/files/image` endpoint and the admin `/admin/orders/:orderId/photos` endpoint. Buffers the file
@@ -18,8 +17,8 @@ export function orderPhotoUploadInterceptor() {
     storage: memoryStorage(),
     limits: { fileSize: MAX_IMAGE_UPLOAD_SIZE_BYTES },
     fileFilter: (_req, file, cb: FileFilterCallback) => {
-      if (!ALLOWED_MIME_TYPES.includes(file.mimetype)) {
-        cb(new BadRequestException('Unsupported file type'));
+      if (!isAllowedOrderPhoto(file)) {
+        cb(new BadRequestException(UNSUPPORTED_ORDER_PHOTO_MESSAGE));
         return;
       }
       cb(null, true);

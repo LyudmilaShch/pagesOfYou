@@ -10,7 +10,7 @@
       <input
         ref="fileInputRef"
         type="file"
-        accept="image/*"
+        :accept="PHOTO_FILE_ACCEPT"
         multiple
         class="photo-gallery__file-input"
         @change="handleFilesSelected"
@@ -28,6 +28,7 @@
       <p v-if="uploading" class="photo-gallery__upload-progress">
         Загружено {{ uploadedCount }} из {{ uploadTotal }}
       </p>
+      <PhotoUploadFormatsHint />
 
       <v-btn
         block
@@ -89,11 +90,14 @@ import { useRoute } from 'vue-router'
 
 import { useEditorStore } from '@/modules/editor/store/editor.store'
 import { getImageDimensions } from '@/shared/utils/image-dimensions.util'
+import { PHOTO_FILE_ACCEPT } from '@/shared/constants/photo-upload.constants'
+import { getUploadErrorMessage } from '@/shared/utils/api-error.util'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
 import { photoGalleryApi, type GalleryPhoto } from '../api/photo-gallery.api'
 import { ordersApi } from '../api/orders.api'
 import { getGalleryScope } from '../utils/photo-gallery-scope.util'
 import { applyAutoFillToJournalPages } from '../utils/auto-fill-photos.util'
+import PhotoUploadFormatsHint from './PhotoUploadFormatsHint.vue'
 
 const route = useRoute()
 const store = useOrderBuilderStore()
@@ -145,6 +149,7 @@ async function handleFilesSelected(event: Event): Promise<void> {
   uploadTotal.value = files.length
   uploadedCount.value = 0
   let failedCount = 0
+  let failureMessage = ''
 
   try {
     for (const file of files) {
@@ -152,8 +157,9 @@ async function handleFilesSelected(event: Event): Promise<void> {
         const dimensions = await getImageDimensions(file).catch(() => undefined)
         const uploaded = await photoGalleryApi.upload(scope.value, file, dimensions)
         photos.value = [uploaded, ...photos.value]
-      } catch {
+      } catch (err: unknown) {
         failedCount += 1
+        failureMessage = getUploadErrorMessage(err)
       } finally {
         uploadedCount.value += 1
       }
@@ -163,7 +169,8 @@ async function handleFilesSelected(event: Event): Promise<void> {
   }
 
   if (failedCount > 0) {
-    snackbar.text = `Не удалось загрузить ${failedCount} из ${files.length} фото`
+    snackbar.text =
+      failedCount === 1 ? failureMessage : `Не удалось загрузить ${failedCount} из ${files.length} фото`
     snackbar.color = 'error'
     snackbar.show = true
   }

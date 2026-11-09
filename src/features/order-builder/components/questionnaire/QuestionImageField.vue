@@ -9,7 +9,7 @@
       <input
         ref="fileInputRef"
         type="file"
-        accept="image/*"
+        :accept="PHOTO_FILE_ACCEPT"
         class="question-image-field__file-input"
         @change="handleFileSelected"
       />
@@ -29,6 +29,9 @@
         Удалить
       </v-btn>
     </div>
+    <div class="question-image-field__hint">
+      <PhotoUploadFormatsHint />
+    </div>
 
     <PhotoGalleryPickerDialog
       :open="pickerOpen"
@@ -43,8 +46,10 @@
 import { ref } from 'vue'
 
 import { getImageDimensions } from '@/shared/utils/image-dimensions.util'
+import { PHOTO_FILE_ACCEPT } from '@/shared/constants/photo-upload.constants'
 import { photoGalleryApi, type PhotoGalleryScope } from '../../api/photo-gallery.api'
 import PhotoGalleryPickerDialog from '../PhotoGalleryPickerDialog.vue'
+import PhotoUploadFormatsHint from '../PhotoUploadFormatsHint.vue'
 
 const props = defineProps<{
   modelValue: string | null
@@ -114,6 +119,10 @@ function handlePickerSelect(url: string): void {
   display: flex;
   flex-wrap: wrap;
   gap: $spacing-2;
+}
+
+.question-image-field__hint {
+  flex: 1 0 100%;
 }
 
 .question-image-field__file-input {

@@ -4,7 +4,7 @@
       <input
         ref="fileInputRef"
         type="file"
-        accept="image/*"
+        :accept="PHOTO_FILE_ACCEPT"
         multiple
         class="question-gallery-field__file-input"
         @change="handleFilesSelected"
@@ -22,6 +22,7 @@
         Выбрано: {{ modelValue.length }}
       </span>
     </div>
+    <PhotoUploadFormatsHint />
 
     <div v-if="loading" class="question-gallery-field__state">
       <v-progress-circular indeterminate color="primary" size="24" />
@@ -53,7 +54,9 @@
 import { onMounted, ref } from 'vue'
 
 import { getImageDimensions } from '@/shared/utils/image-dimensions.util'
+import { PHOTO_FILE_ACCEPT } from '@/shared/constants/photo-upload.constants'
 import { photoGalleryApi, type GalleryPhoto, type PhotoGalleryScope } from '../../api/photo-gallery.api'
+import PhotoUploadFormatsHint from '../PhotoUploadFormatsHint.vue'
 
 const props = defineProps<{
   modelValue: string[]

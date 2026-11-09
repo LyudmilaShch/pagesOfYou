@@ -1,5 +1,6 @@
 import { adminHttp } from '@/features/admin/api/admin-http'
 import { resolveAssetUrl } from '@/shared/config/assets'
+import { validatePhotoFile } from '@/shared/constants/photo-upload.constants'
 import type { BackendResponse } from '@/types/api.types'
 
 /** Admin counterpart of `order-builder`'s `photoGalleryApi` — always scoped to a specific order
@@ -44,6 +45,11 @@ export const adminPhotoGalleryApi = {
     file: File,
     dimensions?: { width: number; height: number },
   ): Promise<GalleryPhoto> {
+    const problem = validatePhotoFile(file)
+    if (problem) {
+      throw new Error(problem)
+    }
+
     const formData = new FormData()
     formData.append('file', file)
 
