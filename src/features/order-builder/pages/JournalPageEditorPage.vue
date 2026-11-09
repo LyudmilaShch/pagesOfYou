@@ -175,7 +175,7 @@ async function handleSubmitOrder(): Promise<void> {
     }
 
     if (orderBuilderStore.isLocalDraft) {
-      await orderBuilderStore.convertLocalDraftToOrder()
+      await orderBuilderStore.adoptAllGuestDrafts()
     }
 
     if (!orderBuilderStore.order) {
