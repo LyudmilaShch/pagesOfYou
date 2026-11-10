@@ -3,17 +3,18 @@ import { describe, it } from 'node:test'
 
 import {
   COVER_GALLERY_BANNER,
-  COVER_LANDSCAPE_WARNING,
   COVER_ORIENTATION_BADGE,
   COVER_PICK_TOOLTIP,
   photoUploadIntro,
 } from './photo-upload-copy.util.ts'
 
 describe('photo upload intro', () => {
-  it('uses the same hole count as the counter while slots are empty', () => {
-    const text = photoUploadIntro(3)
-    assert.match(text, /^Загрузите 3 фотографий/)
-    assert.match(text, /автоматически расставим/)
+  it('declines the photo noun for 1, 3, 5 and 11', () => {
+    assert.match(photoUploadIntro(1), /^Загрузите 1 фотографию /)
+    assert.match(photoUploadIntro(3), /^Загрузите 3 фотографии /)
+    assert.match(photoUploadIntro(5), /^Загрузите 5 фотографий /)
+    assert.match(photoUploadIntro(11), /^Загрузите 11 фотографий /)
+    assert.match(photoUploadIntro(21), /^Загрузите 21 фотографию /)
   })
 
   it('drops the number once every customer slot is filled', () => {
@@ -29,10 +30,6 @@ describe('cover photo hints', () => {
     assert.match(COVER_PICK_TOOLTIP, /вертикальное фото со спокойным фоном/)
     assert.match(COVER_GALLERY_BANNER, /хорошем качестве/)
     assert.match(COVER_GALLERY_BANNER, /Горизонтальный снимок на обложке сильно обрежется/)
-    assert.match(COVER_LANDSCAPE_WARNING, /Лучше выбрать вертикальное/)
-    assert.equal(
-      COVER_ORIENTATION_BADGE,
-      'Горизонтальное фото: на обложке кадр сильно обрежется.',
-    )
+    assert.equal(COVER_ORIENTATION_BADGE, 'Для обложки лучше вертикальное фото.')
   })
 })
