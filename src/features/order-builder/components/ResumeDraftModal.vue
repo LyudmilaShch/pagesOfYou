@@ -6,7 +6,7 @@
   >
     <div class="resume-draft">
       <h2 id="resume-draft-modal-title" class="resume-draft__title">
-        {{ mode === 'guest' ? 'У вас есть незаконченный журнал' : 'У вас есть незаконченные журналы' }}
+        {{ several ? 'У вас есть незаконченные журналы' : 'У вас есть незаконченный журнал' }}
       </h2>
       <p class="resume-draft__subtitle">
         Хотите продолжить редактирование или начать новый?
@@ -14,20 +14,20 @@
 
       <div class="resume-draft__list">
         <template v-if="mode === 'guest'">
-          <article v-if="guestDraft" class="resume-draft__card">
+          <article v-for="draft in guestDrafts" :key="draft.id" class="resume-draft__card">
             <div class="resume-draft__cover">
               <JournalSpreadThumbnail
-                v-if="guestCoverCanvas"
-                :canvas-data="guestCoverCanvas"
+                v-if="guestCoverCanvas(draft)"
+                :canvas-data="guestCoverCanvas(draft)!"
                 :container-ratio="0.75"
               />
               <div v-else class="resume-draft__cover-placeholder" />
             </div>
             <div class="resume-draft__body">
-              <h3 class="resume-draft__name">{{ guestDraft.order.magazineType.name }}</h3>
-              <p class="resume-draft__meta">Сохранено {{ formatDate(guestDraft.savedAt) }}</p>
+              <h3 class="resume-draft__name">{{ draft.order.magazineType.name }}</h3>
+              <p class="resume-draft__meta">Сохранено {{ formatDate(draft.savedAt) }}</p>
             </div>
-            <v-btn color="primary" size="small" class="resume-draft__continue" @click="emit('continue')">
+            <v-btn color="primary" size="small" class="resume-draft__continue" @click="emit('continue', draft.id)">
               Продолжить
             </v-btn>
           </article>
@@ -80,8 +80,12 @@ const props = defineProps<{
   open: boolean
   mode: 'authenticated' | 'guest'
   drafts: OrderSummary[]
-  guestDraft: StoredLocalDraft | null
+  guestDrafts: StoredLocalDraft[]
 }>()
+
+const several = computed(
+  () => (props.mode === 'guest' ? props.guestDrafts.length : props.drafts.length) > 1,
+)
 
 const emit = defineEmits<{
   continue: [orderId?: string]
@@ -100,7 +104,9 @@ function coverCanvas(order: OrderSummary): CanvasData | null {
   return coverOf(order.journalPages[0])
 }
 
-const guestCoverCanvas = computed(() => coverOf(props.guestDraft?.order.journalPages[0]))
+function guestCoverCanvas(draft: StoredLocalDraft): CanvasData | null {
+  return coverOf(draft.order.journalPages[0])
+}
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('ru-RU', {

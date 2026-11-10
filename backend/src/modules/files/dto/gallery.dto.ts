@@ -35,6 +35,11 @@ export class SetFavoriteDto {
   isFavorite: boolean;
 }
 
+export class TouchGuestGalleryDto {
+  @IsUUID()
+  guestId: string;
+}
+
 export class ClaimGuestPhotosDto {
   @IsUUID()
   guestId: string;

@@ -713,7 +713,13 @@ async function finish(): Promise<void> {
       if (!authenticated) {
         return
       }
-      await store.convertLocalDraftToOrder()
+      try {
+        await store.adoptAllGuestDrafts()
+      } catch {
+        submitErrorMessage.value =
+          store.orderError ?? 'Не удалось перенести журнал в аккаунт. Попробуйте ещё раз.'
+        return
+      }
     }
 
     if (!store.order) {

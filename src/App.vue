@@ -1,5 +1,6 @@
 <template>
   <v-app class="app-root">
+    <DraftTabWarning />
     <router-view />
     <ErrorMessageModalHost />
   </v-app>
@@ -7,6 +8,7 @@
 
 <script setup lang="ts">
 import ErrorMessageModalHost from '@/components/ui/ErrorMessageModalHost.vue'
+import DraftTabWarning from '@/features/order-builder/components/DraftTabWarning.vue'
 </script>
 
 <style lang="scss">

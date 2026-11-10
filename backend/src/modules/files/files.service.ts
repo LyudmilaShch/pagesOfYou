@@ -9,10 +9,12 @@ import { randomUUID } from 'crypto';
 import { extname } from 'path';
 import { PrismaService } from '../../database';
 import { YandexStorageProvider } from '../../shared/storage/yandex-storage.provider';
+import { prepareOrderPhoto } from './prepare-order-photo';
 import {
   MAX_IMAGE_UPLOAD_SIZE_BYTES,
   MAX_IMAGE_UPLOAD_SIZE_MB,
 } from '../../shared/constants/upload.constants';
+import { guestGalleryCutoff } from './guest-gallery-ttl.util';
 
 export interface RequestUploadUrlDto {
   /** Original file name — stored for display purposes */
@@ -43,6 +45,8 @@ export interface GalleryScope {
   guestId?: string;
 }
 
+// Presigned uploads go straight to object storage and skip `prepareOrderPhoto`, so HEIC
+// must not be allowed here — nothing would convert it, and Chrome could not display it.
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
 @Injectable()
@@ -198,23 +202,39 @@ export class FilesService {
   // customer or admin uploaded this way silently vanished the next time the service redeployed.
   private async persistUploadedFile(
     file: Express.Multer.File,
-    data: { userId: string | null; orderId: string | null; guestId: string | null; width?: number; height?: number },
+    data: {
+      userId: string | null;
+      orderId: string | null;
+      guestId: string | null;
+      width?: number;
+      height?: number;
+    },
   ) {
-    const key = `order-photos/${randomUUID()}${extname(file.originalname)}`;
-    const url = await this.storage.uploadBuffer(key, file.buffer, file.mimetype);
+    const prepared = await prepareOrderPhoto(file);
+    if (prepared.convertedFromHeic) {
+      this.logger.log(
+        `Converted HEIC/HEIF "${file.originalname}" (${file.size} bytes) to JPEG ${prepared.width}x${prepared.height} (${prepared.buffer.length} bytes)`,
+      );
+    }
+
+    const key = `order-photos/${randomUUID()}${prepared.extension ?? extname(file.originalname)}`;
+    const url = await this.storage.uploadBuffer(key, prepared.buffer, prepared.mimetype);
 
     return this.prisma.uploadedFile.create({
       data: {
         userId: data.userId,
         orderId: data.orderId,
         guestId: data.guestId,
+        guestTouchedAt: data.guestId ? new Date() : null,
         storageKey: key,
         url,
         originalName: file.originalname,
-        mimeType: file.mimetype,
-        size: file.size,
-        width: data.width ?? null,
-        height: data.height ?? null,
+        mimeType: prepared.mimetype,
+        size: prepared.buffer.length,
+        // Converted HEIC carries dimensions from the decoder (browsers other than Safari
+        // cannot measure a HEIC file). Everything else keeps the client measurement.
+        width: prepared.width ?? data.width ?? null,
+        height: prepared.height ?? data.height ?? null,
       },
     });
   }
@@ -233,11 +253,7 @@ export class FilesService {
     this.logger.log(`File soft-deleted: ${fileId}`);
   }
 
-  async setFavorite(
-    fileId: string,
-    identity: GalleryIdentity & GalleryScope,
-    isFavorite: boolean,
-  ) {
+  async setFavorite(fileId: string, identity: GalleryIdentity & GalleryScope, isFavorite: boolean) {
     const file = await this.getOwnedFileOrThrow(fileId, identity);
 
     return this.prisma.uploadedFile.update({
@@ -305,6 +321,44 @@ export class FilesService {
     return { count: result.count };
   }
 
+  /** Refreshes the 14-day window for every photo still owned by this guest gallery. */
+  async touchGuestGallery(guestId: string): Promise<{ count: number }> {
+    await this.purgeAbandonedGuestPhotos();
+    const result = await this.prisma.uploadedFile.updateMany({
+      where: { guestId, orderId: null, deletedAt: null },
+      data: { guestTouchedAt: new Date() },
+    });
+    return { count: result.count };
+  }
+
+  /**
+   * Soft-deletes guest photos whose gallery has not been touched for 14 days (the guest draft
+   * lifetime). Claimed photos (`orderId` set) are kept.
+   *
+   * TODO(owner): this runs when a guest gallery is listed or touched, not on a clock. Photos of
+   * a guest who never returns stay until something else lists a guest gallery. Say if you want
+   * a scheduled job instead.
+   */
+  async purgeAbandonedGuestPhotos(now = new Date()): Promise<{ count: number }> {
+    const cutoff = guestGalleryCutoff(now);
+    const result = await this.prisma.uploadedFile.updateMany({
+      where: {
+        guestId: { not: null },
+        orderId: null,
+        deletedAt: null,
+        OR: [
+          { guestTouchedAt: { lt: cutoff } },
+          { guestTouchedAt: null, createdAt: { lt: cutoff } },
+        ],
+      },
+      data: { deletedAt: now },
+    });
+    if (result.count > 0) {
+      this.logger.log(`Purged ${result.count} abandoned guest photo(s)`);
+    }
+    return { count: result.count };
+  }
+
   private async getOwnedFileOrThrow(fileId: string, identity: GalleryIdentity & GalleryScope) {
     const file = await this.prisma.uploadedFile.findFirst({
       where: { id: fileId, deletedAt: null },
@@ -343,6 +397,10 @@ export class FilesService {
     }
 
     if (scope.guestId) {
+      // Opportunistic purge: there is no scheduler in this service. Galleries nobody opens
+      // stay until the next list/touch. A dedicated cron would only matter for guests who
+      // never come back — see the TODO on `purgeAbandonedGuestPhotos`.
+      await this.purgeAbandonedGuestPhotos();
       return this.prisma.uploadedFile.findMany({
         where: { guestId: scope.guestId, deletedAt: null },
         orderBy: { createdAt: 'desc' },

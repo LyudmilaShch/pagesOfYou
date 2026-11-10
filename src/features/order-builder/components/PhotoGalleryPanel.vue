@@ -10,7 +10,7 @@
       <input
         ref="fileInputRef"
         type="file"
-        accept="image/*"
+        :accept="PHOTO_FILE_ACCEPT"
         multiple
         class="photo-gallery__file-input"
         @change="handleFilesSelected"
@@ -28,6 +28,8 @@
       <p v-if="uploading" class="photo-gallery__upload-progress">
         Загружено {{ uploadedCount }} из {{ uploadTotal }}
       </p>
+      <PhotoUploadFormatsHint />
+      <PhotoUploadErrorList :messages="uploadErrors" />
 
       <v-btn
         block
@@ -100,14 +102,21 @@ import { useRoute } from 'vue-router'
 
 import { useEditorStore } from '@/modules/editor/store/editor.store'
 import { getImageDimensions } from '@/shared/utils/image-dimensions.util'
+import { PHOTO_FILE_ACCEPT } from '@/shared/constants/photo-upload.constants'
+import { runPhotoUploads } from '@/shared/utils/photo-upload-error.util'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
 import { photoGalleryApi, type GalleryPhoto } from '../api/photo-gallery.api'
 import { ordersApi } from '../api/orders.api'
 import { getGalleryScope } from '../utils/photo-gallery-scope.util'
 import { applyAutoFillToJournalPages } from '../utils/auto-fill-photos.util'
+import { samePhotoUrl } from '../utils/strip-photo-url.util'
+import { flattenTree } from '@/modules/editor/utils/element-tree.util'
+import { isPhotoElement } from '@/modules/editor/models'
 import PrintResolutionBadge from '@/modules/editor/components/PrintResolutionBadge.vue'
 import { useUploadResolutionWarning } from '@/modules/editor/composables/use-upload-resolution-warning'
 import { uploadResolutionMessage } from '@/modules/editor/utils/print-resolution.util'
+import PhotoUploadFormatsHint from './PhotoUploadFormatsHint.vue'
+import PhotoUploadErrorList from './PhotoUploadErrorList.vue'
 
 const route = useRoute()
 const store = useOrderBuilderStore()
@@ -123,6 +132,7 @@ const uploadedCount = ref(0)
 const uploadTotal = ref(0)
 const autoFilling = ref(false)
 const fileInputRef = ref<HTMLInputElement | null>(null)
+const uploadErrors = ref<string[]>([])
 
 const snackbar = reactive({
   show: false,
@@ -159,28 +169,20 @@ async function handleFilesSelected(event: Event): Promise<void> {
   uploading.value = true
   uploadTotal.value = files.length
   uploadedCount.value = 0
-  let failedCount = 0
+  uploadErrors.value = []
 
   try {
-    for (const file of files) {
+    uploadErrors.value = await runPhotoUploads(files, async (file) => {
       try {
         const dimensions = await getImageDimensions(file).catch(() => undefined)
         const uploaded = await photoGalleryApi.upload(scope.value, file, dimensions)
         photos.value = [uploaded, ...photos.value]
-      } catch {
-        failedCount += 1
       } finally {
         uploadedCount.value += 1
       }
-    }
+    })
   } finally {
     uploading.value = false
-  }
-
-  if (failedCount > 0) {
-    snackbar.text = `Не удалось загрузить ${failedCount} из ${files.length} фото`
-    snackbar.color = 'error'
-    snackbar.show = true
   }
 }
 
@@ -198,6 +200,18 @@ async function toggleFavorite(photo: GalleryPhoto): Promise<void> {
   }
 }
 
+function clearLiveEditorPhoto(url: string): void {
+  const elements = editorStore.document?.canvasData?.elements
+  if (!elements) {
+    return
+  }
+  for (const element of flattenTree(elements)) {
+    if (isPhotoElement(element) && element.defaultImageUrl && samePhotoUrl(element.defaultImageUrl, url)) {
+      editorStore.updateElement(element.id, { defaultImageUrl: null, cropX: 0, cropY: 0, imageScale: 1 })
+    }
+  }
+}
+
 async function removePhoto(photo: GalleryPhoto): Promise<void> {
   if (!window.confirm('Удалить фото из галереи?')) {
     return
@@ -205,6 +219,8 @@ async function removePhoto(photo: GalleryPhoto): Promise<void> {
 
   try {
     await photoGalleryApi.remove(photo.id, scope.value)
+    clearLiveEditorPhoto(photo.url)
+    await store.removePhotoFromJournal(photo.url)
     photos.value = photos.value.filter((item) => item.id !== photo.id)
   } catch {
     snackbar.text = 'Не удалось удалить фото'
