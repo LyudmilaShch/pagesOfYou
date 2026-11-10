@@ -74,17 +74,8 @@
         <header class="photo-upload-page__intro-mobile">
           <h1 class="photo-upload-page__title text-h3">Добавьте фотографии в журнал</h1>
           <p class="photo-upload-page__subtitle text-body text-secondary">
-            {{ photoUploadIntro(missingPhotoCount) }}
+            {{ photoUploadIntro(photosToUpload) }}
           </p>
-          <v-alert
-            v-if="coverPhotoIsLandscape"
-            type="warning"
-            variant="tonal"
-            density="compact"
-            class="photo-upload-page__cover-warning"
-          >
-            {{ COVER_LANDSCAPE_WARNING }}
-          </v-alert>
         </header>
 
         <div
@@ -168,17 +159,8 @@
               <p class="photo-upload-page__eyebrow text-caption text-secondary">Шаг 2 — Фото</p>
               <h1 class="photo-upload-page__title text-h3">Добавьте фотографии в журнал</h1>
               <p class="photo-upload-page__subtitle text-body text-secondary">
-                {{ photoUploadIntro(missingPhotoCount) }}
+                {{ photoUploadIntro(photosToUpload) }}
               </p>
-              <v-alert
-                v-if="coverPhotoIsLandscape"
-                type="warning"
-                variant="tonal"
-                density="compact"
-                class="photo-upload-page__cover-warning"
-              >
-                {{ COVER_LANDSCAPE_WARNING }}
-              </v-alert>
             </header>
 
             <div
@@ -405,12 +387,11 @@ import { photoGalleryApi, type GalleryPhoto } from '../api/photo-gallery.api'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
 import { getGalleryScope } from '../utils/photo-gallery-scope.util'
 import { getJournalPageDisplayName } from '../utils/journal-structure.util'
-import { samePhotoUrl } from '../utils/strip-photo-url.util'
 import {
   countEmptyPhotoSlots,
+  countPhotosToUpload,
   findNextEmptyAutoFillSlot,
   hasMissingCustomerPhotos,
-  isLandscapePhoto,
   missingPhotoLine,
   presentCustomerPageCanvas,
   collectPhotoSlotPreview,
@@ -418,10 +399,7 @@ import {
 import QuestionnaireBook from '../components/questionnaire/QuestionnaireBook.vue'
 import PhotoTouchDragGhost from '../components/PhotoTouchDragGhost.vue'
 import { usePhotoTouchDrag } from '../composables/use-photo-touch-drag'
-import {
-  COVER_LANDSCAPE_WARNING,
-  photoUploadIntro,
-} from '../utils/photo-upload-copy.util'
+import { photoUploadIntro } from '../utils/photo-upload-copy.util'
 import { prependUniqueById } from '../utils/gallery-list.util'
 import PhotoUploadFormatsHint from '../components/PhotoUploadFormatsHint.vue'
 import PhotoUploadErrorList from '../components/PhotoUploadErrorList.vue'
@@ -478,21 +456,7 @@ function updateIsMobileViewport(): void {
 
 const missingPhotoPages = computed(() => collectPhotoSlotPreview(store.order?.journalPages ?? []))
 const missingPhotoCount = computed(() => countEmptyPhotoSlots(missingPhotoPages.value))
-
-const coverPhotoIsLandscape = computed(() => {
-  const cover = store.order?.journalPages.find((page) => page.slotType === 'COVER')
-  if (!cover) {
-    return false
-  }
-  return cover.placeholderValues.some((value) => {
-    const url = value.valueType === 'PHOTO' ? value.jsonValue?.url?.trim() : ''
-    if (!url) {
-      return false
-    }
-    const photo = photos.value.find((item) => samePhotoUrl(item.url, url))
-    return photo ? isLandscapePhoto(photo.width, photo.height) : false
-  })
-})
+const photosToUpload = computed(() => countPhotosToUpload(store.order?.journalPages ?? []))
 
 // Picking a photo for a specific slot from the gallery — the "+" on an empty slot in the book,
 // including the cover.
@@ -1556,10 +1520,6 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: $spacing-3;
   margin-top: $spacing-4;
-}
-
-.photo-upload-page__cover-warning {
-  margin-top: $spacing-3;
 }
 
 .photo-upload-page__grid {

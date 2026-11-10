@@ -5,6 +5,7 @@ import {
   canAutoPlaceCustomerPhoto,
   collectAutoFillTargets,
   collectMissingPhotoPages,
+  countPhotosCustomerSupplies,
   isCustomerPhotoSlotFilled,
   isLandscapePhoto,
   missingPhotoLine,
@@ -68,6 +69,58 @@ describe('customer photo slots', () => {
     assert.equal(canAutoPlaceCustomerPhoto(anketa), false)
     const pages = collectMissingPhotoPages([anketa])
     assert.deepEqual(pages, [])
+  })
+
+  it('asks for the cover even when every other slot is already closed', () => {
+    const journal = [
+      fact({
+        pageId: 'cover',
+        elementId: 'cover',
+        slotType: 'COVER',
+        adminImageUrl: '/uploads/sample.jpg',
+      }),
+      fact({
+        pageId: 'spread',
+        elementId: 'admin',
+        slotType: 'SPREAD',
+        adminImageUrl: '/uploads/kept.jpg',
+      }),
+      fact({
+        pageId: 'spread',
+        elementId: 'placed',
+        slotType: 'SPREAD',
+        userUrl: '/uploads/mine.jpg',
+      }),
+      fact({
+        pageId: 'spread',
+        elementId: 'anketa',
+        slotType: 'SPREAD',
+        questionKey: 'hero',
+      }),
+    ]
+    assert.equal(countPhotosCustomerSupplies(journal), 2)
+    assert.equal(collectMissingPhotoPages(journal).reduce((sum, page) => sum + page.slots.length, 0), 1)
+  })
+
+  it('grows when a spread with empty slots is added and shrinks when that spread is removed', () => {
+    const base = [
+      fact({ pageId: 'cover', elementId: 'cover', slotType: 'COVER' }),
+      fact({ pageId: 'spread-1', elementId: 'a', slotType: 'SPREAD', userUrl: '/uploads/a.jpg' }),
+    ]
+    const added = [
+      ...base,
+      fact({ pageId: 'spread-2', elementId: 'empty-1', slotType: 'SPREAD' }),
+      fact({ pageId: 'spread-2', elementId: 'empty-2', slotType: 'SPREAD' }),
+      fact({
+        pageId: 'spread-2',
+        elementId: 'admin',
+        slotType: 'SPREAD',
+        adminImageUrl: '/uploads/sample.jpg',
+      }),
+    ]
+    assert.equal(countPhotosCustomerSupplies(base), 2)
+    assert.equal(countPhotosCustomerSupplies(added), 4)
+    assert.equal(countPhotosCustomerSupplies(base), 2)
   })
 
   it('lists the cover and a spread hole, and names them', () => {

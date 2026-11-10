@@ -1,4 +1,5 @@
 import type { JournalSlotType } from '../constants/journal.constants'
+import { pluralize } from '../../../shared/utils/pluralize.util.ts'
 
 const PAGE_LABELS: Record<JournalSlotType, string> = {
   COVER: 'Обложка',
@@ -96,15 +97,24 @@ export function customerPhotoPageLabel(slotType: JournalSlotType, spreadIndex?: 
 }
 
 function emptyPlaceWord(count: number): string {
-  const mod10 = count % 10
-  const mod100 = count % 100
-  if (mod10 === 1 && mod100 !== 11) {
-    return 'пустое место'
+  return pluralize(count, 'пустое место', 'пустых места', 'пустых мест')
+}
+
+/** How many photos the customer is asked to bring. Cover slots always count, even when an
+ * admin sample is there or the customer has already chosen a photo. Other slots count only
+ * when the template left them empty: an admin image or an anketa binding does not. Filling a
+ * slot does not lower the number; adding or removing a spread does. */
+export function countPhotosCustomerSupplies(facts: CustomerPhotoFact[]): number {
+  let count = 0
+  for (const fact of facts) {
+    if (!isTrackedCustomerPhotoSlot(fact)) {
+      continue
+    }
+    if (fact.slotType === 'COVER' || trimmed(fact.adminImageUrl).length === 0) {
+      count += 1
+    }
   }
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) {
-    return 'пустых места'
-  }
-  return 'пустых мест'
+  return count
 }
 
 /** One row in the "what's still empty" list. */

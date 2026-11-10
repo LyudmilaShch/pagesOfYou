@@ -1,3 +1,5 @@
+import { pluralize } from '../../../shared/utils/pluralize.util.ts'
+
 /** Short hover text on the cover's add/replace photo button. */
 export const COVER_PICK_TOOLTIP = 'Для обложки лучше вертикальное фото со спокойным фоном.'
 
@@ -5,19 +7,15 @@ export const COVER_PICK_TOOLTIP = 'Для обложки лучше вертик
 export const COVER_GALLERY_BANNER =
   'Выберите вертикальное фото в хорошем качестве. Лучше всего подойдёт снимок со спокойным фоном и без большого количества мелких деталей — так текст и оформление обложки будут выглядеть аккуратно и хорошо читаться. Горизонтальный снимок на обложке сильно обрежется.'
 
-/** Yellow warning under the photo-step intro once a landscape photo is on the cover. */
-export const COVER_LANDSCAPE_WARNING =
-  'Горизонтальное фото на обложке: кадр сильно обрежется. Лучше выбрать вертикальное.'
+/** Tooltip on the yellow cover badge when the chosen photo is landscape. */
+export const COVER_ORIENTATION_BADGE = 'Для обложки лучше вертикальное фото.'
 
-/** Tooltip on the cover thumbnail badge. Same wording the photo step used before the banner. */
-export const COVER_ORIENTATION_BADGE =
-  'Горизонтальное фото: на обложке кадр сильно обрежется.'
-
-/** Intro under the photo-step title. The count is the same hole count as «N не на месте». */
-export function photoUploadIntro(missingCount: number): string {
+/** Intro under the photo-step title. `count` is how many photos the line asks for. */
+export function photoUploadIntro(count: number): string {
   const placement = 'Хотите изменить расположение? Перетащите фото из галереи на нужную страницу.'
-  if (missingCount > 0) {
-    return `Загрузите ${missingCount} фотографий — мы автоматически расставим их по страницам журнала. ${placement}`
+  if (count > 0) {
+    const word = pluralize(count, 'фотографию', 'фотографии', 'фотографий')
+    return `Загрузите ${count} ${word} — мы автоматически расставим их по страницам журнала. ${placement}`
   }
   return `Фото расставлены. ${placement}`
 }
