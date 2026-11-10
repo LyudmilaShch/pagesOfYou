@@ -45,14 +45,15 @@ import { useRoute, useRouter } from 'vue-router'
 import EditorPage from '@/modules/editor/pages/EditorPage.vue'
 import { useEditorStore } from '@/modules/editor/store/editor.store'
 import type { EditorSourceDocument } from '@/modules/editor/models/page-template.model'
-import { normalizeCanvasData, type CanvasData } from '@/modules/editor/models/canvas-data.model'
+import type { CanvasData } from '@/modules/editor/models/canvas-data.model'
 import { ensureCustomFontsLoaded } from '@/modules/editor/utils/custom-fonts.util'
 import { provideEditorAssets } from '@/modules/editor/services/editor-assets'
 import { provideEditorLeftPanelExtraCategories } from '@/modules/editor/services/editor-left-panel-extra-category'
 import { provideEditorTopAction } from '@/modules/editor/services/editor-top-action'
 import { provideEditorPhotoPicker } from '@/modules/editor/services/editor-photo-picker'
 import { provideEditorPlaceholderSync } from '@/modules/editor/services/editor-placeholder-sync'
-import { findNodeById } from '@/modules/editor/utils/element-tree.util'
+import { isPhotoElement } from '@/modules/editor/models'
+import { findNodeById, flattenTree } from '@/modules/editor/utils/element-tree.util'
 import { listAnswerSlots } from '@/modules/editor/utils/list-distribution.util'
 import { toListEntries } from '../utils/list-answer.util'
 import { useAuthStore } from '@/stores/auth.store'
@@ -60,7 +61,7 @@ import AuthModal from '@/components/auth/AuthModal.vue'
 import { userEditorAssetsProvider } from '../services/user-editor-assets'
 import { ordersApi } from '../api/orders.api'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
-import { materializeCanvasData } from '../utils/merge-placeholder-element.util'
+import { hasMissingCustomerPhotos, presentCustomerPageCanvas } from '../utils/missing-photos.util'
 import { getGalleryScope } from '../utils/photo-gallery-scope.util'
 import JournalStructurePanel from '../components/JournalStructurePanel.vue'
 import QuestionnaireEntryPanel from '../components/QuestionnaireEntryPanel.vue'
@@ -179,6 +180,13 @@ async function handleSubmitOrder(): Promise<void> {
     }
 
     if (!orderBuilderStore.order) {
+      return
+    }
+
+    if (hasMissingCustomerPhotos(orderBuilderStore.order.journalPages)) {
+      submitSnackbar.text = 'Остались пустые места для фото. Заполните их перед оформлением заказа.'
+      submitSnackbar.color = 'error'
+      submitSnackbar.show = true
       return
     }
 
@@ -333,10 +341,7 @@ async function fetchDocument(): Promise<EditorSourceDocument> {
     throw new Error('Страница не найдена в этом заказе.')
   }
 
-  const canvasData = materializeCanvasData(
-    normalizeCanvasData(journalPage.pageSnapshot),
-    journalPage.placeholderValues,
-  )
+  const canvasData = presentCustomerPageCanvas(journalPage)
 
   return {
     id: journalPage.id,
@@ -347,6 +352,27 @@ async function fetchDocument(): Promise<EditorSourceDocument> {
 }
 
 async function saveDocument(canvasData: CanvasData): Promise<void> {
+  const journalPage = orderBuilderStore.order?.journalPages.find((page) => page.id === journalPageId.value)
+  if (journalPage?.slotType === 'COVER') {
+    const chosen = flattenTree(canvasData.elements).flatMap((leaf) => {
+      if (!isPhotoElement(leaf)) {
+        return []
+      }
+      const url = leaf.defaultImageUrl?.trim()
+      return url ? [{ elementId: leaf.id, url }] : []
+    })
+    if (chosen.length > 0) {
+      await orderBuilderStore.savePlaceholders(
+        journalPage.id,
+        chosen.map((photo) => ({
+          elementId: photo.elementId,
+          valueType: 'PHOTO' as const,
+          jsonValue: { url: photo.url },
+        })),
+      )
+    }
+  }
+
   if (!orderBuilderStore.isLocalDraft) {
     await ordersApi.saveJournalPageCanvas(orderId.value, journalPageId.value, canvasData)
   }

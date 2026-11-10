@@ -196,30 +196,18 @@
             <PhotoUploadFormatsHint />
             <PhotoUploadErrorList :messages="uploadErrors" />
 
-            <div class="photo-upload-page__stats">
-              <span class="photo-upload-page__stats-count">Загружено {{ photos.length }} фото</span>
-              <span class="photo-upload-page__stats-hint text-body-sm text-secondary">
-                Нужно {{ requiredPhotoCount }} фото
-              </span>
-            </div>
-
-            <!-- Mobile-only — replaces .photo-upload-page__stats (desktop, hidden here) with a
-                 title + fill progress bar against `requiredPhotoCount`. -->
-            <div class="photo-upload-page__mobile-stats">
-              <div class="photo-upload-page__mobile-stats-row">
-                <span class="photo-upload-page__mobile-stats-title">Ваши фотографии</span>
-                <span class="photo-upload-page__mobile-stats-count">
-                  {{ photos.length }} из {{ requiredPhotoCount }} загружено
-                </span>
-              </div>
-              <v-progress-linear
-                :model-value="requiredPhotoCount > 0 ? (photos.length / requiredPhotoCount) * 100 : 0"
-                color="primary"
-                bg-color="#f1d6de"
-                height="6"
-                rounded
-              />
-            </div>
+            <p class="photo-upload-page__stats">
+              <span>{{ photos.length }} фото</span>
+              <button
+                v-if="missingPhotoCount > 0"
+                type="button"
+                class="photo-upload-page__stats-gap"
+                @click="incompletePhotosModalOpen = true"
+              >
+                · {{ missingPhotoCount }} не на месте
+              </button>
+            </p>
+            <CoverPhotoHint :landscape="coverPhotoIsLandscape" />
 
             <div v-if="photos.length > 0" class="photo-upload-page__grid-header">
               <span class="photo-upload-page__grid-title text-body-sm text-secondary">Загруженные фото</span>
@@ -283,21 +271,6 @@
                   >
                     <v-icon size="10">mdi-close</v-icon>
                   </button>
-                </div>
-              </div>
-            </div>
-
-            <div v-if="coverSlots.length > 0 && photos.length > 0" class="photo-upload-page__cover">
-              <h2 class="photo-upload-page__cover-title text-body">Фото на обложке</h2>
-              <div class="photo-upload-page__cover-slots">
-                <div v-for="slot in coverSlots" :key="slot.elementId" class="photo-upload-page__cover-slot">
-                  <div class="photo-upload-page__cover-preview">
-                    <img v-if="slot.url" :src="slot.url" alt="" />
-                    <v-icon v-else :size="isMobileViewport ? 18 : 24" color="grey">mdi-image-outline</v-icon>
-                  </div>
-                  <v-btn variant="outlined" size="small" @click="openCoverPicker(slot.elementId)">
-                    {{ slot.url ? 'Заменить' : 'Выбрать фото' }}
-                  </v-btn>
                 </div>
               </div>
             </div>
@@ -389,9 +362,17 @@
           <v-icon size="28" color="white">mdi-image-off-outline</v-icon>
         </div>
 
-        <h2 id="incomplete-photos-title" class="photo-upload-page__incomplete-title">Не хватает фото</h2>
+        <h2 id="incomplete-photos-title" class="photo-upload-page__incomplete-title">Остались пустые места</h2>
+        <ul class="photo-upload-page__incomplete-list">
+          <li v-for="page in missingPhotoPages" :key="page.journalPageId">
+            <button type="button" class="photo-upload-page__incomplete-item" @click="goToMissingPage(page.journalPageId)">
+              {{ missingPhotoLine(page.pageLabel, page.slots.length) }}
+              <v-icon size="16">mdi-chevron-right</v-icon>
+            </button>
+          </li>
+        </ul>
         <p class="photo-upload-page__incomplete-subtitle">
-          Вы загрузили ещё не все фото для журнала — часть мест в разворотах останется пустой.
+          Можно вернуться и выбрать фото сейчас или загрузить их позже, до проверки заказа.
         </p>
 
         <div class="photo-upload-page__incomplete-actions">
@@ -423,9 +404,18 @@ import { photoGalleryApi, type GalleryPhoto } from '../api/photo-gallery.api'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
 import { getGalleryScope } from '../utils/photo-gallery-scope.util'
 import { getJournalPageDisplayName } from '../utils/journal-structure.util'
-import { materializeCanvasData } from '../utils/merge-placeholder-element.util'
-import { collectPhotoSlotPreview } from '../utils/missing-photos.util'
+import { samePhotoUrl } from '../utils/strip-photo-url.util'
+import {
+  countEmptyPhotoSlots,
+  findNextEmptyAutoFillSlot,
+  hasMissingCustomerPhotos,
+  isLandscapePhoto,
+  missingPhotoLine,
+  presentCustomerPageCanvas,
+  collectPhotoSlotPreview,
+} from '../utils/missing-photos.util'
 import QuestionnaireBook from '../components/questionnaire/QuestionnaireBook.vue'
+import CoverPhotoHint from '../components/CoverPhotoHint.vue'
 import PhotoUploadFormatsHint from '../components/PhotoUploadFormatsHint.vue'
 import PhotoUploadErrorList from '../components/PhotoUploadErrorList.vue'
 import PhotoGalleryPickerDialog from '../components/PhotoGalleryPickerDialog.vue'
@@ -493,37 +483,27 @@ const requiredPhotoCount = computed(() => {
   return count
 })
 
-interface CoverSlot {
-  elementId: string
-  url: string | null
-}
+const missingPhotoPages = computed(() => collectPhotoSlotPreview(store.order?.journalPages ?? []))
+const missingPhotoCount = computed(() => countEmptyPhotoSlots(missingPhotoPages.value))
 
-// The cover's own photo-placeholder element(s) — usually just one, but a collage-style cover
-// template could have more. Shown as its own picker (not left to auto-placement's page order)
-// since the cover is the one photo the user is most likely to want to choose deliberately.
-const coverPage = computed(() => store.order?.journalPages.find((page) => page.slotType === 'COVER') ?? null)
-const coverSlots = computed<CoverSlot[]>(() => {
-  const page = coverPage.value
-  if (!page) {
-    return []
+const coverPhotoIsLandscape = computed(() => {
+  const cover = store.order?.journalPages.find((page) => page.slotType === 'COVER')
+  if (!cover) {
+    return false
   }
-  const leaves = flattenTree(normalizeCanvasData(page.pageSnapshot).elements)
-  const valueByElementId = new Map(page.placeholderValues.map((value) => [value.elementId, value]))
-  return leaves
-    .filter((leaf) => isPhotoElement(leaf))
-    .map((leaf) => ({ elementId: leaf.id, url: valueByElementId.get(leaf.id)?.jsonValue?.url ?? null }))
+  return cover.placeholderValues.some((value) => {
+    const url = value.valueType === 'PHOTO' ? value.jsonValue?.url?.trim() : ''
+    if (!url) {
+      return false
+    }
+    const photo = photos.value.find((item) => samePhotoUrl(item.url, url))
+    return photo ? isLandscapePhoto(photo.width, photo.height) : false
+  })
 })
 
-// Picking a photo for a specific slot from the gallery — used by both the dedicated cover picker
-// above and the "pick" icon on any empty slot in the book (see `openPhotoPicker`/`pick-photo`).
+// Picking a photo for a specific slot from the gallery — the "+" on an empty slot in the book,
+// including the cover.
 const pickerTarget = ref<{ journalPageId: string; elementId: string } | null>(null)
-
-function openCoverPicker(elementId: string): void {
-  if (!coverPage.value) {
-    return
-  }
-  openPhotoPicker(coverPage.value.id, elementId)
-}
 
 function openPhotoPicker(journalPageId: string, elementId: string): void {
   pickerTarget.value = { journalPageId, elementId }
@@ -651,9 +631,9 @@ function goToUsage(entry: PhotoUsage): void {
 // Same base-layer materialization QuestionnairePage.vue uses for the book preview — no live
 // overlay needed here, since nothing on this page edits any placeholder value.
 const canvasDataByPageId = computed(() => {
-  const map = new Map<string, ReturnType<typeof materializeCanvasData>>()
+  const map = new Map<string, ReturnType<typeof presentCustomerPageCanvas>>()
   for (const page of store.order?.journalPages ?? []) {
-    map.set(page.id, materializeCanvasData(normalizeCanvasData(page.pageSnapshot), page.placeholderValues))
+    map.set(page.id, presentCustomerPageCanvas(page))
   }
   return map
 })
@@ -692,35 +672,8 @@ async function load(): Promise<void> {
   }
 }
 
-/** The next empty photo-placeholder slot to auto-fill, in journal order — skips any element with
- * its own `questionKey` (a slot the anketa's IMAGE/GALLERY questions own; auto-placement would
- * fight over it, since a direct placeholder write here is marked OVERRIDDEN and would permanently
- * block that question's own answer from ever syncing into it — see `applyLocalPlaceholders`), and
- * skips the COVER entirely — that's a deliberate choice via `coverSlots`/`openCoverPicker` above,
- * not something the first upload should just happen to land on. */
-function findNextEmptyAutoFillSlot(): { journalPageId: string; elementId: string } | null {
-  for (const page of store.order?.journalPages ?? []) {
-    if (page.slotType === 'COVER') {
-      continue
-    }
-    const leaves = flattenTree(normalizeCanvasData(page.pageSnapshot).elements)
-    const valueByElementId = new Map(page.placeholderValues.map((value) => [value.elementId, value]))
-
-    for (const leaf of leaves) {
-      if (!isPhotoElement(leaf) || leaf.questionKey) {
-        continue
-      }
-      if (valueByElementId.get(leaf.id)?.jsonValue?.url?.trim()) {
-        continue
-      }
-      return { journalPageId: page.id, elementId: leaf.id }
-    }
-  }
-  return null
-}
-
 async function autoPlacePhoto(url: string): Promise<void> {
-  const slot = findNextEmptyAutoFillSlot()
+  const slot = findNextEmptyAutoFillSlot(store.order?.journalPages ?? [])
   if (!slot) {
     return
   }
@@ -971,7 +924,7 @@ function goToPreviousStep(): void {
 // the mobile stepper (see `isStepReachable`) to decide whether Анкета is safe to jump to directly.
 const photosComplete = computed(() => {
   const pages = store.order?.journalPages ?? []
-  return pages.length > 0 && !collectPhotoSlotPreview(pages).some((page) => page.slots.some((slot) => !slot.url))
+  return pages.length > 0 && !hasMissingCustomerPhotos(pages)
 })
 
 // Whether every required placeholder in the journal (photo AND text/AI-text) is filled — the same
@@ -987,7 +940,7 @@ function isStepReachable(step: number): boolean {
     return photosComplete.value
   }
   if (step === 4 || step === 5) {
-    return contentComplete.value
+    return photosComplete.value && contentComplete.value
   }
   return false
 }
@@ -1006,10 +959,13 @@ function goToStep(step: number): void {
 
 const incompletePhotosModalOpen = ref(false)
 
+function goToMissingPage(journalPageId: string): void {
+  incompletePhotosModalOpen.value = false
+  jumpTo(journalPageId)
+}
+
 function goToNextStep(): void {
-  const incompletePages = collectPhotoSlotPreview(store.order?.journalPages ?? [])
-  const hasEmptySlots = incompletePages.some((page) => page.slots.some((slot) => !slot.url))
-  if (hasEmptySlots) {
+  if (missingPhotoPages.value.length > 0) {
     incompletePhotosModalOpen.value = true
     return
   }
@@ -1628,127 +1584,28 @@ onBeforeUnmount(() => {
 .photo-upload-page__stats {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
-  gap: $spacing-3;
-  margin-top: $spacing-4;
-
-  @include mobile-only {
-    display: none;
-  }
-}
-
-.photo-upload-page__stats-count {
-  font-weight: $font-weight-semibold;
-  color: $text-primary;
-}
-
-// ── Mobile-only "Ваши фотографии" progress — see .photo-upload-page__stats above (desktop) ────
-.photo-upload-page__mobile-stats {
-  display: none;
-
-  @include mobile-only {
-    display: block;
-    margin-top: $spacing-2;
-  }
-}
-
-.photo-upload-page__mobile-stats-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: $spacing-2;
-  margin-bottom: 4px;
-}
-
-.photo-upload-page__mobile-stats-title {
-  font-size: $font-size-caption;
-  font-weight: $font-weight-semibold;
-  color: $text-primary;
-}
-
-.photo-upload-page__mobile-stats-count {
-  font-size: 10px;
-  color: $text-secondary;
-  white-space: nowrap;
-}
-
-// ── Cover photo picker ────────────────────────────────────────────────────────────────────
-.photo-upload-page__cover {
-  margin-top: $spacing-4;
-  padding-top: $spacing-4;
-  border-top: 1px solid $border-light;
-
-  @include mobile-only {
-    margin-top: $spacing-2;
-    padding-top: 0;
-    border-top: none;
-  }
-}
-
-.photo-upload-page__cover-title {
-  margin: 0 0 $spacing-3;
-  font-weight: $font-weight-semibold;
-  color: $text-primary;
-
-  // Same size as .photo-upload-page__mobile-stats-title ("Ваши фотографии"), on request.
-  @include mobile-only {
-    margin-bottom: $spacing-2;
-    font-size: $font-size-caption;
-  }
-}
-
-.photo-upload-page__cover-slots {
-  display: flex;
   flex-wrap: wrap;
-  gap: $spacing-4;
+  gap: $spacing-2;
+  margin: $spacing-4 0 0;
+  font-size: $font-size-body-sm;
+  font-weight: $font-weight-semibold;
+  color: $text-primary;
 
   @include mobile-only {
-    gap: $spacing-3;
+    margin-top: $spacing-2;
   }
 }
 
-.photo-upload-page__cover-slot {
-  display: flex;
-  align-items: center;
-  gap: $spacing-3;
-
-  @include mobile-only {
-    gap: $spacing-2;
-
-    .v-btn {
-      height: 24px;
-      padding-inline: 8px;
-      font-size: 10px;
-
-      :deep(.v-btn__content) {
-        font-size: 10px;
-      }
-    }
-  }
-}
-
-.photo-upload-page__cover-preview {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 64px;
-  height: 64px;
-  flex-shrink: 0;
-  border-radius: $radius-md;
-  overflow: hidden;
-  background: $bg-muted;
-
-  @include mobile-only {
-    width: 44px;
-    height: 44px;
-  }
-
-  img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-  }
+.photo-upload-page__stats-gap {
+  padding: 0;
+  border: none;
+  background: none;
+  color: $accent;
+  font: inherit;
+  font-weight: $font-weight-semibold;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 // ── Uploaded grid ──────────────────────────────────────────────────────────────────────────
@@ -2069,6 +1926,30 @@ onBeforeUnmount(() => {
   font-size: $font-size-h4;
   font-weight: $font-weight-semibold;
   color: $text-primary;
+}
+
+.photo-upload-page__incomplete-list {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+}
+
+.photo-upload-page__incomplete-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-3;
+  width: 100%;
+  padding: $spacing-3 0;
+  border: none;
+  border-bottom: 1px solid $border-light;
+  background: none;
+  color: $text-primary;
+  font-size: $font-size-body-sm;
+  text-align: left;
+  cursor: pointer;
 }
 
 .photo-upload-page__incomplete-subtitle {

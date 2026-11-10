@@ -261,7 +261,7 @@
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import { normalizeCanvasData, type CanvasData } from '@/modules/editor/models/canvas-data.model'
+import type { CanvasData } from '@/modules/editor/models/canvas-data.model'
 import JournalSpreadThumbnail from '@/modules/editor/components/JournalSpreadThumbnail.vue'
 import { loadScript } from '@/shared/utils/load-script.util'
 import {
@@ -273,7 +273,7 @@ import {
 } from '@/shared/config/cdek'
 import { settingsApi } from '@/shared/api/settings.api'
 import { ordersApi } from '../api/orders.api'
-import { materializeCanvasData } from '../utils/merge-placeholder-element.util'
+import { hasMissingCustomerPhotos, presentCustomerPageCanvas } from '../utils/missing-photos.util'
 import { countSpreadSlots } from '../utils/journal-structure.util'
 import { calculateJournalPriceBreakdown } from '../utils/pricing.util'
 import type { DeliveryMethod, OrderDetail } from '../types/order.types'
@@ -353,7 +353,7 @@ const coverCanvas = computed<CanvasData | null>(() => {
   if (!cover) {
     return null
   }
-  return materializeCanvasData(normalizeCanvasData(cover.pageSnapshot), cover.placeholderValues)
+  return presentCustomerPageCanvas(cover)
 })
 
 /** Base price + extra-4-pages surcharge, broken out so the checkout summary can show the user
@@ -402,6 +402,10 @@ async function loadOrder(): Promise<void> {
   loadError.value = null
   try {
     const detail = await ordersApi.getOne(orderId.value)
+    if (hasMissingCustomerPhotos(detail.journalPages)) {
+      await router.replace({ name: 'order-review', params: { orderId: orderId.value } })
+      return
+    }
     order.value = detail
     fillDeliveryForm(detail)
   } catch {

@@ -121,7 +121,7 @@
         <div class="journal-review-page__actions-right">
           <span v-if="missingPhotoCount > 0" class="journal-review-page__missing-photos-pill">
             <v-icon size="16">mdi-alert-outline</v-icon>
-            Не хватает {{ missingPhotoCount }} фото
+            {{ missingPhotoCount }} фото не на месте
           </span>
           <span v-if="aiTextProblems.length > 0" class="journal-review-page__missing-photos-pill">
             <v-icon size="16">mdi-text-box-remove-outline</v-icon>
@@ -221,7 +221,6 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import { normalizeCanvasData } from '@/modules/editor/models/canvas-data.model'
 import { isAiTextElement, isPhotoElement } from '@/modules/editor/models'
 import type { AiTextPlaceholder, LengthConstraint, PhotoFitMode } from '@/modules/editor/models'
 import { A4_PAGE_HEIGHT, A4_PAGE_WIDTH } from '@/modules/editor/constants/page.constants'
@@ -232,8 +231,12 @@ import AuthModal from '@/components/auth/AuthModal.vue'
 import AuthPromptModal from '@/components/auth/AuthPromptModal.vue'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
 import { getGalleryScope } from '../utils/photo-gallery-scope.util'
-import { materializeCanvasData } from '../utils/merge-placeholder-element.util'
-import { collectPhotoSlotPreview, countEmptyPhotoSlots } from '../utils/missing-photos.util'
+import {
+  collectPhotoSlotPreview,
+  countEmptyPhotoSlots,
+  hasMissingCustomerPhotos,
+  presentCustomerPageCanvas,
+} from '../utils/missing-photos.util'
 import {
   buildAiTextFitContext,
   collectAiTextFitProblems,
@@ -315,9 +318,9 @@ async function load(): Promise<void> {
 }
 
 const canvasDataByPageId = computed(() => {
-  const map = new Map<string, ReturnType<typeof materializeCanvasData>>()
+  const map = new Map<string, ReturnType<typeof presentCustomerPageCanvas>>()
   for (const page of store.order?.journalPages ?? []) {
-    map.set(page.id, materializeCanvasData(normalizeCanvasData(page.pageSnapshot), page.placeholderValues))
+    map.set(page.id, presentCustomerPageCanvas(page))
   }
   return map
 })
@@ -389,8 +392,13 @@ const contentComplete = computed(() => store.order != null && store.getSubmitVal
 /** Gates the mobile stepper's click-to-jump for a step AHEAD of this one (behind is always
  * allowed — see the template) — a step only becomes clickable once its own prerequisite content
  * actually exists, so jumping ahead can never land on a broken/empty page. */
+const photosComplete = computed(() => {
+  const pages = store.order?.journalPages ?? []
+  return pages.length > 0 && !hasMissingCustomerPhotos(pages)
+})
+
 function isStepReachable(step: number): boolean {
-  return step === 5 && contentComplete.value
+  return step === 5 && photosComplete.value && contentComplete.value
 }
 
 function goToStep(step: number): void {
@@ -686,7 +694,7 @@ async function finish(): Promise<void> {
   isSubmitting.value = true
   try {
     const missingPhotoPages = collectPhotoSlotPreview(store.order?.journalPages ?? [])
-    if (missingPhotoPages.some((page) => page.slots.some((slot) => !slot.url))) {
+    if (missingPhotoPages.length > 0) {
       missingPhotosModalOpen.value = true
       return
     }

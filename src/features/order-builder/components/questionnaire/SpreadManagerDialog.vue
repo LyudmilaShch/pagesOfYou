@@ -187,12 +187,12 @@ import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 
 import ConfirmModal from '@/components/ui/ConfirmModal.vue'
 import JournalSpreadThumbnail from '@/modules/editor/components/JournalSpreadThumbnail.vue'
-import { normalizeCanvasData, type CanvasData } from '@/modules/editor/models/canvas-data.model'
+import type { CanvasData } from '@/modules/editor/models/canvas-data.model'
 import type { SetJournalPageTemplatePayload } from '../../api/orders.api'
 import { useOrderBuilderStore } from '../../stores/order-builder.store'
 import type { JournalPage, TrashedJournalPage } from '../../types/order.types'
 import { countSpreadSlots } from '../../utils/journal-structure.util'
-import { materializeCanvasData } from '../../utils/merge-placeholder-element.util'
+import { presentCustomerPageCanvas } from '../../utils/missing-photos.util'
 import JournalTemplatePickerDialog from '../JournalTemplatePickerDialog.vue'
 
 const props = defineProps<{
@@ -396,7 +396,7 @@ const trashItems = ref<TrashedJournalPage[]>([])
 const trashCanvasByPageId = computed(() => {
   const map = new Map<string, CanvasData>()
   for (const item of trashItems.value) {
-    map.set(item.id, materializeCanvasData(normalizeCanvasData(item.pageSnapshot), item.placeholderValues))
+    map.set(item.id, presentCustomerPageCanvas(item))
   }
   return map
 })

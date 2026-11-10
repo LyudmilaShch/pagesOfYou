@@ -1,5 +1,5 @@
 <template>
-  <v-dialog :model-value="open" max-width="640" @update:model-value="handleModelUpdate">
+  <v-dialog :model-value="open" max-width="640" :z-index="zIndex" @update:model-value="handleModelUpdate">
     <v-card>
       <v-card-title class="photo-gallery-picker__title">
         Выбрать из галереи
@@ -66,10 +66,15 @@ import { photoGalleryApi, type GalleryPhoto, type PhotoGalleryScope } from '../a
 import PhotoUploadFormatsHint from './PhotoUploadFormatsHint.vue'
 import PhotoUploadErrorList from './PhotoUploadErrorList.vue'
 
-const props = defineProps<{
-  open: boolean
-  scope: PhotoGalleryScope
-}>()
+const props = withDefaults(
+  defineProps<{
+    open: boolean
+    scope: PhotoGalleryScope
+    /** Above BaseModal (z-index 2500) when this picker is opened from inside one. */
+    zIndex?: number
+  }>(),
+  { zIndex: 2600 },
+)
 
 const emit = defineEmits<{
   close: []

@@ -229,10 +229,9 @@ import { ordersApi, filesApi } from '@/features/order-builder/api/orders.api'
 import type { OrderSummary } from '@/features/order-builder/types/order.types'
 import { ORDER_STATUS_COLORS, ORDER_STATUS_LABELS } from '@/features/order-builder/constants/order-status.constants'
 import type { CanvasData } from '@/modules/editor/models/canvas-data.model'
-import { normalizeCanvasData } from '@/modules/editor/models/canvas-data.model'
 import { isPhotoElement } from '@/modules/editor/models'
 import { flattenTree } from '@/modules/editor/utils/element-tree.util'
-import { materializeCanvasData } from '@/features/order-builder/utils/merge-placeholder-element.util'
+import { presentCustomerPageCanvas } from '@/features/order-builder/utils/missing-photos.util'
 import { resumeOrder } from '@/features/order-builder/utils/resume-order.util'
 import JournalSpreadThumbnail from '@/modules/editor/components/JournalSpreadThumbnail.vue'
 import ConfirmModal from '@/components/ui/ConfirmModal.vue'
@@ -278,16 +277,12 @@ function coverCanvas(order: OrderSummary): CanvasData | null {
   const coverPage = order.journalPages.find((page) => page.slotType === 'COVER')
   const spreadPage = order.journalPages.find((page) => page.slotType === 'SPREAD')
 
-  const coverCanvasData = coverPage
-    ? materializeCanvasData(normalizeCanvasData(coverPage.pageSnapshot), coverPage.placeholderValues)
-    : null
+  const coverCanvasData = coverPage ? presentCustomerPageCanvas(coverPage) : null
   if (coverCanvasData && hasFilledPhoto(coverCanvasData)) {
     return coverCanvasData
   }
 
-  const spreadCanvasData = spreadPage
-    ? materializeCanvasData(normalizeCanvasData(spreadPage.pageSnapshot), spreadPage.placeholderValues)
-    : null
+  const spreadCanvasData = spreadPage ? presentCustomerPageCanvas(spreadPage) : null
   if (spreadCanvasData && hasFilledPhoto(spreadCanvasData)) {
     return spreadCanvasData
   }

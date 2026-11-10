@@ -20,12 +20,20 @@
       <div class="missing-photos__main">
         <div class="missing-photos__scroll">
           <h2 id="missing-photos-title" class="missing-photos__title">
-            {{ hasEmptySlots ? `Не хватает ${missingPhotoCount} фото` : 'Все фото на месте' }}
+            {{ hasEmptySlots ? 'Остались пустые места' : 'Все фото на месте' }}
           </h2>
+          <ul v-if="hasEmptySlots" class="missing-photos__missing-list">
+            <li v-for="page in missingPhotoPages" :key="page.journalPageId">
+              <button type="button" class="missing-photos__missing-item" @click="jumpTo(page.journalPageId)">
+                {{ missingPhotoLine(page.pageLabel, page.slots.length) }}
+                <v-icon size="16">mdi-chevron-right</v-icon>
+              </button>
+            </li>
+          </ul>
           <p class="missing-photos__subtitle">
             <template v-if="hasEmptySlots">
-              Загрузите ещё — они сами лягут в свободные слоты, а если что-то не так, перетащите фото
-              на нужное место в развороте слева.
+              Новые снимки сами лягут в свободные слоты разворотов. Обложку выберите кнопкой «+» на
+              ней в журнале.
             </template>
             <template v-else>
               Можно продолжать оформление заказа — или ещё что-то поправить перед этим.
@@ -63,25 +71,7 @@
           <PhotoUploadFormatsHint />
           <PhotoUploadErrorList :messages="uploadErrors" />
 
-          <div class="missing-photos__stats">
-            <span class="missing-photos__stats-count">Загружено {{ photos.length }} фото</span>
-            <span class="missing-photos__stats-hint">Нужно {{ requiredPhotoCount }} фото</span>
-          </div>
-
-          <div v-if="coverSlots.length > 0" class="missing-photos__cover">
-            <h3 class="missing-photos__cover-title">Фото на обложке</h3>
-            <div class="missing-photos__cover-slots">
-              <div v-for="slot in coverSlots" :key="slot.elementId" class="missing-photos__cover-slot">
-                <div class="missing-photos__cover-preview">
-                  <img v-if="slot.url" :src="slot.url" alt="" />
-                  <v-icon v-else size="20" color="grey">mdi-image-outline</v-icon>
-                </div>
-                <v-btn variant="outlined" size="small" @click="openCoverPicker(slot.elementId)">
-                  {{ slot.url ? 'Заменить' : 'Выбрать фото' }}
-                </v-btn>
-              </div>
-            </div>
-          </div>
+          <CoverPhotoHint :landscape="coverPhotoIsLandscape" />
 
           <div v-if="photos.length > 0" class="missing-photos__grid-header">
             <span class="missing-photos__grid-title">Загруженные фото</span>
@@ -149,11 +139,12 @@
     <PhotoGalleryPickerDialog
       :open="pickerTarget !== null"
       :scope="galleryScope"
+      :z-index="2600"
       @select="handlePickerSelect"
       @close="closePhotoPicker"
     />
 
-    <v-dialog v-model="usageModalOpen" max-width="420">
+    <v-dialog v-model="usageModalOpen" max-width="420" :z-index="2600">
       <v-card>
         <v-card-title class="missing-photos__usage-modal-title">
           Где используется фото
@@ -178,9 +169,6 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 import BaseModal from '@/components/ui/BaseModal.vue'
-import { normalizeCanvasData } from '@/modules/editor/models/canvas-data.model'
-import { isPhotoElement } from '@/modules/editor/models'
-import { flattenTree } from '@/modules/editor/utils/element-tree.util'
 import { getImageDimensions } from '@/shared/utils/image-dimensions.util'
 import { PHOTO_FILE_ACCEPT } from '@/shared/constants/photo-upload.constants'
 import { runPhotoUploads } from '@/shared/utils/photo-upload-error.util'
@@ -188,9 +176,17 @@ import { photoGalleryApi, type GalleryPhoto } from '../api/photo-gallery.api'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
 import { getGalleryScope } from '../utils/photo-gallery-scope.util'
 import { getJournalPageDisplayName } from '../utils/journal-structure.util'
-import { materializeCanvasData } from '../utils/merge-placeholder-element.util'
-import { collectPhotoSlotPreview, countEmptyPhotoSlots } from '../utils/missing-photos.util'
+import { samePhotoUrl } from '../utils/strip-photo-url.util'
+import {
+  collectPhotoSlotPreview,
+  countEmptyPhotoSlots,
+  findNextEmptyAutoFillSlot,
+  isLandscapePhoto,
+  missingPhotoLine,
+  presentCustomerPageCanvas,
+} from '../utils/missing-photos.util'
 import QuestionnaireBook from './questionnaire/QuestionnaireBook.vue'
+import CoverPhotoHint from './CoverPhotoHint.vue'
 import PhotoUploadFormatsHint from './PhotoUploadFormatsHint.vue'
 import PhotoUploadErrorList from './PhotoUploadErrorList.vue'
 import PhotoGalleryPickerDialog from './PhotoGalleryPickerDialog.vue'
@@ -219,50 +215,26 @@ const isDragActive = ref(false)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const manualPlacementMode = ref(false)
 
-const missingPhotoCount = computed(() =>
-  countEmptyPhotoSlots(collectPhotoSlotPreview(store.order?.journalPages ?? [])),
-)
+const missingPhotoPages = computed(() => collectPhotoSlotPreview(store.order?.journalPages ?? []))
+const missingPhotoCount = computed(() => countEmptyPhotoSlots(missingPhotoPages.value))
 const hasEmptySlots = computed(() => missingPhotoCount.value > 0)
 
-// Same definition PhotoUploadPage.vue uses — every photo-placeholder slot in the journal, not just
-// the ones still empty, so the stats line reads the same way it did on Шаг 2.
-const requiredPhotoCount = computed(() => {
-  let count = 0
-  for (const page of store.order?.journalPages ?? []) {
-    const leaves = flattenTree(normalizeCanvasData(page.pageSnapshot).elements)
-    count += leaves.filter((leaf) => isPhotoElement(leaf)).length
+const coverPhotoIsLandscape = computed(() => {
+  const cover = store.order?.journalPages.find((page) => page.slotType === 'COVER')
+  if (!cover) {
+    return false
   }
-  return count
+  return cover.placeholderValues.some((value) => {
+    const url = value.valueType === 'PHOTO' ? value.jsonValue?.url?.trim() : ''
+    if (!url) {
+      return false
+    }
+    const photo = photos.value.find((item) => samePhotoUrl(item.url, url))
+    return photo ? isLandscapePhoto(photo.width, photo.height) : false
+  })
 })
 
-interface CoverSlot {
-  elementId: string
-  url: string | null
-}
-
-const coverPage = computed(() => store.order?.journalPages.find((page) => page.slotType === 'COVER') ?? null)
-const coverSlots = computed<CoverSlot[]>(() => {
-  const page = coverPage.value
-  if (!page) {
-    return []
-  }
-  const leaves = flattenTree(normalizeCanvasData(page.pageSnapshot).elements)
-  const valueByElementId = new Map(page.placeholderValues.map((value) => [value.elementId, value]))
-  return leaves
-    .filter((leaf) => isPhotoElement(leaf))
-    .map((leaf) => ({ elementId: leaf.id, url: valueByElementId.get(leaf.id)?.jsonValue?.url ?? null }))
-})
-
-// Picking a photo for a specific slot from the gallery — used by both the dedicated cover picker
-// and the "add photo" button on any empty slot in the book (see `openPhotoPicker`/`pick-photo`).
 const pickerTarget = ref<{ journalPageId: string; elementId: string } | null>(null)
-
-function openCoverPicker(elementId: string): void {
-  if (!coverPage.value) {
-    return
-  }
-  openPhotoPicker(coverPage.value.id, elementId)
-}
 
 function openPhotoPicker(journalPageId: string, elementId: string): void {
   pickerTarget.value = { journalPageId, elementId }
@@ -366,38 +338,15 @@ function goToUsage(entry: PhotoUsage): void {
 }
 
 const canvasDataByPageId = computed(() => {
-  const map = new Map<string, ReturnType<typeof materializeCanvasData>>()
+  const map = new Map<string, ReturnType<typeof presentCustomerPageCanvas>>()
   for (const page of store.order?.journalPages ?? []) {
-    map.set(page.id, materializeCanvasData(normalizeCanvasData(page.pageSnapshot), page.placeholderValues))
+    map.set(page.id, presentCustomerPageCanvas(page))
   }
   return map
 })
 
-/** Mirrors PhotoUploadPage.vue's own `findNextEmptyAutoFillSlot` — skips COVER (that's the
- * dedicated picker above instead) and any slot already owned by a questionnaire question. */
-function findNextEmptyAutoFillSlot(): { journalPageId: string; elementId: string } | null {
-  for (const page of store.order?.journalPages ?? []) {
-    if (page.slotType === 'COVER') {
-      continue
-    }
-    const leaves = flattenTree(normalizeCanvasData(page.pageSnapshot).elements)
-    const valueByElementId = new Map(page.placeholderValues.map((value) => [value.elementId, value]))
-
-    for (const leaf of leaves) {
-      if (!isPhotoElement(leaf) || leaf.questionKey) {
-        continue
-      }
-      if (valueByElementId.get(leaf.id)?.jsonValue?.url?.trim()) {
-        continue
-      }
-      return { journalPageId: page.id, elementId: leaf.id }
-    }
-  }
-  return null
-}
-
 async function autoPlacePhoto(url: string): Promise<void> {
-  const slot = findNextEmptyAutoFillSlot()
+  const slot = findNextEmptyAutoFillSlot(store.order?.journalPages ?? [])
   if (!slot) {
     return
   }
@@ -523,7 +472,9 @@ onBeforeUnmount(() => {
   justify-content: center;
 
   @include mobile-only {
-    display: none;
+    flex: 0 0 auto;
+    width: 100%;
+    max-height: 42vh;
   }
 }
 
@@ -619,59 +570,26 @@ onBeforeUnmount(() => {
   margin-top: $spacing-4;
 }
 
-.missing-photos__stats-count {
-  font-weight: $font-weight-semibold;
-  color: $text-primary;
-  font-size: $font-size-body-sm;
+.missing-photos__missing-list {
+  margin: $spacing-3 0 0;
+  padding: 0;
+  list-style: none;
 }
 
-.missing-photos__stats-hint {
-  font-size: $font-size-caption;
-  color: $text-secondary;
-}
-
-.missing-photos__cover {
-  margin-top: $spacing-4;
-  padding-top: $spacing-4;
-  border-top: 1px solid $border-light;
-}
-
-.missing-photos__cover-title {
-  margin: 0 0 $spacing-3;
-  font-size: $font-size-body-sm;
-  font-weight: $font-weight-semibold;
-  color: $text-primary;
-}
-
-.missing-photos__cover-slots {
-  display: flex;
-  flex-wrap: wrap;
-  gap: $spacing-4;
-}
-
-.missing-photos__cover-slot {
+.missing-photos__missing-item {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: $spacing-3;
-}
-
-.missing-photos__cover-preview {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 56px;
-  height: 56px;
-  flex-shrink: 0;
-  border-radius: $radius-md;
-  overflow: hidden;
-  background: $bg-muted;
-
-  img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-  }
+  width: 100%;
+  padding: $spacing-2 0;
+  border: none;
+  border-bottom: 1px solid $border-light;
+  background: none;
+  color: $text-primary;
+  font-size: $font-size-body-sm;
+  text-align: left;
+  cursor: pointer;
 }
 
 .missing-photos__grid-header {
