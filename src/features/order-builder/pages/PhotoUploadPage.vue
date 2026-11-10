@@ -74,7 +74,7 @@
         <header class="photo-upload-page__intro-mobile">
           <h1 class="photo-upload-page__title text-h3">Добавьте фотографии в журнал</h1>
           <p class="photo-upload-page__subtitle text-body text-secondary">
-            {{ photoUploadIntro(missingPhotoCount) }}
+            {{ photoUploadIntro(photosToUpload) }}
           </p>
         </header>
 
@@ -159,7 +159,7 @@
               <p class="photo-upload-page__eyebrow text-caption text-secondary">Шаг 2 — Фото</p>
               <h1 class="photo-upload-page__title text-h3">Добавьте фотографии в журнал</h1>
               <p class="photo-upload-page__subtitle text-body text-secondary">
-                {{ photoUploadIntro(missingPhotoCount) }}
+                {{ photoUploadIntro(photosToUpload) }}
               </p>
             </header>
 
@@ -389,6 +389,7 @@ import { getGalleryScope } from '../utils/photo-gallery-scope.util'
 import { getJournalPageDisplayName } from '../utils/journal-structure.util'
 import {
   countEmptyPhotoSlots,
+  countPhotosToUpload,
   findNextEmptyAutoFillSlot,
   hasMissingCustomerPhotos,
   missingPhotoLine,
@@ -455,6 +456,7 @@ function updateIsMobileViewport(): void {
 
 const missingPhotoPages = computed(() => collectPhotoSlotPreview(store.order?.journalPages ?? []))
 const missingPhotoCount = computed(() => countEmptyPhotoSlots(missingPhotoPages.value))
+const photosToUpload = computed(() => countPhotosToUpload(store.order?.journalPages ?? []))
 
 // Picking a photo for a specific slot from the gallery — the "+" on an empty slot in the book,
 // including the cover.

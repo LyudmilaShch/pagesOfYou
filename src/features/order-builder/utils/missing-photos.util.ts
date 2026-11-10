@@ -13,6 +13,7 @@ import {
   customerPhotoPageLabel,
   shouldHideCoverAdminImage,
   type AutoFillPhotoTarget,
+  countPhotosCustomerSupplies,
   type CustomerPhotoFact,
   type MissingCustomerPhotoPage,
 } from './photo-slot-rules.util'
@@ -77,6 +78,10 @@ function photoFacts(journalPages: JournalPage[]): CustomerPhotoFact[] {
   }
 
   return facts
+}
+
+export function countPhotosToUpload(journalPages: JournalPage[]): number {
+  return countPhotosCustomerSupplies(photoFacts(journalPages))
 }
 
 /** Customer photo holes, in journal order. Anketa slots are omitted. An admin sample fills

@@ -100,6 +100,23 @@ function emptyPlaceWord(count: number): string {
   return pluralize(count, 'пустое место', 'пустых места', 'пустых мест')
 }
 
+/** How many photos the customer is asked to bring. Cover slots always count, even when an
+ * admin sample is there or the customer has already chosen a photo. Other slots count only
+ * when the template left them empty: an admin image or an anketa binding does not. Filling a
+ * slot does not lower the number; adding or removing a spread does. */
+export function countPhotosCustomerSupplies(facts: CustomerPhotoFact[]): number {
+  let count = 0
+  for (const fact of facts) {
+    if (!isTrackedCustomerPhotoSlot(fact)) {
+      continue
+    }
+    if (fact.slotType === 'COVER' || trimmed(fact.adminImageUrl).length === 0) {
+      count += 1
+    }
+  }
+  return count
+}
+
 /** One row in the "what's still empty" list. */
 export function missingPhotoLine(pageLabel: string, emptyCount: number): string {
   if (pageLabel === PAGE_LABELS.COVER && emptyCount === 1) {
