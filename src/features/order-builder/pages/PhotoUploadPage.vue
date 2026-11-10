@@ -74,8 +74,17 @@
         <header class="photo-upload-page__intro-mobile">
           <h1 class="photo-upload-page__title text-h3">Добавьте фотографии в журнал</h1>
           <p class="photo-upload-page__subtitle text-body text-secondary">
-            Загрузите {{ requiredPhotoCount }} фотографий — мы автоматически расставим их по страницам журнала. Хотите изменить расположение? Перетащите фото из галереи на нужную страницу. 
+            {{ photoUploadIntro(missingPhotoCount) }}
           </p>
+          <v-alert
+            v-if="coverPhotoIsLandscape"
+            type="warning"
+            variant="tonal"
+            density="compact"
+            class="photo-upload-page__cover-warning"
+          >
+            {{ COVER_LANDSCAPE_WARNING }}
+          </v-alert>
         </header>
 
         <div
@@ -91,7 +100,7 @@
             :pulsing-page-ids="pulsingPageIds"
             :fill-by-page-id="EMPTY_FILL_MAP"
             :pending-element-ids="EMPTY_ELEMENT_IDS"
-            :drop-enabled="manualPlacementMode"
+            drop-enabled
             show-structure-controls
             :hide-nav="isMobileViewport"
             :fit-height="isMobileViewport"
@@ -159,8 +168,17 @@
               <p class="photo-upload-page__eyebrow text-caption text-secondary">Шаг 2 — Фото</p>
               <h1 class="photo-upload-page__title text-h3">Добавьте фотографии в журнал</h1>
               <p class="photo-upload-page__subtitle text-body text-secondary">
-                Загрузите {{ requiredPhotoCount }} фотографий — мы автоматически расставим их по страницам журнала. Хотите изменить расположение? Перетащите фото из галереи на нужную страницу. 
+                {{ photoUploadIntro(missingPhotoCount) }}
               </p>
+              <v-alert
+                v-if="coverPhotoIsLandscape"
+                type="warning"
+                variant="tonal"
+                density="compact"
+                class="photo-upload-page__cover-warning"
+              >
+                {{ COVER_LANDSCAPE_WARNING }}
+              </v-alert>
             </header>
 
             <div
@@ -202,27 +220,14 @@
                 v-if="missingPhotoCount > 0"
                 type="button"
                 class="photo-upload-page__stats-gap"
-                @click="incompletePhotosModalOpen = true"
+                @click="openHolesModal('list')"
               >
                 · {{ missingPhotoCount }} не на месте
               </button>
             </p>
-            <CoverPhotoHint :landscape="coverPhotoIsLandscape" />
-
             <div v-if="photos.length > 0" class="photo-upload-page__grid-header">
               <span class="photo-upload-page__grid-title text-body-sm text-secondary">Загруженные фото</span>
-              <v-btn
-                variant="text"
-                size="small"
-                :color="manualPlacementMode ? 'primary' : undefined"
-                @click="manualPlacementToggle = !manualPlacementToggle"
-              >
-                {{ manualPlacementMode ? 'Готово' : 'Расставить вручную' }}
-              </v-btn>
             </div>
-            <p v-if="manualPlacementMode" class="photo-upload-page__manual-hint text-body-sm text-secondary">
-              Перетащите фото на нужное место в развороте слева
-            </p>
 
             <div v-if="photos.length > 0 || isMobileViewport" class="photo-upload-page__grid">
               <button
@@ -243,11 +248,10 @@
                 <div
                   v-for="photo in photos"
                   :key="photo.id"
-                  class="photo-upload-page__thumb"
-                  :class="{ 'photo-upload-page__thumb--draggable': manualPlacementMode }"
-                  :draggable="manualPlacementMode"
+                  class="photo-upload-page__thumb photo-upload-page__thumb--draggable"
+                  draggable="true"
                   @dragstart="handleDragStart($event, photo)"
-                  @pointerdown="handleThumbPointerDown($event, photo)"
+                  @pointerdown="onPhotoPointerDown($event, photo.url)"
                 >
                   <img :src="photo.url" :alt="photo.originalName ?? ''" />
                   <button
@@ -306,20 +310,12 @@
       </div>
     </footer>
 
-    <!-- Follows the finger during a touch drag (see handleThumbHandlePointerDown) — native HTML5
-         DnD has no visual equivalent on touch, so this stands in for the ghost image a mouse drag
-         gets for free. -->
-    <div
-      v-if="touchDrag"
-      class="photo-upload-page__drag-ghost"
-      :style="{ left: `${touchDrag.x}px`, top: `${touchDrag.y}px` }"
-    >
-      <img :src="touchDrag.photo.url" alt="" />
-    </div>
+    <PhotoTouchDragGhost :drag="photoTouchDrag" />
 
     <PhotoGalleryPickerDialog
       :open="pickerTarget !== null"
       :scope="galleryScope"
+      :cover-hint="pickerIsCover"
       @select="handlePickerSelect"
       @close="closePhotoPicker"
     />
@@ -371,16 +367,21 @@
             </button>
           </li>
         </ul>
-        <p class="photo-upload-page__incomplete-subtitle">
+        <p v-if="holesModalMode === 'next'" class="photo-upload-page__incomplete-subtitle">
           Можно вернуться и выбрать фото сейчас или загрузить их позже, до проверки заказа.
         </p>
 
         <div class="photo-upload-page__incomplete-actions">
-          <v-btn color="primary" variant="flat" size="large" block @click="incompletePhotosModalOpen = false">
-            Вернуться и загрузить фото
-          </v-btn>
-          <v-btn variant="text" size="large" block @click="continueWithoutPhotos">
-            Загружу позже
+          <template v-if="holesModalMode === 'next'">
+            <v-btn color="primary" variant="flat" size="large" block @click="incompletePhotosModalOpen = false">
+              Вернуться и загрузить фото
+            </v-btn>
+            <v-btn variant="text" size="large" block @click="continueWithoutPhotos">
+              Загружу позже
+            </v-btn>
+          </template>
+          <v-btn v-else color="primary" variant="flat" size="large" block @click="incompletePhotosModalOpen = false">
+            Понятно
           </v-btn>
         </div>
       </div>
@@ -392,7 +393,6 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import { normalizeCanvasData } from '@/modules/editor/models/canvas-data.model'
 import { isPhotoElement, type PhotoFitMode } from '@/modules/editor/models'
 import { A4_PAGE_HEIGHT, A4_PAGE_WIDTH } from '@/modules/editor/constants/page.constants'
 import { flattenTree } from '@/modules/editor/utils/element-tree.util'
@@ -415,7 +415,12 @@ import {
   collectPhotoSlotPreview,
 } from '../utils/missing-photos.util'
 import QuestionnaireBook from '../components/questionnaire/QuestionnaireBook.vue'
-import CoverPhotoHint from '../components/CoverPhotoHint.vue'
+import PhotoTouchDragGhost from '../components/PhotoTouchDragGhost.vue'
+import { usePhotoTouchDrag } from '../composables/use-photo-touch-drag'
+import {
+  COVER_LANDSCAPE_WARNING,
+  photoUploadIntro,
+} from '../utils/photo-upload-copy.util'
 import PhotoUploadFormatsHint from '../components/PhotoUploadFormatsHint.vue'
 import PhotoUploadErrorList from '../components/PhotoUploadErrorList.vue'
 import PhotoGalleryPickerDialog from '../components/PhotoGalleryPickerDialog.vue'
@@ -461,9 +466,6 @@ const fileInputRef = ref<HTMLInputElement | null>(null)
 // afterwards by dragging a specific photo from the grid onto a specific spread in the book. On
 // mobile it's always on (see `isMobileViewport`) since dragging is the only way to place a photo
 // there — there's no separate toggle button shown, only the desktop grid-header offers one.
-const manualPlacementToggle = ref(false)
-const manualPlacementMode = computed(() => isMobileViewport.value || manualPlacementToggle.value)
-
 // Same threshold as the `mobile-only` SCSS mixin (`$breakpoint-mobile-max: 767px`).
 const isMobileViewport = ref(false)
 let mobileMediaQuery: MediaQueryList | null = null
@@ -471,17 +473,6 @@ let mobileMediaQuery: MediaQueryList | null = null
 function updateIsMobileViewport(): void {
   isMobileViewport.value = mobileMediaQuery?.matches ?? false
 }
-
-// The exact number of photo-placeholder slots across the whole journal — how many photos this
-// specific journal (magazine type + spread count) actually needs, not a generic recommendation.
-const requiredPhotoCount = computed(() => {
-  let count = 0
-  for (const page of store.order?.journalPages ?? []) {
-    const leaves = flattenTree(normalizeCanvasData(page.pageSnapshot).elements)
-    count += leaves.filter((leaf) => isPhotoElement(leaf)).length
-  }
-  return count
-})
 
 const missingPhotoPages = computed(() => collectPhotoSlotPreview(store.order?.journalPages ?? []))
 const missingPhotoCount = computed(() => countEmptyPhotoSlots(missingPhotoPages.value))
@@ -504,6 +495,12 @@ const coverPhotoIsLandscape = computed(() => {
 // Picking a photo for a specific slot from the gallery — the "+" on an empty slot in the book,
 // including the cover.
 const pickerTarget = ref<{ journalPageId: string; elementId: string } | null>(null)
+
+const pickerIsCover = computed(
+  () =>
+    store.order?.journalPages.find((page) => page.id === pickerTarget.value?.journalPageId)?.slotType ===
+    'COVER',
+)
 
 function openPhotoPicker(journalPageId: string, elementId: string): void {
   pickerTarget.value = { journalPageId, elementId }
@@ -719,11 +716,10 @@ function handleDrop(event: DragEvent): void {
   void uploadFiles(files)
 }
 
-/** Starts dragging an already-uploaded photo out of the grid — only while manual placement mode is
- * on, so an accidental drag (e.g. while reaching for the remove button) can't happen otherwise. The
- * URL travels as plain text; QuestionnaireBook/JournalSpreadThumbnail read it back on drop. */
+/** Desktop drag of a gallery thumb. Touch uses `usePhotoTouchDrag` — browsers do not start a
+ * native drag from a finger. */
 function handleDragStart(event: DragEvent, photo: GalleryPhoto): void {
-  if (!manualPlacementMode.value || !event.dataTransfer) {
+  if (!event.dataTransfer) {
     return
   }
   event.dataTransfer.setData('text/plain', photo.url)
@@ -738,76 +734,9 @@ async function handleDropPhoto(pageId: string, elementId: string, url: string): 
   }
 }
 
-// ── Touch drag-and-drop ──────────────────────────────────────────────────────────────────────
-// Native HTML5 DnD (draggable/@dragstart/@dragover/@drop, see handleDragStart above and
-// JournalSpreadThumbnail.vue's own drop handling) never fires from a touch gesture — most mobile
-// browsers don't start a native drag from touch at all. This is a parallel Pointer Events path,
-// mirroring SpreadManagerDialog.vue's own touch-compatible drag handle: a small handle icon on
-// each thumb starts the drag immediately on touch (touch-action: none, see CSS), while the rest
-// of the thumb keeps its default touch-action so swiping it still scrolls the row. An earlier
-// version tried to disambiguate "scroll" from "drag" on the whole thumb via a long-press timer —
-// unreliable in practice, since `touch-action: pan-x` lets the browser commit the gesture to
-// native scrolling (and fire pointercancel) as soon as movement starts, regardless of any JS
-// timer. A dedicated handle with touch-action: none sidesteps that entirely.
-const touchDrag = ref<{ photo: GalleryPhoto; x: number; y: number } | null>(null)
-
-function handleThumbPointerDown(event: PointerEvent, photo: GalleryPhoto): void {
-  // Was gated by a dedicated drag-handle icon rendered only on mobile (`v-if="isMobileViewport"`)
-  // — now the whole thumb starts the drag directly (on request), so this guard replaces that.
-  // The remove/usage buttons overlaid on the thumb stop this event from bubbling to them at all
-  // (`@pointerdown.stop` on each) — otherwise a tap on either would ALSO land here first, kick off
-  // a drag (preventDefault below), and the button's own click would never actually fire.
-  if (event.pointerType === 'mouse' || !isMobileViewport.value) {
-    return
-  }
-  event.preventDefault()
-  touchDrag.value = { photo, x: event.clientX, y: event.clientY }
-  window.addEventListener('pointermove', handleTouchDragMove)
-  window.addEventListener('pointerup', handleTouchDragEnd)
-  window.addEventListener('pointercancel', handleTouchDragCancel)
-}
-
-function handleTouchDragMove(event: PointerEvent): void {
-  if (!touchDrag.value) {
-    return
-  }
-  event.preventDefault()
-  touchDrag.value = { ...touchDrag.value, x: event.clientX, y: event.clientY }
-}
-
-function stopTouchDragTracking(): void {
-  window.removeEventListener('pointermove', handleTouchDragMove)
-  window.removeEventListener('pointerup', handleTouchDragEnd)
-  window.removeEventListener('pointercancel', handleTouchDragCancel)
-}
-
-function findDropTargetAt(clientX: number, clientY: number): { pageId: string; elementId: string } | null {
-  const el = document.elementFromPoint(clientX, clientY)
-  const elementNode = el?.closest('[data-element-id]') as HTMLElement | null
-  const pageNode = el?.closest('[data-page-id]') as HTMLElement | null
-  const elementId = elementNode?.dataset.elementId
-  const pageId = pageNode?.dataset.pageId
-  return elementId && pageId ? { pageId, elementId } : null
-}
-
-function handleTouchDragEnd(event: PointerEvent): void {
-  stopTouchDragTracking()
-  const drag = touchDrag.value
-  touchDrag.value = null
-  if (!drag) {
-    return
-  }
-
-  const target = findDropTargetAt(event.clientX, event.clientY)
-  if (target) {
-    void handleDropPhoto(target.pageId, target.elementId, drag.photo.url)
-  }
-}
-
-function handleTouchDragCancel(): void {
-  stopTouchDragTracking()
-  touchDrag.value = null
-}
+const { drag: photoTouchDrag, onPointerDown: onPhotoPointerDown } = usePhotoTouchDrag((target, url) => {
+  void handleDropPhoto(target.pageId, target.elementId, url)
+})
 
 const cropModal = reactive<{
   open: boolean
@@ -958,6 +887,13 @@ function goToStep(step: number): void {
 }
 
 const incompletePhotosModalOpen = ref(false)
+/** `list` is the counter click (no deferral). `next` is «Продолжить», which can still postpone. */
+const holesModalMode = ref<'list' | 'next'>('list')
+
+function openHolesModal(mode: 'list' | 'next'): void {
+  holesModalMode.value = mode
+  incompletePhotosModalOpen.value = true
+}
 
 function goToMissingPage(journalPageId: string): void {
   incompletePhotosModalOpen.value = false
@@ -966,7 +902,7 @@ function goToMissingPage(journalPageId: string): void {
 
 function goToNextStep(): void {
   if (missingPhotoPages.value.length > 0) {
-    incompletePhotosModalOpen.value = true
+    openHolesModal('next')
     return
   }
   void router.push({ name: 'order-questionnaire', params: { orderId: orderId.value } })
@@ -993,7 +929,6 @@ onBeforeUnmount(() => {
     clearTimeout(pulseTimer)
   }
   mobileMediaQuery?.removeEventListener('change', updateIsMobileViewport)
-  stopTouchDragTracking()
 })
 </script>
 
@@ -1615,20 +1550,10 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: $spacing-3;
   margin-top: $spacing-4;
-
-  // Its only content is the "Расставить вручную"/"Готово" toggle — moot on mobile, where manual
-  // placement is always on (see isMobileViewport/manualPlacementMode).
-  @include mobile-only {
-    display: none;
-  }
 }
 
-.photo-upload-page__manual-hint {
-  margin: $spacing-1 0 0;
-
-  @include mobile-only {
-    display: none;
-  }
+.photo-upload-page__cover-warning {
+  margin-top: $spacing-3;
 }
 
 .photo-upload-page__grid {
@@ -1968,26 +1893,6 @@ onBeforeUnmount(() => {
 
   .v-btn {
     text-transform: none;
-  }
-}
-
-// ── Touch drag ghost — see handleThumbHandlePointerDown ───────────────────────────────────────
-.photo-upload-page__drag-ghost {
-  position: fixed;
-  z-index: 200;
-  width: 64px;
-  height: 64px;
-  pointer-events: none;
-  border-radius: $radius-md;
-  overflow: hidden;
-  box-shadow: 0 8px 24px rgba($black, 0.28);
-  transform: translate(-50%, -50%) scale(1.08);
-
-  img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
   }
 }
 </style>

@@ -34,7 +34,11 @@
       >
         <div class="journal-structure__card">
           <div class="journal-structure__thumb">
-            <JournalSpreadThumbnail :canvas-data="materializedCanvas(entry.page)" :container-ratio="1.19" />
+            <JournalSpreadThumbnail
+              :canvas-data="materializedCanvas(entry.page)"
+              :container-ratio="1.19"
+              :cover-orientation-warning="entry.page.slotType === 'COVER'"
+            />
 
             <v-tooltip v-if="!isPageComplete(entry.page)" location="top" content-class="editor-tooltip--arrow-top">
               <template #activator="{ props: tooltipProps }">

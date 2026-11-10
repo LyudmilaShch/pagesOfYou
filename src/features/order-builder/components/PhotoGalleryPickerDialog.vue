@@ -7,6 +7,9 @@
       </v-card-title>
 
       <v-card-text>
+        <p v-if="coverHint" class="photo-gallery-picker__cover-banner" role="note">
+          {{ COVER_GALLERY_BANNER }}
+        </p>
         <div v-if="loading" class="photo-gallery-picker__state">
           <v-progress-circular indeterminate color="primary" />
         </div>
@@ -63,6 +66,7 @@ import { getImageDimensions } from '@/shared/utils/image-dimensions.util'
 import { PHOTO_FILE_ACCEPT } from '@/shared/constants/photo-upload.constants'
 import { runPhotoUploads } from '@/shared/utils/photo-upload-error.util'
 import { photoGalleryApi, type GalleryPhoto, type PhotoGalleryScope } from '../api/photo-gallery.api'
+import { COVER_GALLERY_BANNER } from '../utils/photo-upload-copy.util'
 import PhotoUploadFormatsHint from './PhotoUploadFormatsHint.vue'
 import PhotoUploadErrorList from './PhotoUploadErrorList.vue'
 
@@ -72,8 +76,10 @@ const props = withDefaults(
     scope: PhotoGalleryScope
     /** Above BaseModal (z-index 2500) when this picker is opened from inside one. */
     zIndex?: number
+    /** Cover slot: show the vertical-photo guidance above the grid. */
+    coverHint?: boolean
   }>(),
-  { zIndex: 2600 },
+  { zIndex: 2600, coverHint: false },
 )
 
 const emit = defineEmits<{
@@ -143,6 +149,16 @@ async function handleFilesSelected(event: Event): Promise<void> {
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+.photo-gallery-picker__cover-banner {
+  margin: 0 0 $spacing-3;
+  padding: $spacing-3;
+  border-radius: $radius-md;
+  background: $bg-muted;
+  color: $text-secondary;
+  font-size: $font-size-caption;
+  line-height: 1.45;
 }
 
 .photo-gallery-picker__state {

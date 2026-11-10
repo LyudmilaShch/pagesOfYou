@@ -9,7 +9,7 @@
           :pulsing-page-ids="pulsingPageIds"
           :fill-by-page-id="EMPTY_FILL_MAP"
           :pending-element-ids="EMPTY_ELEMENT_IDS"
-          :drop-enabled="manualPlacementMode"
+          drop-enabled
           :show-structure-controls="false"
           pick-enabled
           @drop-photo="handleDropPhoto"
@@ -71,31 +71,18 @@
           <PhotoUploadFormatsHint />
           <PhotoUploadErrorList :messages="uploadErrors" />
 
-          <CoverPhotoHint :landscape="coverPhotoIsLandscape" />
-
           <div v-if="photos.length > 0" class="missing-photos__grid-header">
             <span class="missing-photos__grid-title">Загруженные фото</span>
-            <v-btn
-              variant="text"
-              size="small"
-              :color="manualPlacementMode ? 'primary' : undefined"
-              @click="manualPlacementMode = !manualPlacementMode"
-            >
-              {{ manualPlacementMode ? 'Готово' : 'Расставить вручную' }}
-            </v-btn>
           </div>
-          <p v-if="manualPlacementMode" class="missing-photos__manual-hint">
-            Перетащите фото на нужное место в развороте слева
-          </p>
 
           <div v-if="photos.length > 0" class="missing-photos__grid">
             <div
               v-for="photo in photos"
               :key="photo.id"
-              class="missing-photos__thumb"
-              :class="{ 'missing-photos__thumb--draggable': manualPlacementMode }"
-              :draggable="manualPlacementMode"
+              class="missing-photos__thumb missing-photos__thumb--draggable"
+              draggable="true"
               @dragstart="handleDragStart($event, photo)"
+              @pointerdown="onPhotoPointerDown($event, photo.url)"
             >
               <img :src="photo.url" :alt="photo.originalName ?? ''" />
               <button
@@ -104,6 +91,7 @@
                 class="missing-photos__thumb-usage"
                 :class="{ 'missing-photos__thumb-usage--multi': (usageByUrl.get(photo.url)?.length ?? 0) > 2 }"
                 :aria-label="`Используется на ${usageByUrl.get(photo.url)?.length} страницах`"
+                @pointerdown.stop
                 @click.stop="handleUsageClick(photo.url)"
               >
                 <v-icon size="11">mdi-image-multiple</v-icon>
@@ -113,6 +101,7 @@
                 type="button"
                 class="missing-photos__thumb-remove"
                 aria-label="Удалить фото"
+                @pointerdown.stop
                 @click="removePhoto(photo)"
               >
                 <v-icon size="14">mdi-close</v-icon>
@@ -136,10 +125,13 @@
       </div>
     </div>
 
+    <PhotoTouchDragGhost :drag="photoTouchDrag" />
+
     <PhotoGalleryPickerDialog
       :open="pickerTarget !== null"
       :scope="galleryScope"
       :z-index="2600"
+      :cover-hint="pickerIsCover"
       @select="handlePickerSelect"
       @close="closePhotoPicker"
     />
@@ -176,17 +168,16 @@ import { photoGalleryApi, type GalleryPhoto } from '../api/photo-gallery.api'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
 import { getGalleryScope } from '../utils/photo-gallery-scope.util'
 import { getJournalPageDisplayName } from '../utils/journal-structure.util'
-import { samePhotoUrl } from '../utils/strip-photo-url.util'
 import {
   collectPhotoSlotPreview,
   countEmptyPhotoSlots,
   findNextEmptyAutoFillSlot,
-  isLandscapePhoto,
   missingPhotoLine,
   presentCustomerPageCanvas,
 } from '../utils/missing-photos.util'
+import { usePhotoTouchDrag } from '../composables/use-photo-touch-drag'
 import QuestionnaireBook from './questionnaire/QuestionnaireBook.vue'
-import CoverPhotoHint from './CoverPhotoHint.vue'
+import PhotoTouchDragGhost from './PhotoTouchDragGhost.vue'
 import PhotoUploadFormatsHint from './PhotoUploadFormatsHint.vue'
 import PhotoUploadErrorList from './PhotoUploadErrorList.vue'
 import PhotoGalleryPickerDialog from './PhotoGalleryPickerDialog.vue'
@@ -213,28 +204,18 @@ const uploading = ref(false)
 const uploadErrors = ref<string[]>([])
 const isDragActive = ref(false)
 const fileInputRef = ref<HTMLInputElement | null>(null)
-const manualPlacementMode = ref(false)
 
 const missingPhotoPages = computed(() => collectPhotoSlotPreview(store.order?.journalPages ?? []))
 const missingPhotoCount = computed(() => countEmptyPhotoSlots(missingPhotoPages.value))
 const hasEmptySlots = computed(() => missingPhotoCount.value > 0)
 
-const coverPhotoIsLandscape = computed(() => {
-  const cover = store.order?.journalPages.find((page) => page.slotType === 'COVER')
-  if (!cover) {
-    return false
-  }
-  return cover.placeholderValues.some((value) => {
-    const url = value.valueType === 'PHOTO' ? value.jsonValue?.url?.trim() : ''
-    if (!url) {
-      return false
-    }
-    const photo = photos.value.find((item) => samePhotoUrl(item.url, url))
-    return photo ? isLandscapePhoto(photo.width, photo.height) : false
-  })
-})
-
 const pickerTarget = ref<{ journalPageId: string; elementId: string } | null>(null)
+
+const pickerIsCover = computed(
+  () =>
+    store.order?.journalPages.find((page) => page.id === pickerTarget.value?.journalPageId)?.slotType ===
+    'COVER',
+)
 
 function openPhotoPicker(journalPageId: string, elementId: string): void {
   pickerTarget.value = { journalPageId, elementId }
@@ -392,7 +373,7 @@ function handleDrop(event: DragEvent): void {
 }
 
 function handleDragStart(event: DragEvent, photo: GalleryPhoto): void {
-  if (!manualPlacementMode.value || !event.dataTransfer) {
+  if (!event.dataTransfer) {
     return
   }
   event.dataTransfer.setData('text/plain', photo.url)
@@ -406,6 +387,10 @@ async function handleDropPhoto(pageId: string, elementId: string, url: string): 
     // orderError is set in the store; nothing further to do here.
   }
 }
+
+const { drag: photoTouchDrag, onPointerDown: onPhotoPointerDown } = usePhotoTouchDrag((target, url) => {
+  void handleDropPhoto(target.pageId, target.elementId, url)
+})
 
 async function removePhoto(photo: GalleryPhoto): Promise<void> {
   const previous = photos.value
@@ -431,8 +416,6 @@ watch(
   (isOpen) => {
     if (isOpen) {
       void loadPhotos()
-    } else {
-      manualPlacementMode.value = false
     }
   },
   { immediate: true },
@@ -605,12 +588,6 @@ onBeforeUnmount(() => {
   color: $text-secondary;
 }
 
-.missing-photos__manual-hint {
-  margin: $spacing-1 0 0;
-  font-size: $font-size-caption;
-  color: $text-secondary;
-}
-
 .missing-photos__grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
@@ -624,6 +601,10 @@ onBeforeUnmount(() => {
   border-radius: $radius-md;
   overflow: hidden;
   background: $bg-muted;
+
+  @include mobile-only {
+    touch-action: none;
+  }
 
   img {
     width: 100%;

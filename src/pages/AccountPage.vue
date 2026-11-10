@@ -87,6 +87,7 @@
                     v-if="coverCanvas(order)"
                     :canvas-data="coverCanvas(order)!"
                     :container-ratio="0.75"
+                    cover-orientation-warning
                   />
                   <div v-else class="journal-card__image journal-card__image--placeholder" />
                 </div>
@@ -139,6 +140,7 @@
                     v-if="coverCanvas(order)"
                     :canvas-data="coverCanvas(order)!"
                     :container-ratio="0.75"
+                    cover-orientation-warning
                   />
                   <div v-else class="order-card__image order-card__image--placeholder" />
                 </div>

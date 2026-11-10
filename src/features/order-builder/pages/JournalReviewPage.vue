@@ -182,6 +182,7 @@
     <PhotoGalleryPickerDialog
       :open="pickerTarget !== null"
       :scope="galleryScope"
+      :cover-hint="pickerIsCover"
       @select="handlePickerSelect"
       @close="closePhotoPicker"
     />
@@ -512,6 +513,12 @@ async function handleCropSave(crop: PhotoCropState): Promise<void> {
 // ---------------------------------------------------------------------------
 
 const pickerTarget = ref<{ journalPageId: string; elementId: string } | null>(null)
+
+const pickerIsCover = computed(
+  () =>
+    store.order?.journalPages.find((page) => page.id === pickerTarget.value?.journalPageId)?.slotType ===
+    'COVER',
+)
 
 function openPhotoPicker(journalPageId: string, elementId: string): void {
   pickerTarget.value = { journalPageId, elementId }

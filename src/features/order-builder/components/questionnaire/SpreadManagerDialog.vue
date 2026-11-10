@@ -15,7 +15,12 @@
         <TransitionGroup tag="div" name="spread" class="spread-reorder__grid">
           <div key="cover" class="spread-reorder__item spread-reorder__item--fixed">
             <div class="spread-reorder__thumb">
-              <JournalSpreadThumbnail v-if="coverCanvas" :canvas-data="coverCanvas" :container-ratio="1.19" />
+              <JournalSpreadThumbnail
+                v-if="coverCanvas"
+                :canvas-data="coverCanvas"
+                :container-ratio="1.19"
+                cover-orientation-warning
+              />
             </div>
             <div class="spread-reorder__body">
               <span class="spread-reorder__label">Обложка</span>

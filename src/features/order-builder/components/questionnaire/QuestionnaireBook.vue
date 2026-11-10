@@ -76,6 +76,8 @@
                   :drop-enabled="dropEnabled"
                   :crop-enabled="cropEnabled"
                   :pick-enabled="pickEnabled"
+                  :photo-action-hint="isCoverPage(half.pageId) ? COVER_PICK_TOOLTIP : undefined"
+                  :cover-orientation-warning="isCoverPage(half.pageId)"
                   :ai-text-edit-enabled="aiTextEditEnabled"
                   :text-issue-messages="textIssueMessagesByPageId?.get(half.pageId)"
                   :ai-usage="aiUsage"
@@ -233,6 +235,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 
 import JournalSpreadThumbnail from '@/modules/editor/components/JournalSpreadThumbnail.vue'
+import { COVER_PICK_TOOLTIP } from '../../utils/photo-upload-copy.util'
 import type { CanvasData } from '@/modules/editor/models/canvas-data.model'
 import type { TocEntry } from '@/modules/editor/models/toc-placeholder.model'
 import { useMobileViewport } from '@/modules/editor/composables/use-mobile-viewport'
@@ -428,6 +431,10 @@ const viewingFill = computed(() =>
 function isSpreadPage(pageId: string | null): boolean {
   const slotType = props.pages.find((page) => page.id === pageId)?.slotType
   return slotType === 'SPREAD' || slotType === 'TOC'
+}
+
+function isCoverPage(pageId: string | null): boolean {
+  return props.pages.find((page) => page.id === pageId)?.slotType === 'COVER'
 }
 
 // A SPREAD (or TOC — same spread-width canvas, see journal-structure.util.ts's

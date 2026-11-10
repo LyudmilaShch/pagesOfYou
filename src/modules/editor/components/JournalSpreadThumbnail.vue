@@ -67,7 +67,7 @@
                   <v-icon size="14" color="black">mdi-image-refresh-outline</v-icon>
                 </button>
               </template>
-              Заменить фото
+              {{ photoActionHint || 'Заменить фото' }}
             </v-tooltip>
             <v-tooltip v-if="cropEnabled" location="top" content-class="editor-tooltip--arrow-top">
               <template #activator="{ props: tooltipProps }">
@@ -84,6 +84,13 @@
               Кадрировать фото
             </v-tooltip>
           </div>
+          <span
+            v-if="showCoverOrientationBadge(leaf)"
+            class="spread-thumb__orientation"
+            @click.stop
+          >
+            <PrintResolutionBadge level="soft" :message="COVER_ORIENTATION_BADGE" />
+          </span>
         </template>
         <div
           v-else-if="isPhotoElement(leaf)"
@@ -110,7 +117,7 @@
                 <v-icon size="18" color="black">mdi-image-plus</v-icon>
               </button>
             </template>
-            Выбрать фото
+            {{ photoActionHint || 'Выбрать фото' }}
           </v-tooltip>
         </div>
 
@@ -256,6 +263,8 @@ import {
   type SpreadBackgroundRenderLayer,
 } from '../utils/spread-background.util'
 import { resolveAssetUrl } from '@/shared/config/assets'
+import { COVER_ORIENTATION_BADGE } from '@/features/order-builder/utils/photo-upload-copy.util'
+import PrintResolutionBadge from './PrintResolutionBadge.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -285,6 +294,11 @@ const props = withDefaults(
      * same split as `dropEnabled`/`cropEnabled` above. A click-driven alternative to dragging: the
      * parent opens a gallery picker for that specific slot (see PhotoUploadPage.vue). */
     pickEnabled?: boolean
+    /** Replaces the default «Выбрать фото» / «Заменить фото» tooltips. The book sets this on the
+     * cover only, so the same thumbnail stays generic everywhere else. */
+    photoActionHint?: string
+    /** Cover preview: yellow alert on a landscape photo. Off everywhere else. */
+    coverOrientationWarning?: boolean
     /** Shows "edit text"/"regenerate" buttons on every settled (non-pending) ai-text-placeholder,
      * emitting `edit-ai-text`/`regenerate-ai-text` on click — same split as the photo-action props
      * above. Only QuestionnairePage.vue's book offers this (see order-builder.store.ts's
@@ -668,6 +682,23 @@ onBeforeUnmount(() => {
 const imageNaturalSizes = new Map<string, { width: number; height: number }>()
 const pendingImageSizeUrls = new Set<string>()
 const imageSizeTick = ref(0)
+
+function showCoverOrientationBadge(leaf: PhotoPlaceholder): boolean {
+  if (!props.coverOrientationWarning || !leaf.defaultImageUrl) {
+    return false
+  }
+  if (Math.min(leaf.size.width, leaf.size.height) * scale.value < 28) {
+    return false
+  }
+  const url = resolveAssetUrl(leaf.defaultImageUrl) ?? leaf.defaultImageUrl
+  void imageSizeTick.value
+  const natural = imageNaturalSizes.get(url)
+  if (!natural || natural.width <= 0 || natural.height <= 0) {
+    ensureImageNaturalSize(url)
+    return false
+  }
+  return natural.width > natural.height
+}
 
 function ensureImageNaturalSize(url: string): void {
   if (imageNaturalSizes.has(url) || pendingImageSizeUrls.has(url)) {
@@ -1131,6 +1162,14 @@ function shapeStyle(leaf: ShapeElement): Record<string, string> {
 .spread-thumb__el--text-overflow .spread-thumb__text-inner {
   outline: calc(1.5px * var(--thumb-inverse-scale, 1)) dashed $accent-deep;
   outline-offset: calc(1px * var(--thumb-inverse-scale, 1));
+}
+
+.spread-thumb__orientation {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 3;
+  pointer-events: auto;
 }
 
 .spread-thumb__overflow-badge {
