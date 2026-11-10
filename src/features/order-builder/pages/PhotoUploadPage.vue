@@ -317,6 +317,7 @@
       :scope="galleryScope"
       :cover-hint="pickerIsCover"
       @select="handlePickerSelect"
+      @uploaded="handlePickerUploaded"
       @close="closePhotoPicker"
     />
 
@@ -421,6 +422,7 @@ import {
   COVER_LANDSCAPE_WARNING,
   photoUploadIntro,
 } from '../utils/photo-upload-copy.util'
+import { prependUniqueById } from '../utils/gallery-list.util'
 import PhotoUploadFormatsHint from '../components/PhotoUploadFormatsHint.vue'
 import PhotoUploadErrorList from '../components/PhotoUploadErrorList.vue'
 import PhotoGalleryPickerDialog from '../components/PhotoGalleryPickerDialog.vue'
@@ -508,6 +510,10 @@ function openPhotoPicker(journalPageId: string, elementId: string): void {
 
 function closePhotoPicker(): void {
   pickerTarget.value = null
+}
+
+function handlePickerUploaded(photo: GalleryPhoto): void {
+  photos.value = prependUniqueById(photos.value, photo)
 }
 
 async function handlePickerSelect(url: string): Promise<void> {

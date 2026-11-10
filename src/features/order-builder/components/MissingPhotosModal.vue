@@ -133,6 +133,7 @@
       :z-index="2600"
       :cover-hint="pickerIsCover"
       @select="handlePickerSelect"
+      @uploaded="handlePickerUploaded"
       @close="closePhotoPicker"
     />
 
@@ -175,6 +176,7 @@ import {
   missingPhotoLine,
   presentCustomerPageCanvas,
 } from '../utils/missing-photos.util'
+import { prependUniqueById } from '../utils/gallery-list.util'
 import { usePhotoTouchDrag } from '../composables/use-photo-touch-drag'
 import QuestionnaireBook from './questionnaire/QuestionnaireBook.vue'
 import PhotoTouchDragGhost from './PhotoTouchDragGhost.vue'
@@ -223,6 +225,10 @@ function openPhotoPicker(journalPageId: string, elementId: string): void {
 
 function closePhotoPicker(): void {
   pickerTarget.value = null
+}
+
+function handlePickerUploaded(photo: GalleryPhoto): void {
+  photos.value = prependUniqueById(photos.value, photo)
 }
 
 async function handlePickerSelect(url: string): Promise<void> {

@@ -85,6 +85,9 @@ const props = withDefaults(
 const emit = defineEmits<{
   close: []
   select: [url: string]
+  /** A file just landed in the gallery. Parents that show their own strip should prepend it.
+   * Choosing a slot is still a separate `select`. */
+  uploaded: [photo: GalleryPhoto]
 }>()
 
 const photos = ref<GalleryPhoto[]>([])
@@ -137,6 +140,7 @@ async function handleFilesSelected(event: Event): Promise<void> {
       const dimensions = await getImageDimensions(file).catch(() => undefined)
       const uploaded = await photoGalleryApi.upload(props.scope, file, dimensions)
       photos.value = [uploaded, ...photos.value]
+      emit('uploaded', uploaded)
     })
   } finally {
     uploading.value = false
