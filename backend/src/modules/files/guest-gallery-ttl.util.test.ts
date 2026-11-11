@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { GUEST_GALLERY_TTL_MS, isAbandonedGuestPhoto } from './guest-gallery-ttl.util.ts';
+import { GUEST_GALLERY_TTL_MS, isAbandonedGuestPhoto } from './guest-gallery-ttl.util';
 
 const NOW = new Date('2026-11-09T12:00:00.000Z');
 
