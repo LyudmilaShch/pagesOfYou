@@ -7,7 +7,6 @@ import {
   collectMissingPhotoPages,
   countPhotosCustomerSupplies,
   isCustomerPhotoSlotFilled,
-  isLandscapePhoto,
   missingPhotoLine,
   missingPhotoPill,
   shouldHideCoverAdminImage,
@@ -184,12 +183,5 @@ describe('customer photo slots', () => {
     assert.deepEqual(collectAutoFillTargets(facts, new Set(['new'])), [
       { journalPageId: 'new', elementId: 'new-empty' },
     ])
-  })
-
-  it('flags a horizontal photo and ignores a vertical one', () => {
-    assert.equal(isLandscapePhoto(2000, 1000), true)
-    assert.equal(isLandscapePhoto(1000, 2000), false)
-    assert.equal(isLandscapePhoto(1000, 1000), false)
-    assert.equal(isLandscapePhoto(null, 1000), false)
   })
 })

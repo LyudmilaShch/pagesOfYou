@@ -5,10 +5,7 @@ export const COVER_PICK_TOOLTIP = 'Для обложки лучше вертик
 
 /** Shown in the gallery picker only while a cover slot is the target. */
 export const COVER_GALLERY_BANNER =
-  'Выберите вертикальное фото в хорошем качестве. Лучше всего подойдёт снимок со спокойным фоном и без большого количества мелких деталей — так текст и оформление обложки будут выглядеть аккуратно и хорошо читаться. Горизонтальный снимок на обложке сильно обрежется.'
-
-/** Tooltip on the yellow cover badge when the chosen photo is landscape. */
-export const COVER_ORIENTATION_BADGE = 'Для обложки лучше вертикальное фото.'
+  'Выберите вертикальное фото в хорошем качестве. Лучше всего подойдёт снимок со спокойным фоном и без большого количества мелких деталей — так текст и оформление обложки будут выглядеть аккуратно и хорошо читаться.'
 
 /** Intro under the photo-step title. `count` is how many photos the line asks for. */
 export function photoUploadIntro(count: number): string {

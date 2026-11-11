@@ -20,7 +20,6 @@
                 v-if="guestCoverCanvas(draft)"
                 :canvas-data="guestCoverCanvas(draft)!"
                 :container-ratio="0.75"
-                cover-orientation-warning
               />
               <div v-else class="resume-draft__cover-placeholder" />
             </div>
@@ -41,7 +40,6 @@
                 v-if="coverCanvas(draft)"
                 :canvas-data="coverCanvas(draft)!"
                 :container-ratio="0.75"
-                cover-orientation-warning
               />
               <div v-else class="resume-draft__cover-placeholder" />
             </div>

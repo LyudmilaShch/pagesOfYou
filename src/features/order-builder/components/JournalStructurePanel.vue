@@ -37,7 +37,6 @@
             <JournalSpreadThumbnail
               :canvas-data="materializedCanvas(entry.page)"
               :container-ratio="1.19"
-              :cover-orientation-warning="entry.page.slotType === 'COVER'"
             />
 
             <v-tooltip v-if="!isPageComplete(entry.page)" location="top" content-class="editor-tooltip--arrow-top">

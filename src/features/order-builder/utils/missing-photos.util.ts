@@ -20,7 +20,7 @@ import {
 import type { JournalPage } from '../types/order.types'
 
 export type { MissingCustomerPhotoPage, AutoFillPhotoTarget }
-export { missingPhotoLine, missingPhotoPill, isLandscapePhoto } from './photo-slot-rules.util'
+export { missingPhotoLine, missingPhotoPill } from './photo-slot-rules.util'
 
 export interface PhotoSlotPreview {
   elementId: string

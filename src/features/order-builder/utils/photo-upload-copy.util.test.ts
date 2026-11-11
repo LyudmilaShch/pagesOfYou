@@ -3,7 +3,6 @@ import { describe, it } from 'node:test'
 
 import {
   COVER_GALLERY_BANNER,
-  COVER_ORIENTATION_BADGE,
   COVER_PICK_TOOLTIP,
   photoUploadIntro,
 } from './photo-upload-copy.util.ts'
@@ -26,10 +25,9 @@ describe('photo upload intro', () => {
 })
 
 describe('cover photo hints', () => {
-  it('keeps the short hover line, the gallery banner, and the landscape warning distinct', () => {
+  it('keeps the cover hover line and the gallery banner', () => {
     assert.match(COVER_PICK_TOOLTIP, /вертикальное фото со спокойным фоном/)
     assert.match(COVER_GALLERY_BANNER, /хорошем качестве/)
-    assert.match(COVER_GALLERY_BANNER, /Горизонтальный снимок на обложке сильно обрежется/)
-    assert.equal(COVER_ORIENTATION_BADGE, 'Для обложки лучше вертикальное фото.')
+    assert.equal(COVER_GALLERY_BANNER.includes('Горизонтальный'), false)
   })
 })

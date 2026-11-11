@@ -77,7 +77,6 @@
                   :crop-enabled="cropEnabled"
                   :pick-enabled="pickEnabled"
                   :photo-action-hint="isCoverPage(half.pageId) ? COVER_PICK_TOOLTIP : undefined"
-                  :cover-orientation-warning="isCoverPage(half.pageId)"
                   :ai-text-edit-enabled="aiTextEditEnabled"
                   :text-issue-messages="textIssueMessagesByPageId?.get(half.pageId)"
                   :ai-usage="aiUsage"

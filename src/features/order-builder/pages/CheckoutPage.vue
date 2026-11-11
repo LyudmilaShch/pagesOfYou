@@ -207,12 +207,7 @@
 
         <aside class="checkout-summary">
           <div class="checkout-summary__cover">
-            <JournalSpreadThumbnail
-              v-if="coverCanvas"
-              :canvas-data="coverCanvas"
-              :container-ratio="0.75"
-              cover-orientation-warning
-            />
+            <JournalSpreadThumbnail v-if="coverCanvas" :canvas-data="coverCanvas" :container-ratio="0.75" />
           </div>
           <h3 class="checkout-summary__name">{{ order.magazineType.name }}</h3>
 

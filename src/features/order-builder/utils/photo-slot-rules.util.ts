@@ -76,13 +76,6 @@ export function shouldHideCoverAdminImage(fact: Pick<CustomerPhotoFact, 'slotTyp
   return fact.slotType === 'COVER' && trimmed(fact.userUrl).length === 0
 }
 
-export function isLandscapePhoto(
-  width: number | null | undefined,
-  height: number | null | undefined,
-): boolean {
-  return typeof width === 'number' && typeof height === 'number' && width > 0 && height > 0 && width > height
-}
-
 export function customerPhotoPageLabel(slotType: JournalSlotType, spreadIndex?: number): string {
   if (slotType === 'COVER') {
     return PAGE_LABELS.COVER
