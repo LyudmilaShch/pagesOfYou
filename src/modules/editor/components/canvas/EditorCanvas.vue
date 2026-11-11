@@ -321,7 +321,6 @@
             v-if="!store.previewMode"
             ref="transformerRef"
             :config="transformerConfig"
-            @transformstart="handleTransformerTransformStart"
             @transform="handleTransformerTransform"
             @transformend="handleTransformerTransformEnd"
           />
@@ -443,7 +442,6 @@ import {
   findPhotoPlaceholderAtPoint,
 } from '../../utils/photo-drop.util'
 import { MIN_TEXT_BOX_WIDTH } from '../../constants/text.constants'
-import { getTextMaxWidth } from '../../utils/text-auto-size.util'
 import { isTextPlaceholderType } from '../../utils/normalize-text-placeholder.util'
 import type { PageElement } from '../../models'
 import { isGroupElement } from '../../models'
@@ -462,12 +460,6 @@ const { showErrorMessageModal } = useErrorMessageModal()
 const containerRef = ref<HTMLElement | null>(null)
 const stageRef = ref<{ getNode: () => Konva.Stage } | null>(null)
 const transformerRef = ref<{ getNode: () => Konva.Transformer } | null>(null)
-/** Captured once per transform gesture — text's `boundBoxFunc` must clamp against a STABLE
- * height, not the live store value: text height is recalculated (line-wrap reflow) on every
- * 'transform' tick as width changes, and feeding that live-changing height back into Konva's own
- * boundBoxFunc created a feedback loop (Konva's resize math got thrown off by its own reference
- * box changing height every tick), which showed up as erratic jitter while dragging a width handle. */
-const transformStartSize = ref<{ width: number; height: number } | null>(null)
 const isPhotoFileDragActive = ref(false)
 const photoDropUploading = ref(false)
 let photoDragDepth = 0
@@ -1054,64 +1046,15 @@ const transformerConfig = computed(() => {
       }
 
       if (selected && isTextPlaceholderType(selected.type)) {
-        const activeAnchor = transformerRef.value?.getNode()?.getActiveAnchor() ?? null
-
-        // The rotate handle is the one gesture allowed to actually change rotation — let Konva's
-        // own newBox through untouched. Every other anchor keeps the rejection below, so a resize
-        // drag can never smuggle in an incidental rotation delta.
-        if (activeAnchor === 'rotater') {
-          return newBox
-        }
-
-        const rotationChanged =
-          Math.abs(oldBox.rotation - newBox.rotation) > 0.001
-
-        if (rotationChanged) {
+        // Konva's own box. Rewriting height or the anchored edge here fought the transformer's
+        // anchor math and jerked the frame while the width grew. The only limit is the minimum
+        // width, in stage pixels (the page group is scaled by pageScale).
+        const minWidth = MIN_TEXT_BOX_WIDTH * (pageScale.value || 1)
+        if (newBox.width < minWidth) {
           return oldBox
         }
 
-        // oldBox/newBox are in STAGE-ABSOLUTE pixel space — Konva's Transformer always works in
-        // absolute coordinates (see _getNodeRect()/node.getAbsoluteTransform() in Konva's own
-        // source), which includes the page's own render zoom (pageScale, applied to the group
-        // these nodes render inside). MIN_TEXT_BOX_WIDTH/getTextMaxWidth/transformStartSize are
-        // page/logical units — comparing them against newBox directly is a unit mismatch: at
-        // typical zoom levels it clamps width to a near-constant stage-pixel value regardless of
-        // how far the handle is dragged, while position (which passes newBox.x/y through
-        // untouched) keeps tracking the mouse — i.e. exactly "moves but doesn't resize".
-        const scale = pageScale.value || 1
-        const minWidth = MIN_TEXT_BOX_WIDTH * scale
-        const height = (transformStartSize.value?.height ?? selected.size.height) * scale
-
-        if (activeAnchor === 'middle-left') {
-          // Right edge stays fixed for this anchor. Derive it from Konva's own newBox (already in
-          // stage-absolute space) instead of recomputing it from selected.position — mixing the
-          // two spaces is what previously made the box drift.
-          const rightEdge = newBox.x + newBox.width
-          const maxWidth = Math.max(minWidth, rightEdge)
-          const width = Math.max(minWidth, Math.min(newBox.width, maxWidth))
-
-          return {
-            x: rightEdge - width,
-            y: newBox.y,
-            width,
-            height,
-            rotation: oldBox.rotation,
-          }
-        }
-
-        // 'middle-right' (default): left edge stays fixed — trust Konva's own newBox.x/y, only
-        // the width needs clamping to the page bound.
-        const maxWidth =
-          getTextMaxWidth(selected.position.x, store.pageWidth, store.pageHeight) * scale
-        const width = Math.max(minWidth, Math.min(newBox.width, maxWidth))
-
-        return {
-          x: newBox.x,
-          y: newBox.y,
-          width,
-          height,
-          rotation: oldBox.rotation,
-        }
+        return newBox
       }
 
       if (newBox.width < 8) {
@@ -1360,11 +1303,6 @@ function getNodeLogicalPosition(node: Konva.Group): { x: number; y: number } | n
       : topLeft.x,
     y: topLeft.y,
   }
-}
-
-function handleTransformerTransformStart(): void {
-  const selected = store.selectedElement
-  transformStartSize.value = selected ? { width: selected.size.width, height: selected.size.height } : null
 }
 
 function handleTransformerTransform(): void {
