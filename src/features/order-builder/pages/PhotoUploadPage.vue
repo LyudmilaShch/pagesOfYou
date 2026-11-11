@@ -235,7 +235,13 @@
                   @dragstart="handleDragStart($event, photo)"
                   @pointerdown="onPhotoPointerDown($event, photo.url)"
                 >
-                  <img :src="photo.url" :alt="photo.originalName ?? ''" />
+                  <img :src="photo.url" :alt="photo.originalName ?? ''" @load="onImageLoad(photo.id, $event)" />
+                  <span v-if="uploadWarningLevel(photo)" class="photo-upload-page__resolution">
+                    <PrintResolutionBadge
+                      :level="uploadWarningLevel(photo)!"
+                      :message="uploadResolutionMessage(uploadWarningLevel(photo)!)"
+                    />
+                  </span>
                   <button
                     v-if="usageByUrl.get(photo.url)?.length"
                     type="button"
@@ -406,6 +412,9 @@ import PhotoUploadErrorList from '../components/PhotoUploadErrorList.vue'
 import PhotoGalleryPickerDialog from '../components/PhotoGalleryPickerDialog.vue'
 import PhotoCropModal from '../components/PhotoCropModal.vue'
 import BaseModal from '@/components/ui/BaseModal.vue'
+import PrintResolutionBadge from '@/modules/editor/components/PrintResolutionBadge.vue'
+import { useUploadResolutionWarning } from '@/modules/editor/composables/use-upload-resolution-warning'
+import { uploadResolutionMessage } from '@/modules/editor/utils/print-resolution.util'
 
 // Stable empty instances — QuestionnaireBook has no per-question fill concept on this step (photos
 // here aren't bound to a specific spread yet), but its props aren't optional; reusing the SAME
@@ -413,6 +422,7 @@ import BaseModal from '@/components/ui/BaseModal.vue'
 // re-render, which would otherwise needlessly invalidate anything memoized off it.
 const EMPTY_FILL_MAP: Map<string, { answered: number; total: number }> = new Map()
 const EMPTY_ELEMENT_IDS: Set<string> = new Set()
+const { onImageLoad, uploadWarningLevel } = useUploadResolutionWarning()
 
 // This is Шаг 2 of 5 — same hardcoded step number as .photo-upload-page__steps-label below.
 const ORDER_STEP_PROGRESS = (2 / 5) * 100
@@ -1636,6 +1646,13 @@ onBeforeUnmount(() => {
       cursor: grabbing;
     }
   }
+}
+
+.photo-upload-page__resolution {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  z-index: 1;
 }
 
 .photo-upload-page__thumb-remove {

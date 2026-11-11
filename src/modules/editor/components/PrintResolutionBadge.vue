@@ -20,15 +20,7 @@
 </template>
 
 <script setup lang="ts">
-/**
- * Same circle, icon, and colors as WOW-35's badge (`PrintResolutionBadge.vue` on that branch).
- * Colors live here until that branch's `print-resolution.util.ts` lands; the template and class
- * names match so the two copies can be dropped together.
- */
-const PRINT_RESOLUTION_COLOR = {
-  poor: '#d4532b',
-  soft: '#e0a106',
-} as const
+import { PRINT_RESOLUTION_COLOR } from '../utils/print-resolution.util'
 
 withDefaults(
   defineProps<{

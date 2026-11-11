@@ -352,6 +352,13 @@
       @allow="store.allowPrintCropViolation()"
     />
 
+    <PrintResolutionHoverTip
+      v-if="!store.previewMode && printResolutionTip"
+      :x="printResolutionTip.x"
+      :y="printResolutionTip.y"
+      :message="printResolutionTip.message"
+    />
+
     <div
       v-if="isMobileViewport && store.isSpreadPage"
       class="editor-canvas__spread-dots"
@@ -425,6 +432,8 @@ import PageBackgroundCropLayer from './PageBackgroundCropLayer.vue'
 import EditorTextEditOverlay from './EditorTextEditOverlay.vue'
 import EditorPhotoCropOverlay from './EditorPhotoCropOverlay.vue'
 import EditorPrintCropWarning from './EditorPrintCropWarning.vue'
+import PrintResolutionHoverTip from '../PrintResolutionHoverTip.vue'
+import { printResolutionTip } from '../../utils/print-resolution-tip.state'
 import { editorAssets } from '../../services/editor-assets'
 import { useErrorMessageModal } from '@/shared/composables/useErrorMessageModal'
 import { getUploadErrorMessage } from '@/shared/utils/api-error.util'

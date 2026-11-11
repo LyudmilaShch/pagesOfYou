@@ -84,7 +84,13 @@
               @dragstart="handleDragStart($event, photo)"
               @pointerdown="onPhotoPointerDown($event, photo.url)"
             >
-              <img :src="photo.url" :alt="photo.originalName ?? ''" />
+              <img :src="photo.url" :alt="photo.originalName ?? ''" @load="onImageLoad(photo.id, $event)" />
+              <span v-if="uploadWarningLevel(photo)" class="missing-photos__resolution">
+                <PrintResolutionBadge
+                  :level="uploadWarningLevel(photo)!"
+                  :message="uploadResolutionMessage(uploadWarningLevel(photo)!)"
+                />
+              </span>
               <button
                 v-if="usageByUrl.get(photo.url)?.length"
                 type="button"
@@ -178,6 +184,9 @@ import {
 } from '../utils/missing-photos.util'
 import { prependUniqueById } from '../utils/gallery-list.util'
 import { usePhotoTouchDrag } from '../composables/use-photo-touch-drag'
+import PrintResolutionBadge from '@/modules/editor/components/PrintResolutionBadge.vue'
+import { useUploadResolutionWarning } from '@/modules/editor/composables/use-upload-resolution-warning'
+import { uploadResolutionMessage } from '@/modules/editor/utils/print-resolution.util'
 import QuestionnaireBook from './questionnaire/QuestionnaireBook.vue'
 import PhotoTouchDragGhost from './PhotoTouchDragGhost.vue'
 import PhotoUploadFormatsHint from './PhotoUploadFormatsHint.vue'
@@ -188,6 +197,7 @@ import PhotoGalleryPickerDialog from './PhotoGalleryPickerDialog.vue'
 // fill-badge/pending-AI props don't apply here, but they aren't optional props.
 const EMPTY_FILL_MAP: Map<string, { answered: number; total: number }> = new Map()
 const EMPTY_ELEMENT_IDS: Set<string> = new Set()
+const { onImageLoad, uploadWarningLevel } = useUploadResolutionWarning()
 
 const props = defineProps<{
   open: boolean
@@ -626,6 +636,13 @@ onBeforeUnmount(() => {
       cursor: grabbing;
     }
   }
+}
+
+.missing-photos__resolution {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  z-index: 1;
 }
 
 .missing-photos__thumb-remove {

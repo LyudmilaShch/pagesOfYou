@@ -40,7 +40,13 @@
             class="photo-gallery-picker__item"
             @click="emit('select', photo.url)"
           >
-            <img :src="photo.url" :alt="photo.originalName ?? ''" />
+            <img :src="photo.url" :alt="photo.originalName ?? ''" @load="onImageLoad(photo.id, $event)" />
+            <span v-if="uploadWarningLevel(photo)" class="photo-gallery-picker__resolution">
+              <PrintResolutionBadge
+                :level="uploadWarningLevel(photo)!"
+                :message="uploadResolutionMessage(uploadWarningLevel(photo)!)"
+              />
+            </span>
           </button>
         </div>
 
@@ -65,6 +71,9 @@ import { ref, watch } from 'vue'
 import { getImageDimensions } from '@/shared/utils/image-dimensions.util'
 import { PHOTO_FILE_ACCEPT } from '@/shared/constants/photo-upload.constants'
 import { runPhotoUploads } from '@/shared/utils/photo-upload-error.util'
+import PrintResolutionBadge from '@/modules/editor/components/PrintResolutionBadge.vue'
+import { useUploadResolutionWarning } from '@/modules/editor/composables/use-upload-resolution-warning'
+import { uploadResolutionMessage } from '@/modules/editor/utils/print-resolution.util'
 import { photoGalleryApi, type GalleryPhoto, type PhotoGalleryScope } from '../api/photo-gallery.api'
 import { COVER_GALLERY_BANNER } from '../utils/photo-upload-copy.util'
 import PhotoUploadFormatsHint from './PhotoUploadFormatsHint.vue'
@@ -95,6 +104,7 @@ const loading = ref(false)
 const uploading = ref(false)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const uploadErrors = ref<string[]>([])
+const { onImageLoad, uploadWarningLevel } = useUploadResolutionWarning()
 
 async function loadPhotos(): Promise<void> {
   loading.value = true
@@ -189,6 +199,7 @@ async function handleFilesSelected(event: Event): Promise<void> {
 }
 
 .photo-gallery-picker__item {
+  position: relative;
   aspect-ratio: 1;
   border: 1px solid $border-light;
   border-radius: $radius-md;
@@ -208,6 +219,13 @@ async function handleFilesSelected(event: Event): Promise<void> {
     object-fit: cover;
     display: block;
   }
+}
+
+.photo-gallery-picker__resolution {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  z-index: 1;
 }
 
 .photo-gallery-picker__item--upload {

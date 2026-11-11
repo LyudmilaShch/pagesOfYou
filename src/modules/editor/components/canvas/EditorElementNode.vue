@@ -199,6 +199,7 @@ import {
 } from '../../utils/photo-crop.util'
 import { getPhotoBorderDrawNodes } from '../../utils/element-stroke.util'
 import { getPhotoRenderBox } from '../../utils/photo-frame.util'
+import { buildPhotoResolutionBadge } from '../../utils/print-resolution.util'
 import { isPageBackgroundCropTransformerTarget } from '../../utils/canvas-background.util'
 import { buildRotateCursorStyle } from '../../utils/rotate-cursor.util'
 import { normalizeElementRotation } from '../../utils/transformer.util'
@@ -672,6 +673,28 @@ const photoImageConfig = computed(() => {
   return getPhotoImageKonvaConfig(props.element, loadedImage.value)
 })
 
+const photoResolutionBadge = computed(() => {
+  if (
+    store.previewMode ||
+    props.element.type !== 'photo-placeholder' ||
+    !loadedImage.value ||
+    isPhotoCropEditing.value ||
+    isPhotoDimmed.value
+  ) {
+    return null
+  }
+
+  const { width, height } = getImagePixelSize(loadedImage.value)
+
+  return buildPhotoResolutionBadge(
+    props.element,
+    { width, height },
+    props.parentId == null
+      ? { width: store.pageWidth, height: store.pageHeight }
+      : undefined,
+  )
+})
+
 
 
 const shapeRectConfig = computed(() => getShapeRectConfig(props.element))
@@ -758,6 +781,7 @@ provide(EDITOR_ELEMENT_VISUALS_KEY, {
   textEchoLayerConfigs,
   textBackgroundConfig,
   isEditingText,
+  photoResolutionBadge,
 })
 
 const isSelected = computed(() => store.isElementSelected(props.element.id))

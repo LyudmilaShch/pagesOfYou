@@ -51,6 +51,17 @@
   <v-rect v-if="ctx.photoDimBorderConfig.value" :config="ctx.photoDimBorderConfig.value" />
   <v-shape v-if="ctx.photoMaskOutlineConfig.value" :config="ctx.photoMaskOutlineConfig.value" />
 
+  <v-group
+    v-if="ctx.photoResolutionBadge.value"
+    :config="{ x: ctx.photoResolutionBadge.value.x, y: ctx.photoResolutionBadge.value.y, listening: true }"
+    @mouseenter="showResolutionTip"
+    @mouseleave="hideResolutionTip"
+    @tap="toggleResolutionTip"
+  >
+    <v-circle v-if="resolutionBadgeCircle" :config="resolutionBadgeCircle" />
+    <v-text v-if="resolutionBadgeText" :config="resolutionBadgeText" />
+  </v-group>
+
   <v-group :config="{ listening: false }">
     <EffectExtraNode
       v-for="(node, index) in ctx.shapeExtraNodesBehind.value"
@@ -91,7 +102,7 @@
 </template>
 
 <script setup lang="ts">
-import { inject, nextTick, ref, watch } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
 import type Konva from 'konva'
 
@@ -99,12 +110,107 @@ import {
   EDITOR_ELEMENT_VISUALS_KEY,
 } from './editor-element-visuals.context'
 import EffectExtraNode from './EffectExtraNode.vue'
+import {
+  hidePrintResolutionTip,
+  showPrintResolutionTip,
+} from '../../utils/print-resolution-tip.state'
 
 const ctx = inject(EDITOR_ELEMENT_VISUALS_KEY)
 
 if (!ctx) {
   throw new Error('EditorElementVisuals requires EDITOR_ELEMENT_VISUALS_KEY provider')
 }
+
+const resolutionBadgeCircle = computed(() => {
+  const badge = ctx.photoResolutionBadge.value
+  if (!badge) {
+    return null
+  }
+
+  return {
+    x: 0,
+    y: 0,
+    radius: badge.radius,
+    fill: badge.fill,
+    stroke: '#ffffff',
+    strokeWidth: Math.max(1, badge.radius * 0.16),
+    listening: true,
+    perfectDrawEnabled: false,
+  }
+})
+
+const resolutionBadgeText = computed(() => {
+  const badge = ctx.photoResolutionBadge.value
+  if (!badge) {
+    return null
+  }
+
+  const fontSize = Math.round(badge.radius * 1.35)
+
+  return {
+    x: 0,
+    y: fontSize * 0.06,
+    text: '!',
+    fontSize,
+    fontStyle: 'bold',
+    fontFamily: 'Inter, Arial, sans-serif',
+    fill: '#ffffff',
+    align: 'center',
+    verticalAlign: 'middle',
+    width: badge.radius * 2,
+    height: badge.radius * 2,
+    offsetX: badge.radius,
+    offsetY: badge.radius,
+    listening: false,
+  }
+})
+
+function tipPoint(event: Konva.KonvaEventObject<MouseEvent | TouchEvent>): { x: number; y: number } | null {
+  const native = event.evt
+
+  if ('changedTouches' in native) {
+    const touch = native.changedTouches[0] ?? native.touches[0]
+    return touch ? { x: touch.clientX, y: touch.clientY } : null
+  }
+
+  return { x: native.clientX, y: native.clientY }
+}
+
+function showResolutionTip(event: Konva.KonvaEventObject<MouseEvent | TouchEvent>): void {
+  const badge = ctx?.photoResolutionBadge.value
+  const point = tipPoint(event)
+
+  if (!badge || !point) {
+    return
+  }
+
+  showPrintResolutionTip(point.x, point.y, badge.message)
+}
+
+function hideResolutionTip(): void {
+  hidePrintResolutionTip()
+}
+
+function toggleResolutionTip(event: Konva.KonvaEventObject<MouseEvent | TouchEvent>): void {
+  const native = event.evt
+
+  if (!('changedTouches' in native)) {
+    return
+  }
+
+  const badge = ctx?.photoResolutionBadge.value
+  const point = tipPoint(event)
+
+  if (!badge || !point) {
+    return
+  }
+
+  showPrintResolutionTip(point.x, point.y, badge.message, true)
+}
+
+onBeforeUnmount(() => {
+  hidePrintResolutionTip()
+})
 
 // Konva only applies `filters` to nodes that have been cached — vue-konva doesn't do this for
 // us, so re-cache (or drop the cache once no filters are active) whenever the photo's filter
