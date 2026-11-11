@@ -1,8 +1,7 @@
 import Konva from 'konva'
 
-import { TEXT_WIDTH_BUFFER } from '../constants/text.constants'
 import type { TextPlaceholder } from '../models/text-placeholder.model'
-import { buildCanvasFont, resolveKonvaFontStyle } from './text-style.util'
+import { resolveKonvaFontStyle } from './text-style.util'
 
 export interface TextMeasureInput {
   text: string
@@ -15,40 +14,9 @@ export interface TextMeasureResult {
   textHeight: number
 }
 
-export function measureTextLineWidth(text: string, element: TextPlaceholder): number {
-  const content = text.length > 0 ? text : ' '
-
-  if (typeof document !== 'undefined') {
-    const context = document.createElement('canvas').getContext('2d')
-
-    if (context) {
-      context.font = buildCanvasFont(element)
-      let width = context.measureText(content).width
-
-      if (element.letterSpacing && content.length > 1) {
-        width += element.letterSpacing * (content.length - 1)
-      }
-
-      return Math.ceil(width)
-    }
-  }
-
-  return measureKonvaText({ text: content, element }).textWidth
-}
-
-export function shouldWrapTextContent(
-  text: string,
-  element: TextPlaceholder,
-  innerWidth: number,
-): boolean {
-  if (element.textSizingMode === 'fixed') {
-    return true
-  }
-
-  const naturalWidth = measureTextLineWidth(text, element)
-  return naturalWidth > innerWidth + 1
-}
-
+/** One Konva measurement of a string. Width is the longest line; height is the wrapped block.
+ * Callers that pass `maxWidth` wrap by words at that exact width — the same width the canvas
+ * node is given — so the box and the glyphs cannot disagree. */
 export function measureKonvaText(input: TextMeasureInput): TextMeasureResult {
   const content = input.text.length > 0 ? input.text : ' '
 
@@ -66,7 +34,13 @@ export function measureKonvaText(input: TextMeasureInput): TextMeasureResult {
 
   const textWidth =
     input.maxWidth != null ? input.maxWidth : Math.max(node.getTextWidth(), 1)
-  const textHeight = Math.max(node.height(), input.element.fontSize * input.element.lineHeight)
+  // Do not read `textHeight`: Konva 10 stores the font size there. `height()` is the wrapped
+  // block when no frame height was set on the node — and a frame height must not be set, because
+  // Konva then stops laying out lines that don't fit instead of painting them.
+  const textHeight = Math.max(
+    node.height(),
+    input.element.fontSize * input.element.lineHeight,
+  )
 
   node.destroy()
 
@@ -76,6 +50,26 @@ export function measureKonvaText(input: TextMeasureInput): TextMeasureResult {
   }
 }
 
-export function measureTextLineWidthWithBuffer(text: string, element: TextPlaceholder): number {
-  return measureTextLineWidth(text, element) + TEXT_WIDTH_BUFFER
+export interface TextMeasureSnapshot {
+  /** Single-line width (Konva `getTextWidth`, no wrap). */
+  naturalWidth: number
+  /** Height of that single line. */
+  naturalHeight: number
+  /** Height when wrapped by words at exactly `width`. */
+  heightAtWidth: (width: number) => number
+}
+
+export function measureTextBox(
+  element: TextPlaceholder,
+  text: string,
+): TextMeasureSnapshot {
+  const natural = measureKonvaText({ text, element })
+
+  return {
+    naturalWidth: natural.textWidth,
+    naturalHeight: natural.textHeight,
+    heightAtWidth: (width: number) =>
+      measureKonvaText({ text, element, maxWidth: Math.max(1, width) })
+        .textHeight,
+  }
 }

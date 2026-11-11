@@ -51,9 +51,8 @@ export interface OrderCanvasContext {
   recalculateTextElementSize(
     id: string,
     displayText?: string | null,
-    options?: { adjustAnchor?: boolean },
+    options?: { fit?: 'hug' | 'grow' },
   ): void
-  recalculateAllTextElementSizes(): void
   moveElementsPositions(patches: Array<{ id: string; position: Position }>): void
   setLiveDragPosition(id: string, position: Position): void
   setLiveDragPositions(positions: Record<string, Position>): void

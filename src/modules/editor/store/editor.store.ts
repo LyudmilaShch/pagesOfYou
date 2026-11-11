@@ -69,6 +69,10 @@ import {
   recalculateTextLayout,
   shouldRecalculateTextLayout,
 } from '../utils/text-layout.util'
+import { positionForTopLeftAnchor } from '../utils/text-auto-size.util'
+import { fitFontSizeToBox } from '../utils/text-fit-font.util'
+import { measureKonvaText } from '../utils/text-measure.util'
+import { resolveTextContent } from '../adapters/konva/element-node.adapter'
 import {
   clampPhotoCrop,
   computePhotoCropZoomAtPoint,
@@ -153,6 +157,9 @@ export const useEditorStore = defineStore('editor', () => {
   const saving = ref(false)
   const isDirty = ref(false)
   const previewMode = ref(false)
+  /** Template editor grows the box downward. The journal editor keeps the frame and shrinks the
+   * font so a customer's answer fits the box the template drew. */
+  const textFitMode = ref<'grow' | 'shrink'>('grow')
   const canvasZoom = ref(1)
   // Viewport state (mobile pan/pinch-zoom) — sibling to canvasZoom, deliberately never part of
   // CanvasSnapshot/history: pan/zoom describe how the user is looking at the document, not the
@@ -645,13 +652,8 @@ export const useEditorStore = defineStore('editor', () => {
     canvasZoom.value = 1
     isDirty.value = false
     clearHistory()
-
-    walkTree(document.value.canvasData.elements, (element) => {
-      if (isTextPlaceholderType(element.type)) {
-        recalculateTextElementSize(element.id)
-      }
-    })
-
+    // Saved boxes stay as they were drawn. Re-measuring here (and again after fonts load) used
+    // to move every text on open, before the user had edited anything.
     syncCanvasMeta()
   }
 
@@ -754,10 +756,14 @@ export const useEditorStore = defineStore('editor', () => {
     activeSpreadBackgroundSide.value = side
   }
 
+  function setTextFitMode(mode: 'grow' | 'shrink'): void {
+    textFitMode.value = mode
+  }
+
   function recalculateTextElementSize(
     id: string,
     displayText?: string | null,
-    options?: { adjustAnchor?: boolean },
+    options?: { fit?: 'hug' | 'grow' },
   ): void {
     if (!document.value) {
       return
@@ -768,45 +774,83 @@ export const useEditorStore = defineStore('editor', () => {
       return
     }
 
-    const element = location.node
+    const element = location.node as TextPlaceholder
+    // List rows own their own box and font (list-distribution). Reflowing them here fights that.
+    if (element.listRole) {
+      return
+    }
 
     const layout = recalculateTextLayout({
-      element: element as TextPlaceholder,
+      element,
       displayText,
       pageWidth: document.value.width,
-      pageHeight: document.value.height,
-      adjustAnchor: options?.adjustAnchor ?? false,
+      fit: options?.fit ?? 'grow',
     })
+    const position = positionForTopLeftAnchor(
+      element.position,
+      element.size,
+      layout.size,
+      element.rotation,
+    )
+
+    if (
+      layout.size.width === element.size.width &&
+      layout.size.height === element.size.height &&
+      position.x === element.position.x &&
+      position.y === element.position.y
+    ) {
+      return
+    }
 
     location.siblings[location.index] = {
       ...element,
       size: layout.size,
-      position:
-        options?.adjustAnchor && layout.position
-          ? { ...element.position, ...layout.position }
-          : element.position,
+      position,
     } as PageElement
   }
 
-  /** Re-measures every text element in the document — used after custom fonts finish loading:
-   * text elements already on the canvas when the page opened were measured once, synchronously,
-   * possibly before their font's FontFace had registered, so their wrap width may still reflect a
-   * fallback font. This is a silent visual correction, not a user edit — no history/isDirty. */
-  function recalculateAllTextElementSizes(): void {
-    if (!document.value) {
+  /** Journal editor: keep the template frame, change only the font so the answer fits inside it.
+   * Grows back up to `designFontSize` when the customer deletes text. Never moves x/y or the box. */
+  function refitTextFontToFrame(id: string, options?: { adoptFontSize?: boolean }): void {
+    if (!document.value || textFitMode.value !== 'shrink') {
       return
     }
 
-    const textElementIds: string[] = []
-    walkTree(document.value.canvasData.elements, (node) => {
-      if (isTextPlaceholderType(node.type)) {
-        textElementIds.push(node.id)
-      }
+    const location = locateNode(document.value.canvasData.elements, id)
+    if (!location || !isTextPlaceholderType(location.node.type)) {
+      return
+    }
+
+    const element = location.node as TextPlaceholder
+    if (element.listRole) {
+      return
+    }
+
+    const design = options?.adoptFontSize
+      ? element.fontSize
+      : (element.designFontSize ?? element.fontSize)
+    const text = resolveTextContent(element)
+    const boxWidth = Math.max(1, element.size.width)
+    const boxHeight = element.size.height
+    const fitted = fitFontSizeToBox({
+      designFontSize: design,
+      fits: (fontSize) =>
+        measureKonvaText({
+          text,
+          element: { ...element, fontSize },
+          maxWidth: boxWidth,
+        }).textHeight <= boxHeight + 1,
     })
 
-    for (const id of textElementIds) {
-      recalculateTextElementSize(id)
+    if (fitted === element.fontSize && design === element.designFontSize) {
+      return
     }
+
+    location.siblings[location.index] = {
+      ...element,
+      fontSize: fitted,
+      designFontSize: design,
+    } as PageElement
   }
 
   function setLiveDragPosition(id: string, position: Position): void {
@@ -856,16 +900,11 @@ export const useEditorStore = defineStore('editor', () => {
     scheduleDebouncedHistory()
 
     const root = document.value.canvasData.elements
-    const textIdsToRecalculate: string[] = []
 
     for (const patch of patches) {
       const location = locateNode(root, patch.id)
       if (!location) {
         continue
-      }
-
-      if (isTextPlaceholderType(location.node.type)) {
-        textIdsToRecalculate.push(patch.id)
       }
 
       location.siblings[location.index] = {
@@ -874,10 +913,6 @@ export const useEditorStore = defineStore('editor', () => {
         // transform commit path, and Konva's pointer coordinates are fractional.
         position: { x: Math.round(patch.position.x), y: Math.round(patch.position.y) },
       } as PageElement
-    }
-
-    for (const id of textIdsToRecalculate) {
-      recalculateTextElementSize(id)
     }
 
     isDirty.value = true
@@ -897,11 +932,13 @@ export const useEditorStore = defineStore('editor', () => {
 
     siblings.push(element)
     if (isTextPlaceholderType(element.type)) {
-      recalculateTextElementSize(element.id)
+      // The factory box is a placeholder. Hug it to the words once, then never shrink it.
+      recalculateTextElementSize(element.id, undefined, { fit: 'hug' })
 
       if (typeof globalThis.document !== 'undefined') {
         void globalThis.document.fonts.ready.then(() => {
-          recalculateTextElementSize(element.id)
+          // Real font metrics can only make the new box larger. Saved elements are not touched.
+          recalculateTextElementSize(element.id, undefined, { fit: 'grow' })
         })
       }
     }
@@ -972,7 +1009,7 @@ export const useEditorStore = defineStore('editor', () => {
       location.siblings.splice(location.index + 1, 0, clone)
       walkTree([clone], (node) => {
         if (isTextPlaceholderType(node.type)) {
-          recalculateTextElementSize(node.id)
+          recalculateTextElementSize(node.id, undefined, { fit: 'grow' })
         }
       })
       clones.push(clone)
@@ -1048,7 +1085,7 @@ export const useEditorStore = defineStore('editor', () => {
 
     walkTree(pasted, (node) => {
       if (isTextPlaceholderType(node.type)) {
-        recalculateTextElementSize(node.id)
+        recalculateTextElementSize(node.id, undefined, { fit: 'grow' })
       }
     })
 
@@ -2021,8 +2058,52 @@ export const useEditorStore = defineStore('editor', () => {
     } as PageElement
 
     const updated = location.siblings[location.index]
-    if (!options?.skipTextLayoutRecalc && shouldRecalculateTextLayout(patch, updated)) {
-      recalculateTextElementSize(id, undefined, { adjustAnchor: true })
+    if (
+      !options?.skipTextLayoutRecalc &&
+      isTextPlaceholderType(updated.type) &&
+      !(updated as TextPlaceholder).listRole
+    ) {
+      const textUpdated = updated as TextPlaceholder
+      const metricsChanged = shouldRecalculateTextLayout(patch, updated)
+      const widthEdited = patch.size?.width != null
+
+      if (textFitMode.value === 'shrink' && (metricsChanged || patch.size != null)) {
+        // The frame is whatever the patch just stored. Fit the font into it; do not move it.
+        if (widthEdited) {
+          location.siblings[location.index] = {
+            ...textUpdated,
+            textSizingMode: 'fixed',
+          } as PageElement
+        }
+        refitTextFontToFrame(id, { adoptFontSize: Object.prototype.hasOwnProperty.call(patch, 'fontSize') })
+      } else if (metricsChanged || widthEdited) {
+        if (widthEdited && textUpdated.textSizingMode !== 'fixed') {
+          location.siblings[location.index] = {
+            ...textUpdated,
+            textSizingMode: 'fixed',
+          } as PageElement
+        }
+        // Typing only grows the box. A width the user just typed should hug the new wrap,
+        // including getting shorter when the line count drops.
+        recalculateTextElementSize(id, undefined, { fit: widthEdited ? 'hug' : 'grow' })
+      } else if (patch.size?.height != null) {
+        // A taller frame is kept, so vertical alignment has room. Shorter than the glyphs
+        // grows back down — the template editor does not clip text.
+        const contentHeight = measureKonvaText({
+          text: resolveTextContent(textUpdated),
+          element: textUpdated,
+          maxWidth: Math.max(1, textUpdated.size.width),
+        }).textHeight
+        const height = Math.max(textUpdated.size.height, Math.ceil(contentHeight))
+        if (height !== textUpdated.size.height) {
+          const size = { width: textUpdated.size.width, height }
+          location.siblings[location.index] = {
+            ...textUpdated,
+            size,
+            position: positionForTopLeftAnchor(textUpdated.position, textUpdated.size, size, textUpdated.rotation),
+          } as PageElement
+        }
+      }
     }
 
     if (!options?.live) {
@@ -2883,6 +2964,7 @@ export const useEditorStore = defineStore('editor', () => {
     pageBackgroundImageDimensions.value = null
     liveDragPositions.value = {}
     previewMode.value = false
+    textFitMode.value = 'grow'
     canvasZoom.value = 1
     snapToGridEnabled.value = true
     snapGridSize.value = DEFAULT_SNAP_GRID_SIZE
@@ -3007,8 +3089,10 @@ export const useEditorStore = defineStore('editor', () => {
     alignSelectedElements,
     applyDistributionGap,
     updateElement,
+    textFitMode,
+    setTextFitMode,
     recalculateTextElementSize,
-    recalculateAllTextElementSizes,
+    refitTextFontToFrame,
     setLiveDragPosition,
     setLiveDragPositions,
     clearLiveDragPosition,

@@ -74,6 +74,8 @@ watch(imagesSettled, async (ready) => {
 })
 
 onMounted(async () => {
+  // Screenshot the saved frame. Do not refit fonts or move boxes while printing.
+  store.setTextFitMode('grow')
   try {
     const [, fonts] = await Promise.all([
       store.fetchAndLoad(fetchDocument, noopSave),

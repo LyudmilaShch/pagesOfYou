@@ -213,6 +213,8 @@ export interface CanvasTextPlaceholder extends CanvasElementBase {
   verticalAlign: 'top' | 'middle' | 'bottom';
   textTransform: 'none' | 'uppercase';
   textSizingMode: 'auto' | 'fixed';
+  /** Journal editor: template font size shrink-to-fit may grow back to. Optional. */
+  designFontSize?: number;
   color: string;
   maxLength: number;
   required: boolean;

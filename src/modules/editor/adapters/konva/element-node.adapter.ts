@@ -27,7 +27,7 @@ import {
 import { TEXT_VERTICAL_ALIGN_DEFAULT } from '../../utils/normalize-text-placeholder.util'
 import { isTextPlaceholderType } from '../../utils/normalize-text-placeholder.util'
 import { resolveKonvaFontStyle } from '../../utils/text-style.util'
-import { shouldWrapTextContent } from '../../utils/text-measure.util'
+import { measureKonvaText } from '../../utils/text-measure.util'
 import { buildAiTextElementPreview } from '../../utils/ai-text-preview.util'
 import {
   clampPhotoCrop,
@@ -846,12 +846,30 @@ export function resolveTextContent(
 function buildBaseTextConfig(textEl: TextPlaceholder, displayText?: string | null) {
   const text = resolveTextContent(textEl, displayText)
   const innerWidth = Math.max(1, textEl.size.width - TEXT_BOX_PADDING * 2)
-  const useWrap = shouldWrapTextContent(text, textEl, innerWidth)
+  const frameHeight = Math.max(1, textEl.size.height - TEXT_BOX_PADDING * 2)
+  // Konva's own verticalAlign only works together with a fixed node height, and a fixed height
+  // makes Konva drop the lines that don't fit. Shift the node instead, and leave its height
+  // unset so a block taller than the frame (AI preview, a journal font already at its floor)
+  // still paints downward from the top.
+  const contentHeight = measureKonvaText({
+    text,
+    element: textEl,
+    maxWidth: innerWidth,
+  }).textHeight
+  const slack = frameHeight - contentHeight
+  const align = textEl.verticalAlign ?? TEXT_VERTICAL_ALIGN_DEFAULT
+  const y =
+    slack > 1 && align === 'middle'
+      ? TEXT_BOX_PADDING + slack / 2
+      : slack > 1 && align === 'bottom'
+        ? TEXT_BOX_PADDING + slack
+        : TEXT_BOX_PADDING
 
   return {
     x: TEXT_BOX_PADDING,
-    y: TEXT_BOX_PADDING,
+    y,
     text,
+    width: innerWidth,
     fontFamily: textEl.fontFamily,
     fontSize: textEl.fontSize,
     fontStyle: resolveKonvaFontStyle(textEl),
@@ -859,9 +877,8 @@ function buildBaseTextConfig(textEl: TextPlaceholder, displayText?: string | nul
     letterSpacing: textEl.letterSpacing,
     align: textEl.textAlign,
     fill: textEl.color ?? '#111111',
-    verticalAlign: textEl.verticalAlign ?? TEXT_VERTICAL_ALIGN_DEFAULT,
-    wrap: useWrap ? 'word' : 'none',
-    ...(useWrap ? { width: innerWidth } : {}),
+    verticalAlign: 'top' as const,
+    wrap: 'word' as const,
   }
 }
 
@@ -900,14 +917,9 @@ function getTextPlaceholderElement(element: PageElement): TextPlaceholder | null
     // unchanged. Same fallback phrase (repeated out to the element's own max length) the customer's
     // book shows before real generation exists — see ai-text-preview.util.ts — so the admin
     // template editor previews the box at roughly its real eventual fullness too, instead of
-    // whatever short label happens to be configured. `textSizingMode: 'fixed'` is forced (not the
-    // element's own, usually 'auto') regardless of what the admin picked for the eventual real
-    // text — ai-text-placeholder's box is never auto-resized to fit its content (excluded from
-    // computeTextBoxLayout on purpose, since the real generated text lands later, not at editing
-    // time), so 'auto' here would let shouldWrapTextContent skip wrapping and render this preview
-    // as a single unwrapped line spilling out past the admin-drawn box instead of staying inside
-    // it. Forcing 'fixed' makes it always wrap to the box's own width, exactly like a fixed-size
-    // text-placeholder does.
+    // whatever short label happens to be configured. The box is never auto-resized: ai-text is
+    // not a text-placeholder, so the text layout pass never runs on it. The node wraps at the
+    // admin-drawn width, and a longer preview paints downward past the frame.
     return {
       ...element,
       textSizingMode: 'fixed',

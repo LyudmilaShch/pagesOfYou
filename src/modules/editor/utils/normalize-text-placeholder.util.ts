@@ -93,6 +93,10 @@ export function normalizeTextPlaceholderElement(element: PageElement): PageEleme
     textSizingMode: isTextSizingMode(element.textSizingMode)
       ? element.textSizingMode
       : TEXT_SIZING_MODE_DEFAULT,
+    designFontSize:
+      typeof element.designFontSize === 'number' && element.designFontSize > 0
+        ? element.designFontSize
+        : undefined,
     effect: isTextEffect(element.effect) ? element.effect : null,
   }
 
