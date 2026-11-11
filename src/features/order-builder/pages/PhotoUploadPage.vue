@@ -177,7 +177,7 @@
               <input
                 ref="fileInputRef"
                 type="file"
-                accept="image/*"
+                :accept="PHOTO_FILE_ACCEPT"
                 multiple
                 class="photo-upload-page__file-input"
                 @change="handleFilesSelected"
@@ -192,6 +192,9 @@
                 или нажмите, чтобы выбрать с устройства
               </p>
             </div>
+
+            <PhotoUploadFormatsHint />
+            <PhotoUploadErrorList :messages="uploadErrors" />
 
             <div class="photo-upload-page__stats">
               <span class="photo-upload-page__stats-count">Загружено {{ photos.length }} фото</span>
@@ -258,7 +261,13 @@
                   @dragstart="handleDragStart($event, photo)"
                   @pointerdown="handleThumbPointerDown($event, photo)"
                 >
-                  <img :src="photo.url" :alt="photo.originalName ?? ''" />
+                  <img :src="photo.url" :alt="photo.originalName ?? ''" @load="onImageLoad(photo.id, $event)" />
+                  <span v-if="uploadWarningLevel(photo)" class="photo-upload-page__resolution">
+                    <PrintResolutionBadge
+                      :level="uploadWarningLevel(photo)!"
+                      :message="uploadResolutionMessage(uploadWarningLevel(photo)!)"
+                    />
+                  </span>
                   <button
                     v-if="usageByUrl.get(photo.url)?.length"
                     type="button"
@@ -413,6 +422,8 @@ import { isPhotoElement, type PhotoFitMode } from '@/modules/editor/models'
 import { A4_PAGE_HEIGHT, A4_PAGE_WIDTH } from '@/modules/editor/constants/page.constants'
 import { flattenTree } from '@/modules/editor/utils/element-tree.util'
 import { getImageDimensions } from '@/shared/utils/image-dimensions.util'
+import { PHOTO_FILE_ACCEPT } from '@/shared/constants/photo-upload.constants'
+import { runPhotoUploads } from '@/shared/utils/photo-upload-error.util'
 import { computePhotoPageVisibleArea, type PhotoCropState } from '@/modules/editor/utils/photo-crop.util'
 import { photoGalleryApi, type GalleryPhoto } from '../api/photo-gallery.api'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
@@ -421,9 +432,14 @@ import { getJournalPageDisplayName } from '../utils/journal-structure.util'
 import { materializeCanvasData } from '../utils/merge-placeholder-element.util'
 import { collectPhotoSlotPreview } from '../utils/missing-photos.util'
 import QuestionnaireBook from '../components/questionnaire/QuestionnaireBook.vue'
+import PhotoUploadFormatsHint from '../components/PhotoUploadFormatsHint.vue'
+import PhotoUploadErrorList from '../components/PhotoUploadErrorList.vue'
 import PhotoGalleryPickerDialog from '../components/PhotoGalleryPickerDialog.vue'
 import PhotoCropModal from '../components/PhotoCropModal.vue'
 import BaseModal from '@/components/ui/BaseModal.vue'
+import PrintResolutionBadge from '@/modules/editor/components/PrintResolutionBadge.vue'
+import { useUploadResolutionWarning } from '@/modules/editor/composables/use-upload-resolution-warning'
+import { uploadResolutionMessage } from '@/modules/editor/utils/print-resolution.util'
 
 // Stable empty instances — QuestionnaireBook has no per-question fill concept on this step (photos
 // here aren't bound to a specific spread yet), but its props aren't optional; reusing the SAME
@@ -431,6 +447,7 @@ import BaseModal from '@/components/ui/BaseModal.vue'
 // re-render, which would otherwise needlessly invalidate anything memoized off it.
 const EMPTY_FILL_MAP: Map<string, { answered: number; total: number }> = new Map()
 const EMPTY_ELEMENT_IDS: Set<string> = new Set()
+const { onImageLoad, uploadWarningLevel } = useUploadResolutionWarning()
 
 // This is Шаг 2 of 5 — same hardcoded step number as .photo-upload-page__steps-label below.
 const ORDER_STEP_PROGRESS = (2 / 5) * 100
@@ -457,6 +474,7 @@ const isLoading = ref(true)
 const loadErrorMessage = ref<string | null>(null)
 const photos = ref<GalleryPhoto[]>([])
 const uploading = ref(false)
+const uploadErrors = ref<string[]>([])
 const isDragActive = ref(false)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 // Photos auto-place as they upload (see `autoPlacePhoto`) — this just lets the user override that
@@ -732,18 +750,14 @@ async function uploadFiles(files: File[]): Promise<void> {
   }
 
   uploading.value = true
+  uploadErrors.value = []
   try {
-    for (const file of files) {
-      try {
-        const dimensions = await getImageDimensions(file).catch(() => undefined)
-        const uploaded = await photoGalleryApi.upload(galleryScope.value, file, dimensions)
-        photos.value = [uploaded, ...photos.value]
-        await autoPlacePhoto(uploaded.url)
-      } catch {
-        // Best-effort per file — a failed upload just doesn't get added, same as
-        // QuestionGalleryField.vue's own bulk-upload loop.
-      }
-    }
+    uploadErrors.value = await runPhotoUploads(files, async (file) => {
+      const dimensions = await getImageDimensions(file).catch(() => undefined)
+      const uploaded = await photoGalleryApi.upload(galleryScope.value, file, dimensions)
+      photos.value = [uploaded, ...photos.value]
+      await autoPlacePhoto(uploaded.url)
+    })
   } finally {
     uploading.value = false
   }
@@ -759,7 +773,7 @@ function handleFilesSelected(event: Event): void {
 function handleDrop(event: DragEvent): void {
   isDragActive.value = false
   const files = event.dataTransfer?.files ? Array.from(event.dataTransfer.files) : []
-  void uploadFiles(files.filter((file) => file.type.startsWith('image/')))
+  void uploadFiles(files)
 }
 
 /** Starts dragging an already-uploaded photo out of the grid — only while manual placement mode is
@@ -951,6 +965,7 @@ async function removePhoto(photo: GalleryPhoto): Promise<void> {
   photos.value = photos.value.filter((item) => item.id !== photo.id)
   try {
     await photoGalleryApi.remove(photo.id, galleryScope.value)
+    await store.removePhotoFromJournal(photo.url)
   } catch {
     photos.value = previous
   }
@@ -1883,6 +1898,13 @@ onBeforeUnmount(() => {
       cursor: grabbing;
     }
   }
+}
+
+.photo-upload-page__resolution {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  z-index: 1;
 }
 
 .photo-upload-page__thumb-remove {

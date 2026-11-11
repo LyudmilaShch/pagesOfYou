@@ -4,6 +4,7 @@ import type Konva from 'konva'
 
 import type { PhotoBorderDrawNode } from '../../utils/element-stroke.util'
 import type { NineSliceImageConfig } from '../../utils/photo-frame.util'
+import type { PhotoResolutionBadge } from '../../utils/print-resolution.util'
 import type { EffectExtraNodeSpec } from '../../models/effect-descriptor.model'
 
 export interface EditorElementVisualsContext {
@@ -35,6 +36,7 @@ export interface EditorElementVisualsContext {
   textEchoLayerConfigs: Ref<Record<string, unknown>[] | null>
   textBackgroundConfig: Ref<Record<string, unknown> | null>
   isEditingText: Ref<boolean>
+  photoResolutionBadge: Ref<PhotoResolutionBadge | null>
 }
 
 export const EDITOR_ELEMENT_VISUALS_KEY: InjectionKey<EditorElementVisualsContext> =

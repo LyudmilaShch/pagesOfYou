@@ -922,6 +922,11 @@ model UploadedFile {
   createdAt DateTime  @default(now())
   deletedAt DateTime?
 
+  /// Last time a guest draft told us this gallery is still open. Null until the first touch
+  /// (upload sets it). Abandoned guest photos are purged 14 days after this, or after
+  /// `createdAt` when it was never set. See `FilesService.purgeAbandonedGuestPhotos`.
+  guestTouchedAt DateTime?
+
   // Relations
   user       User?            @relation(fields: [userId], references: [id])
   order      Order?           @relation(fields: [orderId], references: [id], onDelete: Cascade)
@@ -931,6 +936,7 @@ model UploadedFile {
   @@index([orderId])
   @@index([guestId])
   @@index([deletedAt])
+  @@index([guestTouchedAt])
   @@map("uploaded_files")
 }
 

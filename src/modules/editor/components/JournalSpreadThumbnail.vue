@@ -54,6 +54,15 @@
             :style="photoImageStyle(leaf)"
             alt=""
           />
+          <template v-for="badge in photoResolutionBadges(leaf)" :key="`${badge.level}-${badge.dpi}`">
+            <span
+              v-if="badgeFits(badge)"
+              class="spread-thumb__resolution"
+              :style="resolutionBadgeStyle(badge)"
+            >
+              <PrintResolutionBadge :level="badge.level" :message="badge.message" />
+            </span>
+          </template>
           <div v-if="cropEnabled || pickEnabled" class="spread-thumb__photo-actions" :style="actionsCenterStyle(leaf)">
             <v-tooltip v-if="pickEnabled" location="top" content-class="editor-tooltip--arrow-top">
               <template #activator="{ props: tooltipProps }">
@@ -256,6 +265,11 @@ import {
   type SpreadBackgroundRenderLayer,
 } from '../utils/spread-background.util'
 import { resolveAssetUrl } from '@/shared/config/assets'
+import PrintResolutionBadge from './PrintResolutionBadge.vue'
+import {
+  buildPhotoResolutionBadge,
+  type PhotoResolutionBadge as PhotoResolutionBadgeModel,
+} from '../utils/print-resolution.util'
 
 const props = withDefaults(
   defineProps<{
@@ -684,6 +698,42 @@ function ensureImageNaturalSize(url: string): void {
     pendingImageSizeUrls.delete(url)
   }
   img.src = url
+}
+
+function photoResolutionBadges(leaf: PhotoPlaceholder): PhotoResolutionBadgeModel[] {
+  const rawUrl = leaf.defaultImageUrl
+  if (!rawUrl) {
+    return []
+  }
+
+  const url = resolveAssetUrl(rawUrl) ?? rawUrl
+  void imageSizeTick.value
+  const natural = imageNaturalSizes.get(url)
+
+  if (!natural) {
+    ensureImageNaturalSize(url)
+    return []
+  }
+
+  const badge = buildPhotoResolutionBadge(leaf, natural, {
+    width: pageWidth.value,
+    height: pageHeight.value,
+    visibleHalf: props.visibleHalf,
+  })
+
+  return badge ? [badge] : []
+}
+
+/** An 18px badge on a thumbnail slot smaller than this just covers the photo. */
+function badgeFits(badge: PhotoResolutionBadgeModel): boolean {
+  return Math.min(badge.slotWidth, badge.slotHeight) * scale.value >= 28
+}
+
+function resolutionBadgeStyle(badge: PhotoResolutionBadgeModel): Record<string, string> {
+  return {
+    left: `${(badge.x + badge.radius) * scale.value}px`,
+    top: `${(badge.y - badge.radius) * scale.value}px`,
+  }
 }
 
 /** Absolute-positions the `<img>` per `computePhotoImageLayout` so a non-default crop
@@ -1131,6 +1181,13 @@ function shapeStyle(leaf: ShapeElement): Record<string, string> {
 .spread-thumb__el--text-overflow .spread-thumb__text-inner {
   outline: calc(1.5px * var(--thumb-inverse-scale, 1)) dashed $accent-deep;
   outline-offset: calc(1px * var(--thumb-inverse-scale, 1));
+}
+
+.spread-thumb__resolution {
+  position: absolute;
+  z-index: 2;
+  transform: translate(calc(-100% - 2px), 2px);
+  pointer-events: auto;
 }
 
 .spread-thumb__overflow-badge {
