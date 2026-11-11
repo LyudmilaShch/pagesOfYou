@@ -74,7 +74,7 @@
         <header class="photo-upload-page__intro-mobile">
           <h1 class="photo-upload-page__title text-h3">Добавьте фотографии в журнал</h1>
           <p class="photo-upload-page__subtitle text-body text-secondary">
-            Загрузите {{ requiredPhotoCount }} фотографий — мы автоматически расставим их по страницам журнала. Хотите изменить расположение? Перетащите фото из галереи на нужную страницу. 
+            {{ photoUploadIntro(photosToUpload) }}
           </p>
         </header>
 
@@ -91,7 +91,7 @@
             :pulsing-page-ids="pulsingPageIds"
             :fill-by-page-id="EMPTY_FILL_MAP"
             :pending-element-ids="EMPTY_ELEMENT_IDS"
-            :drop-enabled="manualPlacementMode"
+            drop-enabled
             show-structure-controls
             :hide-nav="isMobileViewport"
             :fit-height="isMobileViewport"
@@ -159,7 +159,7 @@
               <p class="photo-upload-page__eyebrow text-caption text-secondary">Шаг 2 — Фото</p>
               <h1 class="photo-upload-page__title text-h3">Добавьте фотографии в журнал</h1>
               <p class="photo-upload-page__subtitle text-body text-secondary">
-                Загрузите {{ requiredPhotoCount }} фотографий — мы автоматически расставим их по страницам журнала. Хотите изменить расположение? Перетащите фото из галереи на нужную страницу. 
+                {{ photoUploadIntro(photosToUpload) }}
               </p>
             </header>
 
@@ -196,45 +196,20 @@
             <PhotoUploadFormatsHint />
             <PhotoUploadErrorList :messages="uploadErrors" />
 
-            <div class="photo-upload-page__stats">
-              <span class="photo-upload-page__stats-count">Загружено {{ photos.length }} фото</span>
-              <span class="photo-upload-page__stats-hint text-body-sm text-secondary">
-                Нужно {{ requiredPhotoCount }} фото
-              </span>
-            </div>
-
-            <!-- Mobile-only — replaces .photo-upload-page__stats (desktop, hidden here) with a
-                 title + fill progress bar against `requiredPhotoCount`. -->
-            <div class="photo-upload-page__mobile-stats">
-              <div class="photo-upload-page__mobile-stats-row">
-                <span class="photo-upload-page__mobile-stats-title">Ваши фотографии</span>
-                <span class="photo-upload-page__mobile-stats-count">
-                  {{ photos.length }} из {{ requiredPhotoCount }} загружено
-                </span>
-              </div>
-              <v-progress-linear
-                :model-value="requiredPhotoCount > 0 ? (photos.length / requiredPhotoCount) * 100 : 0"
-                color="primary"
-                bg-color="#f1d6de"
-                height="6"
-                rounded
-              />
-            </div>
-
+            <p class="photo-upload-page__stats">
+              <span>{{ photos.length }} фото</span>
+              <button
+                v-if="missingPhotoCount > 0"
+                type="button"
+                class="photo-upload-page__stats-gap"
+                @click="openHolesModal('list')"
+              >
+                · {{ missingPhotoCount }} не на месте
+              </button>
+            </p>
             <div v-if="photos.length > 0" class="photo-upload-page__grid-header">
               <span class="photo-upload-page__grid-title text-body-sm text-secondary">Загруженные фото</span>
-              <v-btn
-                variant="text"
-                size="small"
-                :color="manualPlacementMode ? 'primary' : undefined"
-                @click="manualPlacementToggle = !manualPlacementToggle"
-              >
-                {{ manualPlacementMode ? 'Готово' : 'Расставить вручную' }}
-              </v-btn>
             </div>
-            <p v-if="manualPlacementMode" class="photo-upload-page__manual-hint text-body-sm text-secondary">
-              Перетащите фото на нужное место в развороте слева
-            </p>
 
             <div v-if="photos.length > 0 || isMobileViewport" class="photo-upload-page__grid">
               <button
@@ -255,11 +230,10 @@
                 <div
                   v-for="photo in photos"
                   :key="photo.id"
-                  class="photo-upload-page__thumb"
-                  :class="{ 'photo-upload-page__thumb--draggable': manualPlacementMode }"
-                  :draggable="manualPlacementMode"
+                  class="photo-upload-page__thumb photo-upload-page__thumb--draggable"
+                  draggable="true"
                   @dragstart="handleDragStart($event, photo)"
-                  @pointerdown="handleThumbPointerDown($event, photo)"
+                  @pointerdown="onPhotoPointerDown($event, photo.url)"
                 >
                   <img :src="photo.url" :alt="photo.originalName ?? ''" @load="onImageLoad(photo.id, $event)" />
                   <span v-if="uploadWarningLevel(photo)" class="photo-upload-page__resolution">
@@ -289,21 +263,6 @@
                   >
                     <v-icon size="10">mdi-close</v-icon>
                   </button>
-                </div>
-              </div>
-            </div>
-
-            <div v-if="coverSlots.length > 0 && photos.length > 0" class="photo-upload-page__cover">
-              <h2 class="photo-upload-page__cover-title text-body">Фото на обложке</h2>
-              <div class="photo-upload-page__cover-slots">
-                <div v-for="slot in coverSlots" :key="slot.elementId" class="photo-upload-page__cover-slot">
-                  <div class="photo-upload-page__cover-preview">
-                    <img v-if="slot.url" :src="slot.url" alt="" />
-                    <v-icon v-else :size="isMobileViewport ? 18 : 24" color="grey">mdi-image-outline</v-icon>
-                  </div>
-                  <v-btn variant="outlined" size="small" @click="openCoverPicker(slot.elementId)">
-                    {{ slot.url ? 'Заменить' : 'Выбрать фото' }}
-                  </v-btn>
                 </div>
               </div>
             </div>
@@ -339,21 +298,14 @@
       </div>
     </footer>
 
-    <!-- Follows the finger during a touch drag (see handleThumbHandlePointerDown) — native HTML5
-         DnD has no visual equivalent on touch, so this stands in for the ghost image a mouse drag
-         gets for free. -->
-    <div
-      v-if="touchDrag"
-      class="photo-upload-page__drag-ghost"
-      :style="{ left: `${touchDrag.x}px`, top: `${touchDrag.y}px` }"
-    >
-      <img :src="touchDrag.photo.url" alt="" />
-    </div>
+    <PhotoTouchDragGhost :drag="photoTouchDrag" />
 
     <PhotoGalleryPickerDialog
       :open="pickerTarget !== null"
       :scope="galleryScope"
+      :cover-hint="pickerIsCover"
       @select="handlePickerSelect"
+      @uploaded="handlePickerUploaded"
       @close="closePhotoPicker"
     />
 
@@ -395,17 +347,30 @@
           <v-icon size="28" color="white">mdi-image-off-outline</v-icon>
         </div>
 
-        <h2 id="incomplete-photos-title" class="photo-upload-page__incomplete-title">Не хватает фото</h2>
-        <p class="photo-upload-page__incomplete-subtitle">
-          Вы загрузили ещё не все фото для журнала — часть мест в разворотах останется пустой.
+        <h2 id="incomplete-photos-title" class="photo-upload-page__incomplete-title">Остались пустые места</h2>
+        <ul class="photo-upload-page__incomplete-list">
+          <li v-for="page in missingPhotoPages" :key="page.journalPageId">
+            <button type="button" class="photo-upload-page__incomplete-item" @click="goToMissingPage(page.journalPageId)">
+              {{ missingPhotoLine(page.pageLabel, page.slots.length) }}
+              <v-icon size="16">mdi-chevron-right</v-icon>
+            </button>
+          </li>
+        </ul>
+        <p v-if="holesModalMode === 'next'" class="photo-upload-page__incomplete-subtitle">
+          Можно вернуться и выбрать фото сейчас или загрузить их позже, до проверки заказа.
         </p>
 
         <div class="photo-upload-page__incomplete-actions">
-          <v-btn color="primary" variant="flat" size="large" block @click="incompletePhotosModalOpen = false">
-            Вернуться и загрузить фото
-          </v-btn>
-          <v-btn variant="text" size="large" block @click="continueWithoutPhotos">
-            Загружу позже
+          <template v-if="holesModalMode === 'next'">
+            <v-btn color="primary" variant="flat" size="large" block @click="incompletePhotosModalOpen = false">
+              Вернуться и загрузить фото
+            </v-btn>
+            <v-btn variant="text" size="large" block @click="continueWithoutPhotos">
+              Загружу позже
+            </v-btn>
+          </template>
+          <v-btn v-else color="primary" variant="flat" size="large" block @click="incompletePhotosModalOpen = false">
+            Понятно
           </v-btn>
         </div>
       </div>
@@ -417,7 +382,6 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import { normalizeCanvasData } from '@/modules/editor/models/canvas-data.model'
 import { isPhotoElement, type PhotoFitMode } from '@/modules/editor/models'
 import { A4_PAGE_HEIGHT, A4_PAGE_WIDTH } from '@/modules/editor/constants/page.constants'
 import { flattenTree } from '@/modules/editor/utils/element-tree.util'
@@ -429,9 +393,20 @@ import { photoGalleryApi, type GalleryPhoto } from '../api/photo-gallery.api'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
 import { getGalleryScope } from '../utils/photo-gallery-scope.util'
 import { getJournalPageDisplayName } from '../utils/journal-structure.util'
-import { materializeCanvasData } from '../utils/merge-placeholder-element.util'
-import { collectPhotoSlotPreview } from '../utils/missing-photos.util'
+import {
+  countEmptyPhotoSlots,
+  countPhotosToUpload,
+  findNextEmptyAutoFillSlot,
+  hasMissingCustomerPhotos,
+  missingPhotoLine,
+  presentCustomerPageCanvas,
+  collectPhotoSlotPreview,
+} from '../utils/missing-photos.util'
 import QuestionnaireBook from '../components/questionnaire/QuestionnaireBook.vue'
+import PhotoTouchDragGhost from '../components/PhotoTouchDragGhost.vue'
+import { usePhotoTouchDrag } from '../composables/use-photo-touch-drag'
+import { photoUploadIntro } from '../utils/photo-upload-copy.util'
+import { prependUniqueById } from '../utils/gallery-list.util'
 import PhotoUploadFormatsHint from '../components/PhotoUploadFormatsHint.vue'
 import PhotoUploadErrorList from '../components/PhotoUploadErrorList.vue'
 import PhotoGalleryPickerDialog from '../components/PhotoGalleryPickerDialog.vue'
@@ -481,9 +456,6 @@ const fileInputRef = ref<HTMLInputElement | null>(null)
 // afterwards by dragging a specific photo from the grid onto a specific spread in the book. On
 // mobile it's always on (see `isMobileViewport`) since dragging is the only way to place a photo
 // there — there's no separate toggle button shown, only the desktop grid-header offers one.
-const manualPlacementToggle = ref(false)
-const manualPlacementMode = computed(() => isMobileViewport.value || manualPlacementToggle.value)
-
 // Same threshold as the `mobile-only` SCSS mixin (`$breakpoint-mobile-max: 767px`).
 const isMobileViewport = ref(false)
 let mobileMediaQuery: MediaQueryList | null = null
@@ -492,48 +464,19 @@ function updateIsMobileViewport(): void {
   isMobileViewport.value = mobileMediaQuery?.matches ?? false
 }
 
-// The exact number of photo-placeholder slots across the whole journal — how many photos this
-// specific journal (magazine type + spread count) actually needs, not a generic recommendation.
-const requiredPhotoCount = computed(() => {
-  let count = 0
-  for (const page of store.order?.journalPages ?? []) {
-    const leaves = flattenTree(normalizeCanvasData(page.pageSnapshot).elements)
-    count += leaves.filter((leaf) => isPhotoElement(leaf)).length
-  }
-  return count
-})
+const missingPhotoPages = computed(() => collectPhotoSlotPreview(store.order?.journalPages ?? []))
+const missingPhotoCount = computed(() => countEmptyPhotoSlots(missingPhotoPages.value))
+const photosToUpload = computed(() => countPhotosToUpload(store.order?.journalPages ?? []))
 
-interface CoverSlot {
-  elementId: string
-  url: string | null
-}
-
-// The cover's own photo-placeholder element(s) — usually just one, but a collage-style cover
-// template could have more. Shown as its own picker (not left to auto-placement's page order)
-// since the cover is the one photo the user is most likely to want to choose deliberately.
-const coverPage = computed(() => store.order?.journalPages.find((page) => page.slotType === 'COVER') ?? null)
-const coverSlots = computed<CoverSlot[]>(() => {
-  const page = coverPage.value
-  if (!page) {
-    return []
-  }
-  const leaves = flattenTree(normalizeCanvasData(page.pageSnapshot).elements)
-  const valueByElementId = new Map(page.placeholderValues.map((value) => [value.elementId, value]))
-  return leaves
-    .filter((leaf) => isPhotoElement(leaf))
-    .map((leaf) => ({ elementId: leaf.id, url: valueByElementId.get(leaf.id)?.jsonValue?.url ?? null }))
-})
-
-// Picking a photo for a specific slot from the gallery — used by both the dedicated cover picker
-// above and the "pick" icon on any empty slot in the book (see `openPhotoPicker`/`pick-photo`).
+// Picking a photo for a specific slot from the gallery — the "+" on an empty slot in the book,
+// including the cover.
 const pickerTarget = ref<{ journalPageId: string; elementId: string } | null>(null)
 
-function openCoverPicker(elementId: string): void {
-  if (!coverPage.value) {
-    return
-  }
-  openPhotoPicker(coverPage.value.id, elementId)
-}
+const pickerIsCover = computed(
+  () =>
+    store.order?.journalPages.find((page) => page.id === pickerTarget.value?.journalPageId)?.slotType ===
+    'COVER',
+)
 
 function openPhotoPicker(journalPageId: string, elementId: string): void {
   pickerTarget.value = { journalPageId, elementId }
@@ -541,6 +484,10 @@ function openPhotoPicker(journalPageId: string, elementId: string): void {
 
 function closePhotoPicker(): void {
   pickerTarget.value = null
+}
+
+function handlePickerUploaded(photo: GalleryPhoto): void {
+  photos.value = prependUniqueById(photos.value, photo)
 }
 
 async function handlePickerSelect(url: string): Promise<void> {
@@ -661,9 +608,9 @@ function goToUsage(entry: PhotoUsage): void {
 // Same base-layer materialization QuestionnairePage.vue uses for the book preview — no live
 // overlay needed here, since nothing on this page edits any placeholder value.
 const canvasDataByPageId = computed(() => {
-  const map = new Map<string, ReturnType<typeof materializeCanvasData>>()
+  const map = new Map<string, ReturnType<typeof presentCustomerPageCanvas>>()
   for (const page of store.order?.journalPages ?? []) {
-    map.set(page.id, materializeCanvasData(normalizeCanvasData(page.pageSnapshot), page.placeholderValues))
+    map.set(page.id, presentCustomerPageCanvas(page))
   }
   return map
 })
@@ -702,35 +649,8 @@ async function load(): Promise<void> {
   }
 }
 
-/** The next empty photo-placeholder slot to auto-fill, in journal order — skips any element with
- * its own `questionKey` (a slot the anketa's IMAGE/GALLERY questions own; auto-placement would
- * fight over it, since a direct placeholder write here is marked OVERRIDDEN and would permanently
- * block that question's own answer from ever syncing into it — see `applyLocalPlaceholders`), and
- * skips the COVER entirely — that's a deliberate choice via `coverSlots`/`openCoverPicker` above,
- * not something the first upload should just happen to land on. */
-function findNextEmptyAutoFillSlot(): { journalPageId: string; elementId: string } | null {
-  for (const page of store.order?.journalPages ?? []) {
-    if (page.slotType === 'COVER') {
-      continue
-    }
-    const leaves = flattenTree(normalizeCanvasData(page.pageSnapshot).elements)
-    const valueByElementId = new Map(page.placeholderValues.map((value) => [value.elementId, value]))
-
-    for (const leaf of leaves) {
-      if (!isPhotoElement(leaf) || leaf.questionKey) {
-        continue
-      }
-      if (valueByElementId.get(leaf.id)?.jsonValue?.url?.trim()) {
-        continue
-      }
-      return { journalPageId: page.id, elementId: leaf.id }
-    }
-  }
-  return null
-}
-
 async function autoPlacePhoto(url: string): Promise<void> {
-  const slot = findNextEmptyAutoFillSlot()
+  const slot = findNextEmptyAutoFillSlot(store.order?.journalPages ?? [])
   if (!slot) {
     return
   }
@@ -776,11 +696,10 @@ function handleDrop(event: DragEvent): void {
   void uploadFiles(files)
 }
 
-/** Starts dragging an already-uploaded photo out of the grid — only while manual placement mode is
- * on, so an accidental drag (e.g. while reaching for the remove button) can't happen otherwise. The
- * URL travels as plain text; QuestionnaireBook/JournalSpreadThumbnail read it back on drop. */
+/** Desktop drag of a gallery thumb. Touch uses `usePhotoTouchDrag` — browsers do not start a
+ * native drag from a finger. */
 function handleDragStart(event: DragEvent, photo: GalleryPhoto): void {
-  if (!manualPlacementMode.value || !event.dataTransfer) {
+  if (!event.dataTransfer) {
     return
   }
   event.dataTransfer.setData('text/plain', photo.url)
@@ -795,76 +714,9 @@ async function handleDropPhoto(pageId: string, elementId: string, url: string): 
   }
 }
 
-// ── Touch drag-and-drop ──────────────────────────────────────────────────────────────────────
-// Native HTML5 DnD (draggable/@dragstart/@dragover/@drop, see handleDragStart above and
-// JournalSpreadThumbnail.vue's own drop handling) never fires from a touch gesture — most mobile
-// browsers don't start a native drag from touch at all. This is a parallel Pointer Events path,
-// mirroring SpreadManagerDialog.vue's own touch-compatible drag handle: a small handle icon on
-// each thumb starts the drag immediately on touch (touch-action: none, see CSS), while the rest
-// of the thumb keeps its default touch-action so swiping it still scrolls the row. An earlier
-// version tried to disambiguate "scroll" from "drag" on the whole thumb via a long-press timer —
-// unreliable in practice, since `touch-action: pan-x` lets the browser commit the gesture to
-// native scrolling (and fire pointercancel) as soon as movement starts, regardless of any JS
-// timer. A dedicated handle with touch-action: none sidesteps that entirely.
-const touchDrag = ref<{ photo: GalleryPhoto; x: number; y: number } | null>(null)
-
-function handleThumbPointerDown(event: PointerEvent, photo: GalleryPhoto): void {
-  // Was gated by a dedicated drag-handle icon rendered only on mobile (`v-if="isMobileViewport"`)
-  // — now the whole thumb starts the drag directly (on request), so this guard replaces that.
-  // The remove/usage buttons overlaid on the thumb stop this event from bubbling to them at all
-  // (`@pointerdown.stop` on each) — otherwise a tap on either would ALSO land here first, kick off
-  // a drag (preventDefault below), and the button's own click would never actually fire.
-  if (event.pointerType === 'mouse' || !isMobileViewport.value) {
-    return
-  }
-  event.preventDefault()
-  touchDrag.value = { photo, x: event.clientX, y: event.clientY }
-  window.addEventListener('pointermove', handleTouchDragMove)
-  window.addEventListener('pointerup', handleTouchDragEnd)
-  window.addEventListener('pointercancel', handleTouchDragCancel)
-}
-
-function handleTouchDragMove(event: PointerEvent): void {
-  if (!touchDrag.value) {
-    return
-  }
-  event.preventDefault()
-  touchDrag.value = { ...touchDrag.value, x: event.clientX, y: event.clientY }
-}
-
-function stopTouchDragTracking(): void {
-  window.removeEventListener('pointermove', handleTouchDragMove)
-  window.removeEventListener('pointerup', handleTouchDragEnd)
-  window.removeEventListener('pointercancel', handleTouchDragCancel)
-}
-
-function findDropTargetAt(clientX: number, clientY: number): { pageId: string; elementId: string } | null {
-  const el = document.elementFromPoint(clientX, clientY)
-  const elementNode = el?.closest('[data-element-id]') as HTMLElement | null
-  const pageNode = el?.closest('[data-page-id]') as HTMLElement | null
-  const elementId = elementNode?.dataset.elementId
-  const pageId = pageNode?.dataset.pageId
-  return elementId && pageId ? { pageId, elementId } : null
-}
-
-function handleTouchDragEnd(event: PointerEvent): void {
-  stopTouchDragTracking()
-  const drag = touchDrag.value
-  touchDrag.value = null
-  if (!drag) {
-    return
-  }
-
-  const target = findDropTargetAt(event.clientX, event.clientY)
-  if (target) {
-    void handleDropPhoto(target.pageId, target.elementId, drag.photo.url)
-  }
-}
-
-function handleTouchDragCancel(): void {
-  stopTouchDragTracking()
-  touchDrag.value = null
-}
+const { drag: photoTouchDrag, onPointerDown: onPhotoPointerDown } = usePhotoTouchDrag((target, url) => {
+  void handleDropPhoto(target.pageId, target.elementId, url)
+})
 
 const cropModal = reactive<{
   open: boolean
@@ -981,7 +833,7 @@ function goToPreviousStep(): void {
 // the mobile stepper (see `isStepReachable`) to decide whether Анкета is safe to jump to directly.
 const photosComplete = computed(() => {
   const pages = store.order?.journalPages ?? []
-  return pages.length > 0 && !collectPhotoSlotPreview(pages).some((page) => page.slots.some((slot) => !slot.url))
+  return pages.length > 0 && !hasMissingCustomerPhotos(pages)
 })
 
 // Whether every required placeholder in the journal (photo AND text/AI-text) is filled — the same
@@ -997,7 +849,7 @@ function isStepReachable(step: number): boolean {
     return photosComplete.value
   }
   if (step === 4 || step === 5) {
-    return contentComplete.value
+    return photosComplete.value && contentComplete.value
   }
   return false
 }
@@ -1015,12 +867,22 @@ function goToStep(step: number): void {
 }
 
 const incompletePhotosModalOpen = ref(false)
+/** `list` is the counter click (no deferral). `next` is «Продолжить», which can still postpone. */
+const holesModalMode = ref<'list' | 'next'>('list')
+
+function openHolesModal(mode: 'list' | 'next'): void {
+  holesModalMode.value = mode
+  incompletePhotosModalOpen.value = true
+}
+
+function goToMissingPage(journalPageId: string): void {
+  incompletePhotosModalOpen.value = false
+  jumpTo(journalPageId)
+}
 
 function goToNextStep(): void {
-  const incompletePages = collectPhotoSlotPreview(store.order?.journalPages ?? [])
-  const hasEmptySlots = incompletePages.some((page) => page.slots.some((slot) => !slot.url))
-  if (hasEmptySlots) {
-    incompletePhotosModalOpen.value = true
+  if (missingPhotoPages.value.length > 0) {
+    openHolesModal('next')
     return
   }
   void router.push({ name: 'order-questionnaire', params: { orderId: orderId.value } })
@@ -1047,7 +909,6 @@ onBeforeUnmount(() => {
     clearTimeout(pulseTimer)
   }
   mobileMediaQuery?.removeEventListener('change', updateIsMobileViewport)
-  stopTouchDragTracking()
 })
 </script>
 
@@ -1638,127 +1499,28 @@ onBeforeUnmount(() => {
 .photo-upload-page__stats {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
-  gap: $spacing-3;
-  margin-top: $spacing-4;
-
-  @include mobile-only {
-    display: none;
-  }
-}
-
-.photo-upload-page__stats-count {
-  font-weight: $font-weight-semibold;
-  color: $text-primary;
-}
-
-// ── Mobile-only "Ваши фотографии" progress — see .photo-upload-page__stats above (desktop) ────
-.photo-upload-page__mobile-stats {
-  display: none;
-
-  @include mobile-only {
-    display: block;
-    margin-top: $spacing-2;
-  }
-}
-
-.photo-upload-page__mobile-stats-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: $spacing-2;
-  margin-bottom: 4px;
-}
-
-.photo-upload-page__mobile-stats-title {
-  font-size: $font-size-caption;
-  font-weight: $font-weight-semibold;
-  color: $text-primary;
-}
-
-.photo-upload-page__mobile-stats-count {
-  font-size: 10px;
-  color: $text-secondary;
-  white-space: nowrap;
-}
-
-// ── Cover photo picker ────────────────────────────────────────────────────────────────────
-.photo-upload-page__cover {
-  margin-top: $spacing-4;
-  padding-top: $spacing-4;
-  border-top: 1px solid $border-light;
-
-  @include mobile-only {
-    margin-top: $spacing-2;
-    padding-top: 0;
-    border-top: none;
-  }
-}
-
-.photo-upload-page__cover-title {
-  margin: 0 0 $spacing-3;
-  font-weight: $font-weight-semibold;
-  color: $text-primary;
-
-  // Same size as .photo-upload-page__mobile-stats-title ("Ваши фотографии"), on request.
-  @include mobile-only {
-    margin-bottom: $spacing-2;
-    font-size: $font-size-caption;
-  }
-}
-
-.photo-upload-page__cover-slots {
-  display: flex;
   flex-wrap: wrap;
-  gap: $spacing-4;
+  gap: $spacing-2;
+  margin: $spacing-4 0 0;
+  font-size: $font-size-body-sm;
+  font-weight: $font-weight-semibold;
+  color: $text-primary;
 
   @include mobile-only {
-    gap: $spacing-3;
+    margin-top: $spacing-2;
   }
 }
 
-.photo-upload-page__cover-slot {
-  display: flex;
-  align-items: center;
-  gap: $spacing-3;
-
-  @include mobile-only {
-    gap: $spacing-2;
-
-    .v-btn {
-      height: 24px;
-      padding-inline: 8px;
-      font-size: 10px;
-
-      :deep(.v-btn__content) {
-        font-size: 10px;
-      }
-    }
-  }
-}
-
-.photo-upload-page__cover-preview {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 64px;
-  height: 64px;
-  flex-shrink: 0;
-  border-radius: $radius-md;
-  overflow: hidden;
-  background: $bg-muted;
-
-  @include mobile-only {
-    width: 44px;
-    height: 44px;
-  }
-
-  img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-  }
+.photo-upload-page__stats-gap {
+  padding: 0;
+  border: none;
+  background: none;
+  color: $accent;
+  font: inherit;
+  font-weight: $font-weight-semibold;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 // ── Uploaded grid ──────────────────────────────────────────────────────────────────────────
@@ -1768,20 +1530,6 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: $spacing-3;
   margin-top: $spacing-4;
-
-  // Its only content is the "Расставить вручную"/"Готово" toggle — moot on mobile, where manual
-  // placement is always on (see isMobileViewport/manualPlacementMode).
-  @include mobile-only {
-    display: none;
-  }
-}
-
-.photo-upload-page__manual-hint {
-  margin: $spacing-1 0 0;
-
-  @include mobile-only {
-    display: none;
-  }
 }
 
 .photo-upload-page__grid {
@@ -2088,6 +1836,30 @@ onBeforeUnmount(() => {
   color: $text-primary;
 }
 
+.photo-upload-page__incomplete-list {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+}
+
+.photo-upload-page__incomplete-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-3;
+  width: 100%;
+  padding: $spacing-3 0;
+  border: none;
+  border-bottom: 1px solid $border-light;
+  background: none;
+  color: $text-primary;
+  font-size: $font-size-body-sm;
+  text-align: left;
+  cursor: pointer;
+}
+
 .photo-upload-page__incomplete-subtitle {
   margin: 0;
   font-size: $font-size-body-sm;
@@ -2104,26 +1876,6 @@ onBeforeUnmount(() => {
 
   .v-btn {
     text-transform: none;
-  }
-}
-
-// ── Touch drag ghost — see handleThumbHandlePointerDown ───────────────────────────────────────
-.photo-upload-page__drag-ghost {
-  position: fixed;
-  z-index: 200;
-  width: 64px;
-  height: 64px;
-  pointer-events: none;
-  border-radius: $radius-md;
-  overflow: hidden;
-  box-shadow: 0 8px 24px rgba($black, 0.28);
-  transform: translate(-50%, -50%) scale(1.08);
-
-  img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
   }
 }
 </style>

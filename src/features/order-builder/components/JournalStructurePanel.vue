@@ -34,7 +34,10 @@
       >
         <div class="journal-structure__card">
           <div class="journal-structure__thumb">
-            <JournalSpreadThumbnail :canvas-data="materializedCanvas(entry.page)" :container-ratio="1.19" />
+            <JournalSpreadThumbnail
+              :canvas-data="materializedCanvas(entry.page)"
+              :container-ratio="1.19"
+            />
 
             <v-tooltip v-if="!isPageComplete(entry.page)" location="top" content-class="editor-tooltip--arrow-top">
               <template #activator="{ props: tooltipProps }">
@@ -120,13 +123,12 @@ import { computed, onBeforeUnmount, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import type { CanvasData } from '@/modules/editor/models/canvas-data.model'
-import { normalizeCanvasData } from '@/modules/editor/models/canvas-data.model'
 import type { PageElement } from '@/modules/editor/models'
 import { useEditorStore } from '@/modules/editor/store/editor.store'
 import JournalSpreadThumbnail from '@/modules/editor/components/JournalSpreadThumbnail.vue'
 import { getJournalPageDisplayName } from '../utils/journal-structure.util'
 import { isFillableElement, isPlaceholderFilled } from '../utils/placeholder.utils'
-import { materializeCanvasData } from '../utils/merge-placeholder-element.util'
+import { presentCustomerPageCanvas } from '../utils/missing-photos.util'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
 import type { SetJournalPageTemplatePayload } from '../api/orders.api'
 import type { JournalPage } from '../types/order.types'
@@ -207,7 +209,7 @@ const sidebarEntries = computed(() => {
  * advanced editor uses — so the row thumbnail reflects what's actually placed, not just the bare
  * template. */
 function materializedCanvas(page: JournalPage): CanvasData {
-  return materializeCanvasData(normalizeCanvasData(page.pageSnapshot), page.placeholderValues)
+  return presentCustomerPageCanvas(page)
 }
 
 /** Required-field completeness — falls back to the element's own `defaultText`/`defaultImageUrl`

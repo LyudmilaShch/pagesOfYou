@@ -169,7 +169,7 @@ import { ordersApi } from '../api/orders.api'
 import type { OrderSummary } from '../types/order.types'
 import { readLocalDraft, readLocalDrafts, type StoredLocalDraft } from '../utils/local-draft-storage.util'
 import { resolveResumeRoute, resumeOrder } from '../utils/resume-order.util'
-import { collectPhotoSlotPreview } from '../utils/missing-photos.util'
+import { hasMissingCustomerPhotos } from '../utils/missing-photos.util'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
 import MagazineTypeCard from '../components/MagazineTypeCard.vue'
 import ResumeDraftModal from '../components/ResumeDraftModal.vue'
@@ -194,7 +194,7 @@ const ORDER_STEPS = [
 // mobile stepper's Анкета step is safe to jump to directly, without visiting Фото first.
 const photosComplete = computed(() => {
   const pages = store.order?.journalPages ?? []
-  return pages.length > 0 && !collectPhotoSlotPreview(pages).some((page) => page.slots.some((slot) => !slot.url))
+  return pages.length > 0 && !hasMissingCustomerPhotos(pages)
 })
 
 // Whether every required placeholder in the journal (photo AND text/AI-text) is filled — the same
@@ -214,7 +214,7 @@ function isStepReachable(step: number): boolean {
     return photosComplete.value
   }
   if (step === 4 || step === 5) {
-    return contentComplete.value
+    return photosComplete.value && contentComplete.value
   }
   return false
 }

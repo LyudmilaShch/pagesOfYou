@@ -76,7 +76,7 @@
                   <v-icon size="14" color="black">mdi-image-refresh-outline</v-icon>
                 </button>
               </template>
-              Заменить фото
+              {{ photoActionHint || 'Заменить фото' }}
             </v-tooltip>
             <v-tooltip v-if="cropEnabled" location="top" content-class="editor-tooltip--arrow-top">
               <template #activator="{ props: tooltipProps }">
@@ -119,7 +119,7 @@
                 <v-icon size="18" color="black">mdi-image-plus</v-icon>
               </button>
             </template>
-            Выбрать фото
+            {{ photoActionHint || 'Выбрать фото' }}
           </v-tooltip>
         </div>
 
@@ -299,6 +299,9 @@ const props = withDefaults(
      * same split as `dropEnabled`/`cropEnabled` above. A click-driven alternative to dragging: the
      * parent opens a gallery picker for that specific slot (see PhotoUploadPage.vue). */
     pickEnabled?: boolean
+    /** Replaces the default «Выбрать фото» / «Заменить фото» tooltips. The book sets this on the
+     * cover only, so the same thumbnail stays generic everywhere else. */
+    photoActionHint?: string
     /** Shows "edit text"/"regenerate" buttons on every settled (non-pending) ai-text-placeholder,
      * emitting `edit-ai-text`/`regenerate-ai-text` on click — same split as the photo-action props
      * above. Only QuestionnairePage.vue's book offers this (see order-builder.store.ts's

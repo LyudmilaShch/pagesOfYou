@@ -42,7 +42,9 @@ import {
   saveLocalDraft,
   type StoredLocalDraft,
 } from '../utils/local-draft-storage.util'
-import { stripPhotoUrlFromJournalPages } from '../utils/strip-photo-url.util'
+import { samePhotoUrl, stripPhotoUrlFromJournalPages } from '../utils/strip-photo-url.util'
+import { collectEmptyAutoFillSlots } from '../utils/missing-photos.util'
+import { resolvePhotoGalleryScope } from '../utils/guest-gallery.util'
 import { calculateJournalPrice } from '../utils/pricing.util'
 import { useAuthStore } from '@/stores/auth.store'
 import { useErrorMessageModal } from '@/shared/composables/useErrorMessageModal'
@@ -1007,6 +1009,77 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     }
   }
 
+  function currentGalleryScope() {
+    const orderId = order.value?.id ?? null
+    if (orderId && !isLocalDraft.value) {
+      return resolvePhotoGalleryScope({
+        orderId,
+        isLocalDraft: false,
+        guestGalleryId: null,
+        legacyGuestId: '',
+      })
+    }
+    return resolvePhotoGalleryScope({
+      orderId,
+      isLocalDraft: isLocalDraft.value,
+      guestGalleryId: guestGalleryId.value,
+      legacyGuestId: getOrCreateGuestId(),
+    })
+  }
+
+  /** Spare gallery photos — uploaded, not yet standing in any slot — fill empty slots on the
+   * pages just added. The cover, anketa slots and slots that already have an admin image stay
+   * untouched. A failure here does not undo the new spread. */
+  async function placeUnusedPhotosOnPages(pageIds: string[]): Promise<void> {
+    if (!order.value || pageIds.length === 0) {
+      return
+    }
+
+    const targets = collectEmptyAutoFillSlots(order.value.journalPages, new Set(pageIds))
+    if (targets.length === 0) {
+      return
+    }
+
+    let photos
+    try {
+      photos = await photoGalleryApi.list(currentGalleryScope())
+    } catch {
+      return
+    }
+
+    const placed: string[] = []
+    for (const page of order.value.journalPages) {
+      for (const value of page.placeholderValues) {
+        const url = value.valueType === 'PHOTO' ? value.jsonValue?.url?.trim() : ''
+        if (url) {
+          placed.push(url)
+        }
+      }
+    }
+
+    const unused = photos.filter(
+      (photo) => photo.url && !placed.some((url) => samePhotoUrl(url, photo.url)),
+    )
+    const byPage = new Map<string, Array<{ elementId: string; url: string }>>()
+    unused.slice(0, targets.length).forEach((photo, index) => {
+      const target = targets[index]
+      const list = byPage.get(target.journalPageId) ?? []
+      list.push({ elementId: target.elementId, url: photo.url })
+      byPage.set(target.journalPageId, list)
+    })
+
+    for (const [journalPageId, values] of byPage) {
+      await savePlaceholders(
+        journalPageId,
+        values.map((value) => ({
+          elementId: value.elementId,
+          valueType: 'PHOTO' as const,
+          jsonValue: { url: value.url },
+        })),
+      )
+    }
+  }
+
   async function addJournalSpread(): Promise<void> {
     if (!order.value) {
       return
@@ -1016,12 +1089,20 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     orderError.value = null
 
     try {
+      const beforeIds = new Set(order.value.journalPages.map((page) => page.id))
       if (isLocalDraft.value) {
         applyLocalAddSpread()
-        return
+      } else {
+        order.value = await ordersApi.addJournalSpread(order.value.id)
       }
-
-      order.value = await ordersApi.addJournalSpread(order.value.id)
+      const newIds = order.value.journalPages
+        .filter((page) => !beforeIds.has(page.id))
+        .map((page) => page.id)
+      try {
+        await placeUnusedPhotosOnPages(newIds)
+      } catch {
+        // The spread itself is already in the journal.
+      }
     } catch {
       orderError.value = 'Не удалось добавить разворот.'
       throw new Error(orderError.value)

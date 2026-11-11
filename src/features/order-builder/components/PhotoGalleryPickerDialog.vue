@@ -1,5 +1,5 @@
 <template>
-  <v-dialog :model-value="open" max-width="640" @update:model-value="handleModelUpdate">
+  <v-dialog :model-value="open" max-width="640" :z-index="zIndex" @update:model-value="handleModelUpdate">
     <v-card>
       <v-card-title class="photo-gallery-picker__title">
         Выбрать из галереи
@@ -7,6 +7,9 @@
       </v-card-title>
 
       <v-card-text>
+        <p v-if="coverHint" class="photo-gallery-picker__cover-banner" role="note">
+          {{ COVER_GALLERY_BANNER }}
+        </p>
         <div v-if="loading" class="photo-gallery-picker__state">
           <v-progress-circular indeterminate color="primary" />
         </div>
@@ -72,17 +75,28 @@ import PrintResolutionBadge from '@/modules/editor/components/PrintResolutionBad
 import { useUploadResolutionWarning } from '@/modules/editor/composables/use-upload-resolution-warning'
 import { uploadResolutionMessage } from '@/modules/editor/utils/print-resolution.util'
 import { photoGalleryApi, type GalleryPhoto, type PhotoGalleryScope } from '../api/photo-gallery.api'
+import { COVER_GALLERY_BANNER } from '../utils/photo-upload-copy.util'
 import PhotoUploadFormatsHint from './PhotoUploadFormatsHint.vue'
 import PhotoUploadErrorList from './PhotoUploadErrorList.vue'
 
-const props = defineProps<{
-  open: boolean
-  scope: PhotoGalleryScope
-}>()
+const props = withDefaults(
+  defineProps<{
+    open: boolean
+    scope: PhotoGalleryScope
+    /** Above BaseModal (z-index 2500) when this picker is opened from inside one. */
+    zIndex?: number
+    /** Cover slot: show the vertical-photo guidance above the grid. */
+    coverHint?: boolean
+  }>(),
+  { zIndex: 2600, coverHint: false },
+)
 
 const emit = defineEmits<{
   close: []
   select: [url: string]
+  /** A file just landed in the gallery. Parents that show their own strip should prepend it.
+   * Choosing a slot is still a separate `select`. */
+  uploaded: [photo: GalleryPhoto]
 }>()
 
 const photos = ref<GalleryPhoto[]>([])
@@ -136,6 +150,7 @@ async function handleFilesSelected(event: Event): Promise<void> {
       const dimensions = await getImageDimensions(file).catch(() => undefined)
       const uploaded = await photoGalleryApi.upload(props.scope, file, dimensions)
       photos.value = [uploaded, ...photos.value]
+      emit('uploaded', uploaded)
     })
   } finally {
     uploading.value = false
@@ -148,6 +163,16 @@ async function handleFilesSelected(event: Event): Promise<void> {
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+.photo-gallery-picker__cover-banner {
+  margin: 0 0 $spacing-3;
+  padding: $spacing-3;
+  border-radius: $radius-md;
+  background: $bg-muted;
+  color: $text-secondary;
+  font-size: $font-size-caption;
+  line-height: 1.45;
 }
 
 .photo-gallery-picker__state {

@@ -71,8 +71,9 @@ import { computed } from 'vue'
 
 import BaseModal from '@/components/ui/BaseModal.vue'
 import JournalSpreadThumbnail from '@/modules/editor/components/JournalSpreadThumbnail.vue'
-import { normalizeCanvasData, type CanvasData } from '@/modules/editor/models/canvas-data.model'
-import { materializeCanvasData } from '../utils/merge-placeholder-element.util'
+import type { CanvasData } from '@/modules/editor/models/canvas-data.model'
+import { presentCustomerPageCanvas } from '../utils/missing-photos.util'
+import type { JournalSlotType } from '../constants/journal.constants'
 import type { OrderSummary, PlaceholderValue } from '../types/order.types'
 import type { StoredLocalDraft } from '../utils/local-draft-storage.util'
 
@@ -93,11 +94,15 @@ const emit = defineEmits<{
   close: []
 }>()
 
-function coverOf(page: { pageSnapshot: CanvasData; placeholderValues: PlaceholderValue[] } | undefined): CanvasData | null {
+function coverOf(
+  page:
+    | { slotType: JournalSlotType; pageSnapshot: CanvasData; placeholderValues: PlaceholderValue[] }
+    | undefined,
+): CanvasData | null {
   if (!page) {
     return null
   }
-  return materializeCanvasData(normalizeCanvasData(page.pageSnapshot), page.placeholderValues)
+  return presentCustomerPageCanvas(page)
 }
 
 function coverCanvas(order: OrderSummary): CanvasData | null {
