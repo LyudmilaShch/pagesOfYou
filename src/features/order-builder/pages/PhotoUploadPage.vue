@@ -30,10 +30,11 @@
     </div>
 
     <!-- Mobile-only stepper — same 5 steps as .photo-upload-page__steps-label above, just a fuller
-         visual (desktop keeps the thin progress bar instead). This page is always step 2. Steps
-         behind (< 2) are always clickable; steps ahead are clickable too, but only once
-         `isStepReachable` confirms their own prerequisite content actually exists — so jumping
-         ahead can never land on a broken/empty page. -->
+         visual (desktop keeps the thin progress bar instead). This page is always step 2. Step 1
+         (journal type) stays locked: the draft already exists, and the type is the journal's
+         foundation. Steps ahead are clickable only once `isStepReachable` confirms their own
+         prerequisite content actually exists — so jumping ahead can never land on a broken/empty
+         page. -->
     <ol class="photo-upload-page__stepper" aria-label="Шаг 2 из 5: Фото">
       <li
         v-for="step in ORDER_STEPS"
@@ -46,7 +47,7 @@
         }"
       >
         <button
-          v-if="step.step !== 2 && (step.step < 2 || isStepReachable(step.step))"
+          v-if="isStepperStepClickable(step.step)"
           type="button"
           class="photo-upload-page__stepper-btn"
           :aria-label="`Перейти к шагу «${step.label}»`"
@@ -59,7 +60,10 @@
           <span class="photo-upload-page__stepper-label">{{ step.label }}</span>
         </button>
         <template v-else>
-          <span class="photo-upload-page__stepper-node">{{ step.step }}</span>
+          <span class="photo-upload-page__stepper-node">
+            <v-icon v-if="step.step < 2" size="10">mdi-check</v-icon>
+            <template v-else>{{ step.step }}</template>
+          </span>
           <span class="photo-upload-page__stepper-label">{{ step.label }}</span>
         </template>
       </li>
@@ -827,8 +831,9 @@ function goToPreviousStep(): void {
   void router.push({ name: 'create-order' })
 }
 
-/** The mobile stepper's own click-to-jump (see .photo-upload-page__stepper) — only ever called for
- * an already-completed step (< 2 here), never the active/future ones. */
+/** The mobile stepper's own click-to-jump (see .photo-upload-page__stepper). Step 1 is never
+ * clickable: this page only opens once a draft exists, and the journal type is that draft's
+ * foundation. The active step isn't clickable either; a later step is, once its content exists. */
 // Whether every photo slot in the journal is filled — this page's own "done" condition, reused by
 // the mobile stepper (see `isStepReachable`) to decide whether Анкета is safe to jump to directly.
 const photosComplete = computed(() => {
@@ -841,9 +846,9 @@ const photosComplete = computed(() => {
 // Проверка/Оплата are safe to jump to directly.
 const contentComplete = computed(() => store.order != null && store.getSubmitValidationError() === null)
 
-/** Gates the mobile stepper's click-to-jump for a step AHEAD of this one (behind is always
- * allowed — see the template) — a step only becomes clickable once its own prerequisite content
- * actually exists, so jumping ahead can never land on a broken/empty page. */
+/** Gates the mobile stepper's click-to-jump for a step AHEAD of this one — a step only becomes
+ * clickable once its own prerequisite content actually exists, so jumping ahead can never land
+ * on a broken/empty page. Step 1 is intentionally absent: the journal type can't be revisited. */
 function isStepReachable(step: number): boolean {
   if (step === 3) {
     return photosComplete.value
@@ -854,10 +859,12 @@ function isStepReachable(step: number): boolean {
   return false
 }
 
+function isStepperStepClickable(step: number): boolean {
+  return step !== 2 && isStepReachable(step)
+}
+
 function goToStep(step: number): void {
-  if (step === 1) {
-    void router.push({ name: 'create-order' })
-  } else if (step === 3) {
+  if (step === 3) {
     void router.push({ name: 'order-questionnaire', params: { orderId: orderId.value } })
   } else if (step === 4) {
     void router.push({ name: 'order-review', params: { orderId: orderId.value } })

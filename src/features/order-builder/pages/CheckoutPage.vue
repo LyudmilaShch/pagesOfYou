@@ -16,9 +16,9 @@
     </header>
 
     <!-- Mobile-only stepper — same 5 steps as .checkout-page__steps-label above, just a fuller
-         visual (desktop keeps the thin "5/5" text instead). This page is always step 5. Already-
-         completed steps (< 5) are clickable — jump straight back to them; the active step isn't
-         (already here). -->
+         visual (desktop keeps the thin "5/5" text instead). This page is always step 5. Steps
+         2–4 are clickable; step 1 (journal type) stays locked because the draft already exists
+         and the type is the journal's foundation. The active step isn't clickable. -->
     <ol class="checkout-page__stepper" aria-label="Шаг 5 из 5: Оплата">
       <li
         v-for="step in ORDER_STEPS"
@@ -30,7 +30,7 @@
         }"
       >
         <button
-          v-if="step.step < 5"
+          v-if="isStepperStepClickable(step.step)"
           type="button"
           class="checkout-page__stepper-btn"
           :aria-label="`Перейти к шагу «${step.label}»`"
@@ -40,7 +40,10 @@
           <span class="checkout-page__stepper-label">{{ step.label }}</span>
         </button>
         <template v-else>
-          <span class="checkout-page__stepper-node">{{ step.step }}</span>
+          <span class="checkout-page__stepper-node">
+            <v-icon v-if="step.step < 5" size="10">mdi-check</v-icon>
+            <template v-else>{{ step.step }}</template>
+          </span>
           <span class="checkout-page__stepper-label">{{ step.label }}</span>
         </template>
       </li>
@@ -292,12 +295,14 @@ const ORDER_STEPS = [
   { step: 5, label: 'Оплата' },
 ]
 
-/** The mobile stepper's own click-to-jump (see .checkout-page__stepper) — only ever called for an
- * already-completed step (< 5 here), never the active one. */
+/** The mobile stepper's own click-to-jump (see .checkout-page__stepper). Step 1 is never
+ * clickable: the draft already exists, and the journal type is that draft's foundation. */
+function isStepperStepClickable(step: number): boolean {
+  return step > 1 && step < 5
+}
+
 function goToStep(step: number): void {
-  if (step === 1) {
-    void router.push({ name: 'create-order' })
-  } else if (step === 2) {
+  if (step === 2) {
     void router.push({ name: 'order-photo-upload', params: { orderId: orderId.value } })
   } else if (step === 3) {
     void router.push({ name: 'order-questionnaire', params: { orderId: orderId.value } })

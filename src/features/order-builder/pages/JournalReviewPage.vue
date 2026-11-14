@@ -27,7 +27,8 @@
 
     <!-- Mobile-only stepper — same 5 steps as .journal-review-page__steps-label above, just a
          fuller visual (desktop keeps the thin "4/5" text instead). This page is always step 4.
-         Steps behind (< 4) are always clickable; Оплата is clickable too, but only once
+         Steps 2 and 3 are clickable; step 1 (journal type) stays locked because the draft already
+         exists and the type is the journal's foundation. Оплата is clickable only once
          `isStepReachable` confirms the journal's content is actually ready — so jumping ahead can
          never land on a broken/empty page. -->
     <ol class="journal-review-page__stepper" aria-label="Шаг 4 из 5: Проверка">
@@ -42,7 +43,7 @@
         }"
       >
         <button
-          v-if="step.step !== 4 && (step.step < 4 || isStepReachable(step.step))"
+          v-if="isStepperStepClickable(step.step)"
           type="button"
           class="journal-review-page__stepper-btn"
           :aria-label="`Перейти к шагу «${step.label}»`"
@@ -55,7 +56,10 @@
           <span class="journal-review-page__stepper-label">{{ step.label }}</span>
         </button>
         <template v-else>
-          <span class="journal-review-page__stepper-node">{{ step.step }}</span>
+          <span class="journal-review-page__stepper-node">
+            <v-icon v-if="step.step < 4" size="10">mdi-check</v-icon>
+            <template v-else>{{ step.step }}</template>
+          </span>
           <span class="journal-review-page__stepper-label">{{ step.label }}</span>
         </template>
       </li>
@@ -383,16 +387,16 @@ function goToPreviousStep(): void {
   void router.push({ name: 'order-questionnaire', params: { orderId: orderId.value } })
 }
 
-/** The mobile stepper's own click-to-jump (see .journal-review-page__stepper) — only ever called
- * for an already-completed step (< 4 here), never the active/future ones. */
+/** The mobile stepper's own click-to-jump (see .journal-review-page__stepper). Step 1 is never
+ * clickable: the draft already exists, and the journal type is that draft's foundation. */
 // Whether every required placeholder in the journal (photo AND text/AI-text) is filled — the same
 // client-side check `getSubmitValidationError` runs before checkout, reused here to decide whether
 // Оплата is safe to jump to directly from the mobile stepper.
 const contentComplete = computed(() => store.order != null && store.getSubmitValidationError() === null)
 
-/** Gates the mobile stepper's click-to-jump for a step AHEAD of this one (behind is always
- * allowed — see the template) — a step only becomes clickable once its own prerequisite content
- * actually exists, so jumping ahead can never land on a broken/empty page. */
+/** Gates the mobile stepper's click-to-jump for a step AHEAD of this one — a step only becomes
+ * clickable once its own prerequisite content actually exists, so jumping ahead can never land
+ * on a broken/empty page. Step 1 is intentionally absent: the journal type can't be revisited. */
 const photosComplete = computed(() => {
   const pages = store.order?.journalPages ?? []
   return pages.length > 0 && !hasMissingCustomerPhotos(pages)
@@ -402,10 +406,15 @@ function isStepReachable(step: number): boolean {
   return step === 5 && photosComplete.value && contentComplete.value
 }
 
+function isStepperStepClickable(step: number): boolean {
+  if (step === 1 || step === 4) {
+    return false
+  }
+  return step < 4 || isStepReachable(step)
+}
+
 function goToStep(step: number): void {
-  if (step === 1) {
-    void router.push({ name: 'create-order' })
-  } else if (step === 2) {
+  if (step === 2) {
     void router.push({ name: 'order-photo-upload', params: { orderId: orderId.value } })
   } else if (step === 3) {
     void router.push({ name: 'order-questionnaire', params: { orderId: orderId.value } })
