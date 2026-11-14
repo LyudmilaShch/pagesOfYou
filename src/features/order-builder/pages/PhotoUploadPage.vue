@@ -201,19 +201,21 @@
             <PhotoUploadFormatsHint class="photo-upload-page__formats photo-upload-page__formats--desktop" />
             <PhotoUploadErrorList :messages="uploadErrors" />
 
-            <p class="photo-upload-page__stats">
-              <span>{{ photos.length }} фото</span>
-              <button
-                v-if="missingPhotoCount > 0"
-                type="button"
-                class="photo-upload-page__stats-gap"
-                @click="openHolesModal('list')"
-              >
-                · {{ missingPhotoCount }} не на месте
-              </button>
-            </p>
-            <div v-if="photos.length > 0" class="photo-upload-page__grid-header">
-              <span class="photo-upload-page__grid-title text-body-sm text-secondary">Загруженные фото</span>
+            <div class="photo-upload-page__photo-meta">
+              <p class="photo-upload-page__stats">
+                <span>{{ photos.length }} фото</span>
+                <button
+                  v-if="missingPhotoCount > 0"
+                  type="button"
+                  class="photo-upload-page__stats-gap"
+                  @click="openHolesModal('list')"
+                >
+                  · {{ missingPhotoCount }} не на месте
+                </button>
+              </p>
+              <div v-if="photos.length > 0" class="photo-upload-page__grid-header">
+                <span class="photo-upload-page__grid-title text-body-sm text-secondary">Загруженные фото</span>
+              </div>
             </div>
 
             <div v-if="photos.length > 0 || isMobileViewport" class="photo-upload-page__grid">
@@ -1521,6 +1523,19 @@ onBeforeUnmount(() => {
   }
 }
 
+// On mobile the count, the "не на месте" link and "Загруженные фото" share one row so the
+// block doesn't stack into three lines above the thumbnails.
+.photo-upload-page__photo-meta {
+  @include mobile-only {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: $spacing-2;
+    margin-top: $spacing-2;
+    font-size: $font-size-caption;
+  }
+}
+
 .photo-upload-page__stats {
   display: flex;
   align-items: baseline;
@@ -1532,7 +1547,13 @@ onBeforeUnmount(() => {
   color: $text-primary;
 
   @include mobile-only {
-    margin-top: $spacing-2;
+    margin-top: 0;
+    flex: 1 1 auto;
+    min-width: 0;
+    flex-wrap: nowrap;
+    gap: $spacing-1;
+    font-size: inherit;
+    white-space: nowrap;
   }
 }
 
@@ -1546,6 +1567,10 @@ onBeforeUnmount(() => {
   cursor: pointer;
   text-decoration: underline;
   text-underline-offset: 2px;
+
+  @include mobile-only {
+    white-space: nowrap;
+  }
 }
 
 // ── Uploaded grid ──────────────────────────────────────────────────────────────────────────
@@ -1555,6 +1580,19 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: $spacing-3;
   margin-top: $spacing-4;
+
+  @include mobile-only {
+    margin-top: 0;
+    flex: 0 0 auto;
+    white-space: nowrap;
+    font-size: inherit;
+  }
+}
+
+.photo-upload-page__grid-title {
+  @include mobile-only {
+    font-size: inherit;
+  }
 }
 
 .photo-upload-page__grid {
