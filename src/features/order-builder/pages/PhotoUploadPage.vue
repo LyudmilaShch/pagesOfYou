@@ -197,7 +197,8 @@
               </p>
             </div>
 
-            <PhotoUploadFormatsHint />
+            <!-- Desktop only — on mobile the same hint sits under the uploaded photos (see below). -->
+            <PhotoUploadFormatsHint class="photo-upload-page__formats photo-upload-page__formats--desktop" />
             <PhotoUploadErrorList :messages="uploadErrors" />
 
             <p class="photo-upload-page__stats">
@@ -270,6 +271,9 @@
                 </div>
               </div>
             </div>
+
+            <!-- Mobile only — under the uploaded row. Desktop keeps the copy under the dropzone. -->
+            <PhotoUploadFormatsHint class="photo-upload-page__formats photo-upload-page__formats--mobile" />
 
           </div>
           </div>
@@ -1501,6 +1505,20 @@ onBeforeUnmount(() => {
 
 .photo-upload-page__dropzone-hint {
   margin: 0;
+}
+
+.photo-upload-page__formats--desktop {
+  @include mobile-only {
+    display: none;
+  }
+}
+
+.photo-upload-page__formats--mobile {
+  display: none;
+
+  @include mobile-only {
+    display: block;
+  }
 }
 
 .photo-upload-page__stats {
