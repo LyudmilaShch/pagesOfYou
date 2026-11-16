@@ -30,10 +30,11 @@
     </div>
 
     <!-- Mobile-only stepper — same 5 steps as .questionnaire-page__steps-label above, just a fuller
-         visual (desktop keeps the thin progress bar instead). This page is always step 3. Steps
-         behind (< 3) are always clickable; steps ahead are clickable too, but only once
-         `isStepReachable` confirms their own prerequisite content actually exists — so jumping
-         ahead can never land on a broken/empty page. -->
+         visual (desktop keeps the thin progress bar instead). This page is always step 3. Step 2
+         is clickable; step 1 (journal type) stays locked because the draft already exists and the
+         type is the journal's foundation. Steps ahead are clickable only once `isStepReachable`
+         confirms their own prerequisite content actually exists — so jumping ahead can never land
+         on a broken/empty page. -->
     <ol class="questionnaire-page__stepper" aria-label="Шаг 3 из 5: Анкета">
       <li
         v-for="step in ORDER_STEPS"
@@ -46,7 +47,7 @@
         }"
       >
         <button
-          v-if="step.step !== 3 && (step.step < 3 || isStepReachable(step.step))"
+          v-if="isStepperStepClickable(step.step)"
           type="button"
           class="questionnaire-page__stepper-btn"
           :aria-label="`Перейти к шагу «${step.label}»`"
@@ -59,7 +60,10 @@
           <span class="questionnaire-page__stepper-label">{{ step.label }}</span>
         </button>
         <template v-else>
-          <span class="questionnaire-page__stepper-node">{{ step.step }}</span>
+          <span class="questionnaire-page__stepper-node">
+            <v-icon v-if="step.step < 3" size="10">mdi-check</v-icon>
+            <template v-else>{{ step.step }}</template>
+          </span>
           <span class="questionnaire-page__stepper-label">{{ step.label }}</span>
         </template>
       </li>
@@ -123,7 +127,6 @@
             <AiLimitNotice
               v-if="store.isAiFillCapReached"
               :is-guest="isGuest"
-              :unwritten-count="aiMarkers.unwrittenCount"
               class="questionnaire-page__ai-limit"
               @login="loginForMoreAi"
             />
@@ -297,7 +300,7 @@
           v-if="missingPhotoCount > 0"
           type="button"
           class="questionnaire-page__missing-photos-pill"
-          @click="missingPhotosModalOpen = true"
+          @click="openMissingPhotosFromBadge"
         >
           <v-icon size="16">mdi-alert-outline</v-icon>
           {{ missingPhotoCount }} фото не на месте
@@ -357,6 +360,15 @@
       @continue="continueAfterPhotosFilled"
     />
 
+    <IncompletePhotosModal
+      :open="emptySlotsModalOpen"
+      :pages="missingPhotoPages"
+      variant="upload"
+      @close="emptySlotsModalOpen = false"
+      @select="goToPhotoUpload"
+      @upload="goToPhotoUpload()"
+    />
+
     <AuthPromptModal
       :open="authModal.prompt"
       :message="authModal.message"
@@ -382,6 +394,7 @@ import {
   toListEntries,
   type ListAnswerEntry,
 } from '../utils/list-answer.util'
+import { listAnswerRowCount } from '../utils/sync-answers-to-placeholders.util'
 import type { AiTextPlaceholder, LengthConstraint } from '@/modules/editor/models'
 import { flattenTree } from '@/modules/editor/utils/element-tree.util'
 import { catalogApi } from '../api/catalog.api'
@@ -404,6 +417,7 @@ import QuestionnaireBook from '../components/questionnaire/QuestionnaireBook.vue
 import AiTextEditModal from '../components/AiTextEditModal.vue'
 import { buildAiTextFitContext } from '../utils/ai-text-overflow.util'
 import type { AiTextFitContext } from '@/modules/editor/utils/ai-text-capacity.util'
+import IncompletePhotosModal from '../components/IncompletePhotosModal.vue'
 import MissingPhotosModal from '../components/MissingPhotosModal.vue'
 import {
   collectPhotoSlotPreview,
@@ -921,9 +935,8 @@ const allRequiredAnswered = computed(() =>
 // above): "Продолжить" still finishes the questionnaire either way, `finish()` itself is what
 // opens MissingPhotosModal.vue if this is still non-zero at that point. Reuses the exact same
 // check as that gate so the two never disagree about what counts as "missing".
-const missingPhotoCount = computed(() =>
-  countEmptyPhotoSlots(collectPhotoSlotPreview(store.order?.journalPages ?? [])),
-)
+const missingPhotoPages = computed(() => collectPhotoSlotPreview(store.order?.journalPages ?? []))
+const missingPhotoCount = computed(() => countEmptyPhotoSlots(missingPhotoPages.value))
 
 const fillByPageId = computed(() => {
   const map = new Map<string, { answered: number; total: number }>()
@@ -959,6 +972,19 @@ const overlayAffectedPageIds = computed<Set<string>>(() => {
   return set
 })
 
+/** Entries already claimed by earlier pages, so a list that continues onto this page doesn't
+ * briefly show the first items here and then lose them once the answer is saved. */
+function listEntryOffsetBefore(pageId: string, questionKey: string): number {
+  let offset = 0
+  for (const page of store.order?.journalPages ?? []) {
+    if (page.id === pageId) {
+      break
+    }
+    offset += listAnswerRowCount(listAnswerSlots(normalizeCanvasData(page.pageSnapshot).elements, questionKey))
+  }
+  return offset
+}
+
 function pendingOverridesForPage(pageId: string): Map<string, LocalPlaceholderDraft> {
   const overrides = new Map<string, LocalPlaceholderDraft>()
   const page = store.order?.journalPages.find((p) => p.id === pageId)
@@ -970,6 +996,7 @@ function pendingOverridesForPage(pageId: string): Map<string, LocalPlaceholderDr
   // A LIST answer fills its rows one entry each, in the list's reading order — title into the
   // 'item' text, description into the 'detail' text — as the backend sync does.
   const listSlotsByKey = new Map<string, ReturnType<typeof listAnswerSlots>>()
+  const listOffsetByKey = new Map<string, number>()
   for (const leaf of flattenTree(elements)) {
     const leafKey = 'questionKey' in leaf ? leaf.questionKey : undefined
     const draft = leafKey ? pendingOverlayByKey[leafKey] : undefined
@@ -981,7 +1008,12 @@ function pendingOverridesForPage(pageId: string): Map<string, LocalPlaceholderDr
         listSlotsByKey.set(leafKey, listAnswerSlots(elements, leafKey))
       }
       const slot = listSlotsByKey.get(leafKey)!.get(leaf.id)
-      const entry = slot ? toListEntries(draft.jsonValue.items)[slot.entry] : undefined
+      if (!listOffsetByKey.has(leafKey)) {
+        listOffsetByKey.set(leafKey, listEntryOffsetBefore(pageId, leafKey))
+      }
+      const entry = slot
+        ? toListEntries(draft.jsonValue.items)[listOffsetByKey.get(leafKey)! + slot.entry]
+        : undefined
       overrides.set(leaf.id, { textValue: (slot && entry?.[slot.field]?.trim()) || '' })
       continue
     }
@@ -1122,16 +1154,16 @@ function goToPreviousStep(): void {
   void router.push({ name: 'order-photo-upload', params: { orderId: orderId.value } })
 }
 
-/** The mobile stepper's own click-to-jump (see .questionnaire-page__stepper) — only ever called
- * for an already-completed step (< 3 here), never the active/future ones. */
+/** The mobile stepper's own click-to-jump (see .questionnaire-page__stepper). Step 1 is never
+ * clickable: the draft already exists, and the journal type is that draft's foundation. */
 // Whether every required placeholder in the journal (photo AND text/AI-text) is filled — the same
 // client-side check `getSubmitValidationError` runs before checkout, reused here to decide whether
 // Проверка/Оплата are safe to jump to directly from the mobile stepper.
 const contentComplete = computed(() => store.order != null && store.getSubmitValidationError() === null)
 
-/** Gates the mobile stepper's click-to-jump for a step AHEAD of this one (behind is always
- * allowed — see the template) — a step only becomes clickable once its own prerequisite content
- * actually exists, so jumping ahead can never land on a broken/empty page. */
+/** Gates the mobile stepper's click-to-jump for a step AHEAD of this one — a step only becomes
+ * clickable once its own prerequisite content actually exists, so jumping ahead can never land
+ * on a broken/empty page. Step 1 is intentionally absent: the journal type can't be revisited. */
 const photosComplete = computed(() => {
   const pages = store.order?.journalPages ?? []
   return pages.length > 0 && !hasMissingCustomerPhotos(pages)
@@ -1141,10 +1173,15 @@ function isStepReachable(step: number): boolean {
   return (step === 4 || step === 5) && photosComplete.value && contentComplete.value
 }
 
+function isStepperStepClickable(step: number): boolean {
+  if (step === 1 || step === 3) {
+    return false
+  }
+  return step < 3 || isStepReachable(step)
+}
+
 function goToStep(step: number): void {
-  if (step === 1) {
-    void router.push({ name: 'create-order' })
-  } else if (step === 2) {
+  if (step === 2) {
     void router.push({ name: 'order-photo-upload', params: { orderId: orderId.value } })
   } else if (step === 4) {
     void router.push({ name: 'order-review', params: { orderId: orderId.value } })
@@ -1159,6 +1196,32 @@ const isFinishing = ref(false)
 const finishingMessage = ref<string | null>(null)
 const submitErrorMessage = ref<string | null>(null)
 const missingPhotosModalOpen = ref(false)
+const emptySlotsModalOpen = ref(false)
+
+function openMissingPhotosFromBadge(): void {
+  if (isMobileViewport.value) {
+    emptySlotsModalOpen.value = true
+    return
+  }
+  missingPhotosModalOpen.value = true
+}
+
+function firstMissingSpreadId(): string | undefined {
+  const journalPages = store.order?.journalPages ?? []
+  return missingPhotoPages.value.find((missing) =>
+    journalPages.some((page) => page.id === missing.journalPageId && page.slotType === 'SPREAD'),
+  )?.journalPageId
+}
+
+function goToPhotoUpload(journalPageId?: string): void {
+  emptySlotsModalOpen.value = false
+  const targetId = journalPageId ?? firstMissingSpreadId()
+  void router.push({
+    name: 'order-photo-upload',
+    params: { orderId: orderId.value },
+    state: targetId ? { focusJournalPageId: targetId } : {},
+  })
+}
 
 /** Waits for the last edit's save (and any AI generation it triggers) to actually land in
  * `store.order` before navigating to the review step — otherwise its book would mount from the
@@ -1184,8 +1247,7 @@ async function finish(): Promise<void> {
     await requestAiGeneration()
     finishingMessage.value = null
 
-    const missingPhotoPages = collectPhotoSlotPreview(store.order?.journalPages ?? [])
-    if (missingPhotoPages.length > 0) {
+    if (missingPhotoPages.value.length > 0) {
       missingPhotosModalOpen.value = true
       return
     }
@@ -1423,7 +1485,8 @@ onUnmounted(() => {
 
 // Deliberately not the theme's `warning` color — that maps to a muted brown (see theme.ts, same
 // reasoning as JournalStructurePanel.vue's own incomplete-badge) — this needs to read as a clear,
-// warm amber notice at a glance. Opens MissingPhotosModal.vue on click.
+// warm amber notice at a glance. Desktop opens MissingPhotosModal.vue; mobile opens the short
+// empty-slot list and sends the visitor back to the photo step.
 .questionnaire-page__missing-photos-pill {
   display: inline-flex;
   align-items: center;

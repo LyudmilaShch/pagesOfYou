@@ -24,6 +24,7 @@ import {
   textOf,
 } from '../utils/draft-ai-texts.util'
 import { aiAnswersSignature } from '../utils/ai-answers-signature.util'
+import { syncAnswersOntoJournalPages } from '../utils/sync-answers-to-placeholders.util'
 import { isAxiosError } from 'axios'
 import { extractApiErrorMessage } from '@/shared/utils/api-error.util'
 import { getOrCreateGuestId } from '@/shared/utils/guest-id.util'
@@ -463,6 +464,12 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
       placeholderValues: [],
     }
 
+    syncAnswersOntoJournalPages(
+      order.value.journalPages,
+      order.value.questionAnswers,
+      order.value.questionAnswers.map((answer) => answer.questionKey),
+    )
+
     if (isLocalDraft.value) {
       persistLocalDraft()
     }
@@ -528,6 +535,11 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     }
 
     order.value.questionAnswers = [...byKey.values()]
+    syncAnswersOntoJournalPages(
+      order.value.journalPages,
+      order.value.questionAnswers,
+      answers.map((answer) => answer.questionKey),
+    )
     persistLocalDraft()
   }
 
@@ -629,7 +641,7 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
   const aiUsage = ref<AiUsageStatus | null>(null)
 
   /** The hidden cap on first texts is reached — new blocks stay unwritten until tomorrow, so the
-   * questionnaire and the review step show AiLimitNotice. */
+   * questionnaire shows AiLimitNotice. */
   const isAiFillCapReached = computed(() => aiUsage.value?.fillCapReached ?? false)
 
   async function refreshAiUsage(): Promise<void> {

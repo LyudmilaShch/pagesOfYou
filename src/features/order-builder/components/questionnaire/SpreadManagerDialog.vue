@@ -12,7 +12,17 @@
           удалите ещё один разворот.
         </v-alert>
 
-        <TransitionGroup tag="div" name="spread" class="spread-reorder__grid">
+        <!-- `css` stays off for the whole touch drag. Otherwise every finger-move re-render makes
+             TransitionGroup FLIP the card back toward its grid cell, so the spread being dragged
+             jumps. The glide comes back on drop, once `draggingId` is cleared and the list reorders. -->
+        <TransitionGroup
+          tag="div"
+          name="spread"
+          :css="!draggingId"
+          class="spread-reorder__grid"
+          @dragover.prevent="onNativeDragOver"
+          @drop.prevent="onNativeDrop"
+        >
           <div key="cover" class="spread-reorder__item spread-reorder__item--fixed">
             <div class="spread-reorder__thumb">
               <JournalSpreadThumbnail v-if="coverCanvas" :canvas-data="coverCanvas" :container-ratio="1.19" />
@@ -37,11 +47,10 @@
             class="spread-reorder__item"
             :class="{ 'spread-reorder__item--dragging': draggingId === page.id }"
             :data-spread-id="page.id"
-            draggable="true"
-            @dragstart="onDragStart(page.id)"
-            @dragover.prevent
-            @drop="commitDrag(page.id)"
+            :draggable="nativeDrag"
+            @dragstart="onNativeDragStart($event, page.id)"
             @dragend="onDragEnd"
+            @pointerdown="handleItemPointerDown($event, page.id)"
           >
             <div class="spread-reorder__thumb">
               <JournalSpreadThumbnail
@@ -49,11 +58,7 @@
                 :canvas-data="canvasDataByPageId.get(page.id)!"
                 :container-ratio="1.19"
               />
-              <span
-                class="spread-reorder__drag"
-                aria-hidden="true"
-                @pointerdown="handleDragHandlePointerDown($event, page.id)"
-              >
+              <span class="spread-reorder__drag" aria-hidden="true">
                 <v-icon size="14" color="primary">mdi-drag-vertical</v-icon>
               </span>
             </div>
@@ -260,43 +265,79 @@ function onDragStart(spreadId: string): void {
   draggingId.value = spreadId
 }
 
+function onNativeDragStart(event: DragEvent, spreadId: string): void {
+  if (!nativeDrag) {
+    event.preventDefault()
+    return
+  }
+  onDragStart(spreadId)
+}
+
 function onDragEnd(): void {
   draggingId.value = null
 }
 
-function commitDrag(targetId: string): void {
-  const sourceId = draggingId.value
+// Browsers hold off repainting while a native drag gesture is still wrapping up (`drop` fires
+// just before it), so a reorder triggered directly from the `drop`/`pointerup` handler can patch
+// the DOM without the move ever visibly animating. Two animation frames is what gets past that.
+function commitInsert(sourceId: string, beforeId: string | null): void {
   draggingId.value = null
-
-  if (!sourceId || sourceId === targetId) {
-    return
-  }
-
-  // Browsers hold off repainting while a native drag gesture is still wrapping up (`drop` fires
-  // just before it), so a reorder triggered directly from the `drop`/`pointerup` handler can patch
-  // the DOM without the move ever visibly animating — confirmed by instrumenting it: the FLIP
-  // transform/transition were correct, but nothing painted until a later, unrelated repaint.
-  // Nesting two requestAnimationFrame calls — the standard "wait for a real painted frame" trick —
-  // is what reliably gets past that single rAF alone wasn't enough for.
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
-      void applyReorder(sourceId, targetId)
+      void applyInsertBefore(sourceId, beforeId)
     })
   })
 }
 
-async function applyReorder(sourceId: string, targetId: string): Promise<void> {
+let nativePointer: { x: number; y: number } | null = null
+
+function onNativeDragOver(event: DragEvent): void {
+  if (event.clientX === 0 && event.clientY === 0) {
+    return
+  }
+  nativePointer = { x: event.clientX, y: event.clientY }
+}
+
+function onNativeDrop(event: DragEvent): void {
+  const sourceId = draggingId.value
+  const point = event.clientX === 0 && event.clientY === 0 ? nativePointer : { x: event.clientX, y: event.clientY }
+  nativePointer = null
+  if (!sourceId || !point) {
+    draggingId.value = null
+    return
+  }
+  commitInsert(sourceId, spreadIdBeforePoint(sourceId, point.x, point.y))
+}
+
+// `beforeId` is the spread the dragged card should sit in front of — null means the end of the
+// list. Index is taken after the source is removed, so a downward move doesn't land one past
+// the gap the card was dropped into.
+async function applyInsertBefore(sourceId: string, beforeId: string | null): Promise<void> {
   const ids = spreadPages.value.map((page) => page.id)
   const fromIndex = ids.indexOf(sourceId)
-  const toIndex = ids.indexOf(targetId)
-  if (fromIndex === -1 || toIndex === -1) {
+  if (fromIndex === -1) {
     return
   }
 
   const next = [...ids]
-  const [moved] = next.splice(fromIndex, 1)
-  next.splice(toIndex, 0, moved)
+  next.splice(fromIndex, 1)
+  if (beforeId == null) {
+    next.push(sourceId)
+  } else {
+    const toIndex = next.indexOf(beforeId)
+    if (toIndex === -1) {
+      return
+    }
+    next.splice(toIndex, 0, sourceId)
+  }
 
+  if (next.every((id, index) => id === ids[index])) {
+    return
+  }
+  await applyReorderIds(next)
+}
+
+async function applyReorderIds(next: string[]): Promise<void> {
   // Preview the already-decided final order immediately (TransitionGroup animates straight to it)
   // instead of waiting for the store round-trip, the same reasoning `applyLocalAddSpread` etc.
   // already lean on elsewhere — only cleared once the save settles, success or not, so there's no
@@ -312,49 +353,244 @@ async function applyReorder(sourceId: string, targetId: string): Promise<void> {
   }
 }
 
-// Native HTML5 drag-and-drop (draggable/@dragstart/@dragover/@drop above) only fires from a
-// mouse — most mobile browsers never start a native drag from a touch gesture at all. This is a
-// parallel, Pointer Events-based path for touch/pen input on the same handle — mirrors
-// JournalStructurePanel.vue's own reorder handle. Unlike the native path, there's no dragover-style
-// per-tick callback to hook a drop target off of, so the target is just read once, directly at
-// pointerup, from wherever the finger/pen actually lifted.
-function findSpreadAt(clientX: number, clientY: number): string | null {
-  const el = document.elementFromPoint(clientX, clientY)
-  const row = el ? (el.closest('.spread-reorder__item') as HTMLElement | null) : null
-  return row?.dataset.spreadId ?? null
+// The spread that should end up just after the drop. `anchor` is the dragged card's center on
+// touch and the cursor on desktop. A gap between cards is empty, so the card under the pointer
+// is the wrong answer — the boundary is each neighbour's center.
+function spreadIdBeforePoint(sourceId: string, anchorX: number, anchorY: number): string | null {
+  const cards = [...document.querySelectorAll<HTMLElement>('.spread-reorder__item[data-spread-id]')]
+    .filter((card) => card.dataset.spreadId && card.dataset.spreadId !== sourceId)
+    .map((card) => ({ id: card.dataset.spreadId as string, rect: card.getBoundingClientRect() }))
+
+  const sharesRow = (rect: DOMRect): boolean => {
+    const midY = rect.top + rect.height / 2
+    return cards.some((other) => {
+      if (other.rect === rect) {
+        return false
+      }
+      const otherMidY = other.rect.top + other.rect.height / 2
+      return Math.abs(otherMidY - midY) < rect.height / 2
+    })
+  }
+
+  for (const card of cards) {
+    const midY = card.rect.top + card.rect.height / 2
+    const midX = card.rect.left + card.rect.width / 2
+    if (sharesRow(card.rect)) {
+      // Pointer above this row slots in front of it. On the row itself, the gap is horizontal.
+      if (anchorY < midY - card.rect.height / 2) {
+        return card.id
+      }
+      if (Math.abs(anchorY - midY) < card.rect.height / 2 && anchorX < midX) {
+        return card.id
+      }
+      continue
+    }
+    if (anchorY < midY) {
+      return card.id
+    }
+  }
+  return null
 }
 
-function stopPointerDragTracking(): void {
-  window.removeEventListener('pointerup', handlePointerDragEnd)
-  window.removeEventListener('pointercancel', handlePointerDragCancel)
+// A phone's primary pointer is touch, and HTML5 drag never starts from it. Desktop (a real mouse)
+// keeps the native path above.
+const nativeDrag = window.matchMedia('(hover: hover) and (pointer: fine)').matches
+
+// How long a finger must rest on a card before it becomes a drag. A move before that is a scroll
+// of the dialog — the cards fill the list, so the same surface has to do both.
+const DRAG_HOLD_MS = 180
+const DRAG_CANCEL_DISTANCE = 12
+
+// Finger inside this band at the top or bottom of the list scrolls it, so a spread can be
+// carried onto a card that started off-screen.
+const SCROLL_EDGE_PX = 80
+const SCROLL_MAX_STEP_PX = 16
+
+let activePointerId: number | null = null
+let pointerOrigin = { x: 0, y: 0 }
+let lastPointer = { x: 0, y: 0 }
+let holdTimer: ReturnType<typeof setTimeout> | null = null
+let pointerDragArmed = false
+let captureEl: HTMLElement | null = null
+let scrollEl: HTMLElement | null = null
+let scrollOriginTop = 0
+let scrollFrame = 0
+
+// Written straight onto the element. A Vue style binding would re-render the TransitionGroup on
+// every pointermove, and that group's move animation then pulls the card back to its cell.
+function setDragTransform(dx: number, dy: number): void {
+  if (!captureEl) {
+    return
+  }
+  // Inline, not a class: the class arrives a frame later, and until then the card's own
+  // transform transition eases the first move and the card jumps ahead of the finger.
+  captureEl.style.transition = 'none'
+  captureEl.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(1.04)`
 }
 
-function handlePointerDragEnd(event: PointerEvent): void {
-  stopPointerDragTracking()
-
-  const targetId = findSpreadAt(event.clientX, event.clientY)
-  if (targetId) {
-    commitDrag(targetId)
-  } else {
-    onDragEnd()
+function clearHoldTimer(): void {
+  if (holdTimer != null) {
+    clearTimeout(holdTimer)
+    holdTimer = null
   }
 }
 
-function handlePointerDragCancel(): void {
-  stopPointerDragTracking()
-  onDragEnd()
+function preventTouchScroll(event: TouchEvent): void {
+  if (pointerDragArmed) {
+    event.preventDefault()
+  }
 }
 
-function handleDragHandlePointerDown(event: PointerEvent, spreadId: string): void {
-  if (event.pointerType === 'mouse') {
+// The card's own cell scrolls away with the list, so the translate has to add that distance
+// back — otherwise the spread slides off the finger as soon as the list moves.
+function applyDragTransform(): void {
+  const scrolled = (scrollEl?.scrollTop ?? scrollOriginTop) - scrollOriginTop
+  setDragTransform(lastPointer.x - pointerOrigin.x, lastPointer.y - pointerOrigin.y + scrolled)
+}
+
+function autoScrollStep(): void {
+  scrollFrame = 0
+  if (!pointerDragArmed || !scrollEl) {
+    return
+  }
+
+  const rect = scrollEl.getBoundingClientRect()
+  const y = lastPointer.y
+  let delta = 0
+  if (y > rect.bottom - SCROLL_EDGE_PX) {
+    const depth = Math.min(1, (y - (rect.bottom - SCROLL_EDGE_PX)) / SCROLL_EDGE_PX)
+    delta = Math.ceil(depth * SCROLL_MAX_STEP_PX)
+  } else if (y < rect.top + SCROLL_EDGE_PX) {
+    const depth = Math.min(1, (rect.top + SCROLL_EDGE_PX - y) / SCROLL_EDGE_PX)
+    delta = -Math.ceil(depth * SCROLL_MAX_STEP_PX)
+  }
+
+  if (delta !== 0) {
+    const max = scrollEl.scrollHeight - scrollEl.clientHeight
+    const next = Math.min(max, Math.max(0, scrollEl.scrollTop + delta))
+    if (next !== scrollEl.scrollTop) {
+      scrollEl.scrollTop = next
+      applyDragTransform()
+    }
+  }
+
+  if (pointerDragArmed) {
+    scrollFrame = requestAnimationFrame(autoScrollStep)
+  }
+}
+
+function stopPointerDragTracking(): void {
+  clearHoldTimer()
+  if (scrollFrame) {
+    cancelAnimationFrame(scrollFrame)
+    scrollFrame = 0
+  }
+  window.removeEventListener('pointermove', handlePointerDragMove)
+  window.removeEventListener('pointerup', handlePointerDragEnd)
+  window.removeEventListener('pointercancel', handlePointerDragCancel)
+  window.removeEventListener('touchmove', preventTouchScroll)
+  if (captureEl) {
+    captureEl.style.transition = ''
+    captureEl.style.transform = ''
+  }
+  activePointerId = null
+  captureEl = null
+  scrollEl = null
+  pointerDragArmed = false
+}
+
+function armPointerDrag(spreadId: string): void {
+  if (pointerDragArmed || activePointerId == null) {
+    return
+  }
+  pointerDragArmed = true
+  scrollEl = captureEl?.closest('.v-card-text') as HTMLElement | null
+  scrollOriginTop = scrollEl?.scrollTop ?? 0
+  lastPointer = { ...pointerOrigin }
+  try {
+    captureEl?.setPointerCapture(activePointerId)
+  } catch {
+    // The pointer can already be gone if the finger lifted in the same turn.
+  }
+  onDragStart(spreadId)
+  scrollFrame = requestAnimationFrame(autoScrollStep)
+}
+
+function handlePointerDragMove(event: PointerEvent): void {
+  if (event.pointerId !== activePointerId) {
+    return
+  }
+
+  const dx = event.clientX - pointerOrigin.x
+  const dy = event.clientY - pointerOrigin.y
+
+  if (!pointerDragArmed) {
+    if (dx * dx + dy * dy > DRAG_CANCEL_DISTANCE * DRAG_CANCEL_DISTANCE) {
+      stopPointerDragTracking()
+    }
     return
   }
 
   event.preventDefault()
-  onDragStart(spreadId)
+  lastPointer = { x: event.clientX, y: event.clientY }
+  applyDragTransform()
+  if (!scrollFrame) {
+    scrollFrame = requestAnimationFrame(autoScrollStep)
+  }
+}
 
+function handlePointerDragEnd(event: PointerEvent): void {
+  if (event.pointerId !== activePointerId) {
+    return
+  }
+
+  const armed = pointerDragArmed
+  const sourceId = armed ? captureEl?.dataset.spreadId ?? null : null
+  let beforeId: string | null = null
+  if (armed && captureEl && sourceId) {
+    const anchor = captureEl.getBoundingClientRect()
+    beforeId = spreadIdBeforePoint(sourceId, anchor.left + anchor.width / 2, anchor.top + anchor.height / 2)
+  }
+  stopPointerDragTracking()
+
+  if (armed && sourceId) {
+    commitInsert(sourceId, beforeId)
+  }
+}
+
+function handlePointerDragCancel(event: PointerEvent): void {
+  if (event.pointerId !== activePointerId) {
+    return
+  }
+  stopPointerDragTracking()
+  onDragEnd()
+}
+
+function handleItemPointerDown(event: PointerEvent, spreadId: string): void {
+  if (event.pointerType === 'mouse') {
+    return
+  }
+  if ((event.target as HTMLElement | null)?.closest('button')) {
+    return
+  }
+
+  activePointerId = event.pointerId
+  captureEl = event.currentTarget as HTMLElement
+  pointerOrigin = { x: event.clientX, y: event.clientY }
+  pointerDragArmed = false
+
+  const fromHandle = Boolean((event.target as HTMLElement | null)?.closest('.spread-reorder__drag'))
+  if (fromHandle) {
+    event.preventDefault()
+    armPointerDrag(spreadId)
+  } else {
+    holdTimer = setTimeout(() => armPointerDrag(spreadId), DRAG_HOLD_MS)
+  }
+
+  window.addEventListener('pointermove', handlePointerDragMove)
   window.addEventListener('pointerup', handlePointerDragEnd)
   window.addEventListener('pointercancel', handlePointerDragCancel)
+  window.addEventListener('touchmove', preventTouchScroll, { passive: false })
 }
 
 onBeforeUnmount(() => {
@@ -508,6 +744,8 @@ async function handleAddSpread(): Promise<void> {
   // keeps its own aspect ratio — reads clearly at a glance instead of as a tiny chip.
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: $spacing-3;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .spread-reorder__item {
@@ -518,6 +756,9 @@ async function handleAddSpread(): Promise<void> {
   // the padding instead. overflow: hidden is what clips the thumb's square bottom corners to the
   // card's own rounding.
   overflow: hidden;
+  // Vertical pans still scroll the dialog. A touch drag (see handleItemPointerDown) takes over
+  // only after a short hold, or immediately from the grip, and then blocks that scroll itself.
+  touch-action: pan-y;
   background: $bg-elevated;
   border: 1px solid $border-light;
   border-radius: $radius-xl;
@@ -528,10 +769,14 @@ async function handleAddSpread(): Promise<void> {
   // colored ring on the drop target. No drop-target highlight at all now: the grid's own FLIP
   // reflow (.spread-move, below) is what shows where it'll land, by sliding the other cards.
   &--dragging {
-    transform: scale(1.04) rotate(-1deg);
     box-shadow: $shadow-lg;
     opacity: 0.9;
     cursor: grabbing;
+    // Beats `.spread-move`, which would otherwise ease this card back toward its grid cell on
+    // every finger move. pointer-events stays off so the drop hits the card underneath.
+    transition: none !important;
+    pointer-events: none;
+    z-index: 5;
   }
 
   &--fixed {
@@ -629,7 +874,7 @@ async function handleAddSpread(): Promise<void> {
   position: absolute;
   top: 6px;
   left: 6px;
-  z-index: 1;
+  z-index: 3;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -638,9 +883,14 @@ async function handleAddSpread(): Promise<void> {
   border-radius: $radius-sm;
   background: rgba(251, 223, 233, 0.92);
   cursor: grab;
-  // Without this, a touch drag starting here is first interpreted as an attempt to scroll the
-  // dialog, fighting the pointer-based reorder drag (see handleDragHandlePointerDown).
+  // A touch that starts here is a drag immediately (see handleItemPointerDown), so the dialog
+  // must not treat it as a scroll.
   touch-action: none;
+
+  @include mobile-only {
+    width: 36px;
+    height: 36px;
+  }
 }
 
 .spread-reorder__label {
@@ -652,6 +902,15 @@ async function handleAddSpread(): Promise<void> {
   text-align: left;
   white-space: nowrap;
   text-overflow: ellipsis;
+
+  // A phone card is one column and still narrower than a long template name, so the name wraps
+  // instead of ending in an ellipsis.
+  @include mobile-only {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    overflow: hidden;
+    text-overflow: unset;
+  }
 }
 
 // Labeled text+icon buttons under each spread, in place of the bare icon overlays this originally
@@ -734,6 +993,12 @@ async function handleAddSpread(): Promise<void> {
 :deep(.v-card-subtitle) {
   margin-top: -2px;
   margin-bottom: $spacing-3;
+  // Vuetify keeps a card subtitle on one line and ellipsizes the rest. On a phone that cuts off
+  // "Перетащите разворот…" and the trash dialog's longer note before they finish.
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  line-height: 1.4;
 }
 
 // Caps the dialog so `scrollable` (v-dialog) has an actual boundary to work within — without a
@@ -742,6 +1007,13 @@ async function handleAddSpread(): Promise<void> {
 // leave a tall card mostly empty.
 .spread-reorder__card {
   max-height: 85vh;
+  overflow-x: hidden;
+
+  // The list scrolls vertically. A dragged card (scaled, shifted toward the finger) and a long
+  // template name must not open a second, horizontal scrollbar.
+  :deep(.v-card-text) {
+    overflow-x: hidden;
+  }
 }
 
 .spread-reorder__actions {
