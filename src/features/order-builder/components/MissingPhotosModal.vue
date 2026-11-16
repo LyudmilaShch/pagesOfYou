@@ -1,11 +1,13 @@
 <template>
   <BaseModal :model-value="open" labelledby="missing-photos-title" wide @update:model-value="handleOverlayUpdate">
-    <div class="missing-photos">
+    <div ref="rootRef" class="missing-photos">
       <div class="missing-photos__book-column" aria-label="Развороты журнала">
         <QuestionnaireBook
           :pages="store.order?.journalPages ?? []"
           :canvas-data-by-page-id="canvasDataByPageId"
           :focus-page-id="focusPageId"
+          :focus-element-id="focusElementId"
+          :focus-nonce="focusNonce"
           :pulsing-page-ids="pulsingPageIds"
           :fill-by-page-id="EMPTY_FILL_MAP"
           :pending-element-ids="EMPTY_ELEMENT_IDS"
@@ -165,7 +167,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
 import BaseModal from '@/components/ui/BaseModal.vue'
 import { getImageDimensions } from '@/shared/utils/image-dimensions.util'
@@ -192,6 +194,7 @@ import PhotoTouchDragGhost from './PhotoTouchDragGhost.vue'
 import PhotoUploadFormatsHint from './PhotoUploadFormatsHint.vue'
 import PhotoUploadErrorList from './PhotoUploadErrorList.vue'
 import PhotoGalleryPickerDialog from './PhotoGalleryPickerDialog.vue'
+import { preferredEmptySlotElementId } from '../utils/spread-half.util'
 
 // Same reasoning as PhotoUploadPage.vue's own stable-empty-instances comment — QuestionnaireBook's
 // fill-badge/pending-AI props don't apply here, but they aren't optional props.
@@ -256,12 +259,31 @@ async function handlePickerSelect(url: string): Promise<void> {
   }
 }
 
+const rootRef = ref<HTMLElement | null>(null)
 const focusPageId = ref<string | null>(null)
+const focusElementId = ref<string | null>(null)
+const focusNonce = ref(0)
 const pulsingPageIds = ref<Set<string>>(new Set())
 let pulseTimer: ReturnType<typeof setTimeout> | null = null
 
-function jumpTo(journalPageId: string): void {
+function firstEmptyElementId(journalPageId: string): string | null {
+  const slotIds =
+    missingPhotoPages.value.find((page) => page.journalPageId === journalPageId)?.slots.map((slot) => slot.elementId) ??
+    []
+  return preferredEmptySlotElementId(canvasDataByPageId.value.get(journalPageId), slotIds)
+}
+
+function revealJournal(): void {
+  nextTick(() => {
+    rootRef.value?.scrollTo({ top: 0, behavior: 'smooth' })
+  })
+}
+
+function jumpTo(journalPageId: string, elementId?: string | null): void {
+  focusElementId.value = elementId ?? firstEmptyElementId(journalPageId)
   focusPageId.value = journalPageId
+  focusNonce.value += 1
+  revealJournal()
   if (pulseTimer) {
     clearTimeout(pulseTimer)
   }
@@ -321,7 +343,7 @@ const usageModalEntries = computed<PhotoUsage[]>(
 function handleUsageClick(url: string): void {
   const usage = usageByUrl.value.get(url) ?? []
   if (usage.length === 1) {
-    jumpTo(usage[0].journalPageId)
+    jumpTo(usage[0].journalPageId, usage[0].elementId)
     return
   }
   if (usage.length > 1) {
@@ -330,7 +352,7 @@ function handleUsageClick(url: string): void {
 }
 
 function goToUsage(entry: PhotoUsage): void {
-  jumpTo(entry.journalPageId)
+  jumpTo(entry.journalPageId, entry.elementId)
   usageModalPhotoUrl.value = null
 }
 
@@ -460,6 +482,10 @@ onBeforeUnmount(() => {
   @include mobile-only {
     flex-direction: column;
     gap: $spacing-4;
+    // One scroll for the journal and the photo list. The panel otherwise grows past the
+    // screen and centers, which hides the journal above the photos once the gallery is long.
+    max-height: calc(100dvh - #{$spacing-4} * 2 - #{$spacing-6} - #{$spacing-4});
+    overflow-y: auto;
   }
 }
 
@@ -483,6 +509,10 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   max-height: 70vh;
+
+  @include mobile-only {
+    max-height: none;
+  }
 }
 
 .missing-photos__scroll {
@@ -490,6 +520,10 @@ onBeforeUnmount(() => {
   min-height: 0;
   overflow-y: auto;
   padding-right: 2px;
+
+  @include mobile-only {
+    overflow: visible;
+  }
 }
 
 .missing-photos__footer {

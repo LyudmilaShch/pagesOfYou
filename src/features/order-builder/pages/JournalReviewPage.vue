@@ -76,14 +76,6 @@
           </p>
         </header>
 
-        <AiLimitNotice
-          v-if="store.isAiFillCapReached"
-          :is-guest="isGuest"
-          :unwritten-count="aiMarkers.unwrittenCount"
-          class="journal-review-page__ai-limit"
-          @login="loginForMoreAi"
-        />
-
         <div class="journal-review-page__book-wrap" aria-label="Развороты журнала">
           <QuestionnaireBook
             :pages="store.order?.journalPages ?? []"
@@ -93,13 +85,14 @@
             :fill-by-page-id="EMPTY_FILL_MAP"
             :pending-element-ids="EMPTY_ELEMENT_IDS"
             :drop-enabled="false"
-            :fit-height="isDesktopViewport"
+            fit-height
             :zoom-enabled="true"
             crop-enabled
             pick-enabled
             ai-text-edit-enabled
             :text-issue-messages-by-page-id="textIssueMessagesByPageId"
             :ai-usage="store.aiUsage"
+            :show-view-toggle="false"
             @crop-photo="openCropEditor"
             @pick-photo="openPhotoPicker"
             @edit-ai-text="openAiTextEditor"
@@ -253,7 +246,6 @@ import MissingPhotosModal from '../components/MissingPhotosModal.vue'
 import PhotoCropModal from '../components/PhotoCropModal.vue'
 import PhotoGalleryPickerDialog from '../components/PhotoGalleryPickerDialog.vue'
 import AiTextEditModal from '../components/AiTextEditModal.vue'
-import AiLimitNotice from '../components/AiLimitNotice.vue'
 import { answerMapOf, buildAiTextMarkers, mergeTextIssueMessages } from '../utils/draft-ai-texts.util'
 
 // Stable empty instances — QuestionnaireBook's fill-badge/pulse/pending-AI props don't apply on
@@ -365,17 +357,6 @@ const aiMarkers = computed(() =>
 const textIssueMessagesByPageId = computed(() =>
   mergeTextIssueMessages(aiTextProblemsByPageId.value, aiMarkers.value.messagesByPageId),
 )
-
-/** A guest at the cap signs in for the customer allowance — draft generation is counted per
- * account as soon as the request carries a token, so a fresh count is all it takes; whatever is
- * still missing then gets written right away. */
-async function loginForMoreAi(): Promise<void> {
-  if (await requireAuth('Войдите, чтобы получить больше ИИ-генераций', true)) {
-    await store.refreshAiUsage()
-    await store.generateAiTextsForAnswers([])
-    await store.generateJournalAiTexts()
-  }
-}
 
 function pluralBlocks(n: number): string {
   const mod10 = n % 10
@@ -768,31 +749,15 @@ function continueDespiteOverflow(): void {
   void finish()
 }
 
-// Same threshold as the `tablet-up` SCSS mixin (`$breakpoint-tablet-min: 768px`) — the book only
-// gets height-bound (see QuestionnaireBook.vue's `fitHeight` prop) above it, so the page fits one
-// screen with no scroll on desktop; below it, the book keeps its normal width-driven sizing and
-// the page scrolls like every other step, since there's no room left to shrink it into.
-const isDesktopViewport = ref(true)
-let desktopMediaQuery: MediaQueryList | null = null
-
-function updateIsDesktopViewport(): void {
-  isDesktopViewport.value = desktopMediaQuery?.matches ?? true
-}
-
 onMounted(() => {
   void load()
   void store.refreshAiUsage()
-
-  desktopMediaQuery = window.matchMedia('(min-width: 768px)')
-  updateIsDesktopViewport()
-  desktopMediaQuery.addEventListener('change', updateIsDesktopViewport)
 
   document.fonts.addEventListener('loadingdone', bumpFontLoadEpoch)
   void document.fonts.ready.then(bumpFontLoadEpoch)
 })
 
 onBeforeUnmount(() => {
-  desktopMediaQuery?.removeEventListener('change', updateIsDesktopViewport)
   document.fonts.removeEventListener('loadingdone', bumpFontLoadEpoch)
 })
 </script>
@@ -810,17 +775,22 @@ onBeforeUnmount(() => {
 }
 
 .journal-review-page {
-  min-height: 100vh;
   display: flex;
   flex-direction: column;
   background-color: $bg-elevated;
+  // One viewport, book included: the journal is height-bound (`fit-height` on QuestionnaireBook)
+  // and on mobile page mode enlarges into whatever vertical room is left under the title. A
+  // scrolling page would leave that room unused and the spread at its small width-driven size.
+  // 100vh first, then 100dvh — the latter tracks the visible screen when the mobile URL bar shows.
+  min-height: 0;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
 
-  // Locked to exactly one viewport on desktop (no scroll — see QuestionnaireBook.vue's
-  // `fitHeight`, which the book below shrinks into) — mobile keeps the natural min-height/scroll
-  // flow above, since there's no spare room left there to shrink the book into instead.
-  @include tablet-up {
-    height: 100vh;
-    overflow: hidden;
+  // Same light grey as the desktop page. The shared rule above is white, and on a phone that
+  // white fills the whole screen; desktop reads as $bg-primary (the app surface behind the book).
+  @include mobile-only {
+    background-color: $bg-primary;
   }
 }
 
@@ -997,16 +967,13 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
+  overflow: hidden;
   padding-block: $spacing-8;
 
   @include mobile-only {
-    padding-block: $spacing-6;
-  }
-
-  @include tablet-up {
-    align-items: stretch;
-    overflow: hidden;
+    padding-block: $spacing-6 $spacing-3;
   }
 }
 
@@ -1016,23 +983,27 @@ onBeforeUnmount(() => {
   margin-inline: auto;
   width: 100%;
 
-  @include tablet-up {
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+
+  @include mobile-only {
+    padding-inline: $spacing-2;
   }
 }
 
 .journal-review-page__intro {
+  flex-shrink: 0;
   margin-bottom: $spacing-12;
   text-align: center;
 
   @include mobile-only {
-    margin-bottom: $spacing-8;
+    margin-bottom: $spacing-2;
   }
 
   @include tablet-up {
-    flex-shrink: 0;
     margin-bottom: $spacing-6;
   }
 }
@@ -1071,19 +1042,11 @@ onBeforeUnmount(() => {
   }
 }
 
-.journal-review-page__ai-limit {
-  max-width: 720px;
-  margin: 0 auto $spacing-6;
-}
-
 .journal-review-page__book-wrap {
   width: 100%;
-
-  @include tablet-up {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-  }
+  flex: 1;
+  min-height: 0;
+  display: flex;
 }
 
 .journal-review-page__actions {
@@ -1092,6 +1055,10 @@ onBeforeUnmount(() => {
   backdrop-filter: blur(12px);
   border-top: 1px solid $border-light;
   padding-block: $spacing-4;
+
+  @include mobile-only {
+    background: $bg-primary;
+  }
 }
 
 .journal-review-page__actions-inner {

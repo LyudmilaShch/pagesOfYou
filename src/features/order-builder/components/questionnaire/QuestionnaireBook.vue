@@ -19,7 +19,7 @@
         class="questionnaire-book__page-mode-layer"
         :class="{
           'questionnaire-book__page-mode-layer--enabled': pageModeEnabled,
-          'questionnaire-book__page-mode-layer--gesture': swipeGestureActive,
+          'questionnaire-book__page-mode-layer--gesture': swipeGestureActive || suppressPageModeTransition,
           'questionnaire-book__page-mode-layer--clipped': pageModeCentered,
         }"
         :style="pageModeLayerStyle"
@@ -41,7 +41,7 @@
           :class="{
             'questionnaire-book__zoom-layer--enabled': zoomEnabled,
             'questionnaire-book__zoom-layer--gesture': zoomGestureActive,
-            'questionnaire-book__zoom-layer--page-mode-centered': pageModeCentered,
+            'questionnaire-book__zoom-layer--page-mode-centered': pageModeCentered || spreadViewForced,
           }"
           :style="zoomEnabled ? zoomLayerStyle : undefined"
           @pointerdown="zoomEnabled && handleZoomPointerDown($event)"
@@ -182,6 +182,16 @@
       >
         <v-icon size="18">mdi-chevron-right</v-icon>
       </button>
+
+      <button
+        v-if="isMobileViewport"
+        type="button"
+        class="questionnaire-book__view-toggle"
+        :aria-label="spreadViewForced ? 'Показать постранично' : 'Показать разворотом'"
+        @click="toggleViewFormat"
+      >
+        <v-icon size="16">{{ spreadViewForced ? 'mdi-book-open-page-variant-outline' : 'mdi-book-open-outline' }}</v-icon>
+      </button>
     </div>
 
     <div v-if="showStructureControls" class="questionnaire-book__toolbar">
@@ -198,7 +208,7 @@
       <!-- Mobile only — lets a visitor opt out of page mode's auto-enlarged single-page view back
            into the desktop-style "whole spread at once" layout, and back. -->
       <button
-        v-if="isMobileViewport"
+        v-if="isMobileViewport && showViewToggle"
         type="button"
         class="questionnaire-book__view-toggle"
         :aria-label="spreadViewForced ? 'Показать постранично' : 'Показать разворотом'"
@@ -231,7 +241,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 
 import JournalSpreadThumbnail from '@/modules/editor/components/JournalSpreadThumbnail.vue'
 import { COVER_PICK_TOOLTIP } from '../../utils/photo-upload-copy.util'
@@ -245,6 +255,7 @@ import {
   A4_SPREAD_PAGE_WIDTH,
 } from '@/modules/editor/constants/page.constants'
 import { buildTocEntries, getJournalPageDisplayName } from '../../utils/journal-structure.util'
+import { spreadHalfForElement } from '../../utils/spread-half.util'
 import type { JournalPage } from '../../types/order.types'
 import type { SetJournalPageTemplatePayload } from '../../api/orders.api'
 import { useOrderBuilderStore } from '../../stores/order-builder.store'
@@ -266,6 +277,13 @@ const props = defineProps<{
    * to a question bound to a different spread. Manual flipping afterwards is unaffected until this
    * changes again. */
   focusPageId: string | null
+  /** Element on `focusPageId` the jump should land on. On mobile page mode a spread otherwise
+   * always opens on its left half; when this element sits on the right half, that half is shown. */
+  focusElementId?: string | null
+  /** Bumped by the caller on every explicit jump, including a repeat click on the page already
+   * open — `focusPageId` alone does not change in that case, so the half would stay wherever the
+   * visitor had swiped. */
+  focusNonce?: number
   pulsingPageIds: Set<string>
   fillByPageId: Map<string, { answered: number; total: number }>
   /** ai-text-placeholder element ids currently mid-generation — forwarded to every
@@ -316,9 +334,13 @@ const props = defineProps<{
    * Defaults off — QuestionnairePage.vue's book is a small side reference, not something a visitor
    * needs to inspect closely. See `handleZoomPointerDown` for the gesture implementation. */
   zoomEnabled?: boolean
+  /** Mobile page/spread switch in the toolbar. JournalReviewPage draws its own, above the book,
+   * because this toolbar one is clipped once the book is locked to the viewport height. */
+  showViewToggle?: boolean
 }>()
 
 const showStructureControls = computed(() => props.showStructureControls ?? true)
+const showViewToggle = computed(() => props.showViewToggle ?? true)
 
 const emit = defineEmits<{
   /** A photo was dropped onto a photo-placeholder on the given page — re-emitted from
@@ -381,15 +403,31 @@ function sidesFor(page: JournalPage | undefined): { left: string | null; right: 
 // half of the CURRENT spread is shown full-frame instead of both halves side by side. Only
 // meaningful when both `leftPageId`/`rightPageId` are populated (a real spread/TOC) — declared
 // here (not down with the rest of the page-mode logic) since the `focusPageId` watch below needs
-// to set it immediately.
+// to set it immediately. A spread jump lands on the left half unless `focusElementId` sits on
+// the right one (`spreadHalfForElement`).
 const isMobileViewport = useMobileViewport()
 // Manual override — the toolbar toggle button (`.questionnaire-book__view-toggle`) below flips
 // this, letting a mobile visitor opt back into the desktop-style "whole spread at once" layout
 // (and back) instead of always getting page mode just because the viewport is narrow.
 const spreadViewForced = ref(false)
 const pageModeEnabled = computed(() => isMobileViewport.value && !spreadViewForced.value)
+// Switching page/spread view must snap. The layer's transform otherwise eases from the panned,
+// enlarged page to the full spread (or back), so the book slides off and a click mid-way looks
+// like it did nothing.
+const suppressPageModeTransition = ref(false)
 function toggleViewFormat(): void {
+  suppressPageModeTransition.value = true
   spreadViewForced.value = !spreadViewForced.value
+  if (spreadViewForced.value) {
+    pageModeX.value = 0
+  } else {
+    syncPageModePan()
+  }
+  void nextTick(() => {
+    requestAnimationFrame(() => {
+      suppressPageModeTransition.value = false
+    })
+  })
 }
 watch(spreadViewForced, (forced) => emit('update:spread-view', forced), { immediate: true })
 const activeHalfSide = ref<'left' | 'right'>('left')
@@ -409,15 +447,30 @@ const flapTargetPageId = ref<string | null>(null)
 let timers: ReturnType<typeof setTimeout>[] = []
 
 watch(
-  () => props.focusPageId,
-  (pageId) => {
-    if (pageId && pageId !== viewingPageId.value) {
+  () => [props.focusPageId, props.focusElementId ?? null, props.focusNonce ?? 0] as const,
+  ([pageId, elementId]) => {
+    if (!pageId) {
+      return
+    }
+    const page = props.pages.find((item) => item.id === pageId)
+    const pageChanged = pageId !== viewingPageId.value
+    if (pageChanged) {
       viewingPageId.value = pageId
-      const sides = sidesFor(props.pages.find((p) => p.id === pageId))
+      const sides = sidesFor(page)
       leftPageId.value = sides.left
       rightPageId.value = sides.right
+    }
+    const elementHalf = spreadHalfForElement(props.canvasDataByPageId.get(pageId), elementId)
+    if (elementHalf) {
+      activeHalfSide.value = elementHalf
+    } else if (pageChanged) {
+      const sides = sidesFor(page)
       activeHalfSide.value = sides.left ? 'left' : 'right'
     }
+    // A jump from the questionnaire mounts this book and moves it in the same turn. The pan
+    // watch below can miss that: the half often stays 'left', and the layer's width is still 0,
+    // so the spread stays scaled around its spine. Re-measure once it has a size.
+    void nextTick(() => syncPageModePan())
   },
   { immediate: true },
 )
@@ -1368,11 +1421,18 @@ function handlePageSwipePointerCancel(event: PointerEvent): void {
 // transform — just centered/pan-less, see `pageModeAnchorX`). Runs immediately too, but
 // `pageModeLayerRef` isn't mounted yet at that point (frameWidth reads 0) — `onMounted` below
 // recomputes it once the real size is available.
-watch([activeHalfSide, pageModeVisualActive], () => {
-  if (!swipeGestureActive.value) {
-    pageModeX.value = pageModeAnchorX(activeHalfSide.value)
+function syncPageModePan(): void {
+  if (swipeGestureActive.value || turning.value) {
+    return
   }
+  pageModeX.value = pageModeAnchorX(activeHalfSide.value)
+}
+
+watch([activeHalfSide, pageModeVisualActive, pageModeBothSidesActive], () => {
+  syncPageModePan()
 }, { immediate: true })
+
+let pageModeResizeObserver: ResizeObserver | null = null
 
 // Safari (iOS/macOS) recognizes a two-finger pinch through its OWN proprietary `gesturestart`/
 // `gesturechange`/`gestureend` events — a WebKit-only mechanism that predates (and is entirely
@@ -1395,13 +1455,24 @@ onMounted(() => {
   el?.addEventListener('gesturestart', preventNativeGestureZoom)
   el?.addEventListener('gesturechange', preventNativeGestureZoom)
 
-  // The `watch([activeHalfSide, pageModeVisualActive], ...)` above already ran once (immediate)
-  // before `pageModeLayerRef` existed, so its frameWidth read as 0 — now that it's actually
-  // mounted, recompute for real.
-  pageModeX.value = pageModeAnchorX(activeHalfSide.value)
+  // The `watch` above already ran once (immediate) before `pageModeLayerRef` existed, so its
+  // frameWidth read as 0 — now that it's actually mounted, recompute for real. Keep watching
+  // the size: a jump that lands in the same turn (anketa → this page) measures 0 as well, and
+  // nothing else changes `activeHalfSide` when the target half is already the left one.
+  syncPageModePan()
+  const layer = pageModeLayerRef.value
+  if (layer) {
+    pageModeResizeObserver = new ResizeObserver(() => syncPageModePan())
+    pageModeResizeObserver.observe(layer)
+    if (frameRef.value) {
+      pageModeResizeObserver.observe(frameRef.value)
+    }
+  }
 })
 
 onBeforeUnmount(() => {
+  pageModeResizeObserver?.disconnect()
+  pageModeResizeObserver = null
   timers.forEach(clearTimeout)
   timers = []
   swipePointerId = null
@@ -1411,9 +1482,7 @@ onBeforeUnmount(() => {
   el?.removeEventListener('gesturechange', preventNativeGestureZoom)
 })
 
-// Lets a `hide-nav` caller (see that prop's own doc comment) drive the same page-turn animation
-// from its own external prev/next buttons instead of the built-in nav row.
-defineExpose({ flip })
+defineExpose({ flip, toggleViewFormat })
 </script>
 
 <style scoped lang="scss">
@@ -1440,12 +1509,11 @@ defineExpose({ flip })
 .questionnaire-book--fit-height .questionnaire-book__perspective {
   flex: 1;
   min-height: 0;
-  // Definite (100%), not auto — this box's own width/height need to be fully resolved from ITS
-  // ancestors (the flex chain above), independent of the frame inside it, both because a percentage
-  // needs a definite containing-block size to resolve against at all, and because `container-type:
-  // size` below requires a size that doesn't itself depend on this container's contents.
+  // Definite size from the flex allocation, not `height: 100%`. A percentage height is the whole
+  // book, so the nav row and the toolbar (the mobile spread/page toggle lives on it) would be
+  // pushed past the bottom of a height-bound page and clipped. `container-type: size` below still
+  // resolves against this box's used flex height.
   width: 100%;
-  height: 100%;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -1811,6 +1879,8 @@ defineExpose({ flip })
 }
 
 .questionnaire-book__nav {
+  position: relative;
+  z-index: 2;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -1846,10 +1916,19 @@ defineExpose({ flip })
   min-width: 160px;
   text-align: center;
   white-space: nowrap;
+
+  @include mobile-only {
+    min-width: 0;
+  }
 }
 
 .questionnaire-book__toolbar {
+  // Above the page-mode layer. That layer scales the spread and paints outside its own box, so
+  // without a stacking context here the enlarged page covers the spread/page toggle.
+  position: relative;
+  z-index: 4;
   display: flex;
+  flex-shrink: 0;
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;

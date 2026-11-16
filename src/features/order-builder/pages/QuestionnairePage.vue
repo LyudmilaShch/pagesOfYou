@@ -127,7 +127,6 @@
             <AiLimitNotice
               v-if="store.isAiFillCapReached"
               :is-guest="isGuest"
-              :unwritten-count="aiMarkers.unwrittenCount"
               class="questionnaire-page__ai-limit"
               @login="loginForMoreAi"
             />
@@ -301,7 +300,7 @@
           v-if="missingPhotoCount > 0"
           type="button"
           class="questionnaire-page__missing-photos-pill"
-          @click="missingPhotosModalOpen = true"
+          @click="openMissingPhotosFromBadge"
         >
           <v-icon size="16">mdi-alert-outline</v-icon>
           {{ missingPhotoCount }} фото не на месте
@@ -361,6 +360,15 @@
       @continue="continueAfterPhotosFilled"
     />
 
+    <IncompletePhotosModal
+      :open="emptySlotsModalOpen"
+      :pages="missingPhotoPages"
+      variant="upload"
+      @close="emptySlotsModalOpen = false"
+      @select="goToPhotoUpload"
+      @upload="goToPhotoUpload()"
+    />
+
     <AuthPromptModal
       :open="authModal.prompt"
       :message="authModal.message"
@@ -386,6 +394,7 @@ import {
   toListEntries,
   type ListAnswerEntry,
 } from '../utils/list-answer.util'
+import { listAnswerRowCount } from '../utils/sync-answers-to-placeholders.util'
 import type { AiTextPlaceholder, LengthConstraint } from '@/modules/editor/models'
 import { flattenTree } from '@/modules/editor/utils/element-tree.util'
 import { catalogApi } from '../api/catalog.api'
@@ -408,6 +417,7 @@ import QuestionnaireBook from '../components/questionnaire/QuestionnaireBook.vue
 import AiTextEditModal from '../components/AiTextEditModal.vue'
 import { buildAiTextFitContext } from '../utils/ai-text-overflow.util'
 import type { AiTextFitContext } from '@/modules/editor/utils/ai-text-capacity.util'
+import IncompletePhotosModal from '../components/IncompletePhotosModal.vue'
 import MissingPhotosModal from '../components/MissingPhotosModal.vue'
 import {
   collectPhotoSlotPreview,
@@ -925,9 +935,8 @@ const allRequiredAnswered = computed(() =>
 // above): "Продолжить" still finishes the questionnaire either way, `finish()` itself is what
 // opens MissingPhotosModal.vue if this is still non-zero at that point. Reuses the exact same
 // check as that gate so the two never disagree about what counts as "missing".
-const missingPhotoCount = computed(() =>
-  countEmptyPhotoSlots(collectPhotoSlotPreview(store.order?.journalPages ?? [])),
-)
+const missingPhotoPages = computed(() => collectPhotoSlotPreview(store.order?.journalPages ?? []))
+const missingPhotoCount = computed(() => countEmptyPhotoSlots(missingPhotoPages.value))
 
 const fillByPageId = computed(() => {
   const map = new Map<string, { answered: number; total: number }>()
@@ -963,6 +972,19 @@ const overlayAffectedPageIds = computed<Set<string>>(() => {
   return set
 })
 
+/** Entries already claimed by earlier pages, so a list that continues onto this page doesn't
+ * briefly show the first items here and then lose them once the answer is saved. */
+function listEntryOffsetBefore(pageId: string, questionKey: string): number {
+  let offset = 0
+  for (const page of store.order?.journalPages ?? []) {
+    if (page.id === pageId) {
+      break
+    }
+    offset += listAnswerRowCount(listAnswerSlots(normalizeCanvasData(page.pageSnapshot).elements, questionKey))
+  }
+  return offset
+}
+
 function pendingOverridesForPage(pageId: string): Map<string, LocalPlaceholderDraft> {
   const overrides = new Map<string, LocalPlaceholderDraft>()
   const page = store.order?.journalPages.find((p) => p.id === pageId)
@@ -974,6 +996,7 @@ function pendingOverridesForPage(pageId: string): Map<string, LocalPlaceholderDr
   // A LIST answer fills its rows one entry each, in the list's reading order — title into the
   // 'item' text, description into the 'detail' text — as the backend sync does.
   const listSlotsByKey = new Map<string, ReturnType<typeof listAnswerSlots>>()
+  const listOffsetByKey = new Map<string, number>()
   for (const leaf of flattenTree(elements)) {
     const leafKey = 'questionKey' in leaf ? leaf.questionKey : undefined
     const draft = leafKey ? pendingOverlayByKey[leafKey] : undefined
@@ -985,7 +1008,12 @@ function pendingOverridesForPage(pageId: string): Map<string, LocalPlaceholderDr
         listSlotsByKey.set(leafKey, listAnswerSlots(elements, leafKey))
       }
       const slot = listSlotsByKey.get(leafKey)!.get(leaf.id)
-      const entry = slot ? toListEntries(draft.jsonValue.items)[slot.entry] : undefined
+      if (!listOffsetByKey.has(leafKey)) {
+        listOffsetByKey.set(leafKey, listEntryOffsetBefore(pageId, leafKey))
+      }
+      const entry = slot
+        ? toListEntries(draft.jsonValue.items)[listOffsetByKey.get(leafKey)! + slot.entry]
+        : undefined
       overrides.set(leaf.id, { textValue: (slot && entry?.[slot.field]?.trim()) || '' })
       continue
     }
@@ -1168,6 +1196,32 @@ const isFinishing = ref(false)
 const finishingMessage = ref<string | null>(null)
 const submitErrorMessage = ref<string | null>(null)
 const missingPhotosModalOpen = ref(false)
+const emptySlotsModalOpen = ref(false)
+
+function openMissingPhotosFromBadge(): void {
+  if (isMobileViewport.value) {
+    emptySlotsModalOpen.value = true
+    return
+  }
+  missingPhotosModalOpen.value = true
+}
+
+function firstMissingSpreadId(): string | undefined {
+  const journalPages = store.order?.journalPages ?? []
+  return missingPhotoPages.value.find((missing) =>
+    journalPages.some((page) => page.id === missing.journalPageId && page.slotType === 'SPREAD'),
+  )?.journalPageId
+}
+
+function goToPhotoUpload(journalPageId?: string): void {
+  emptySlotsModalOpen.value = false
+  const targetId = journalPageId ?? firstMissingSpreadId()
+  void router.push({
+    name: 'order-photo-upload',
+    params: { orderId: orderId.value },
+    state: targetId ? { focusJournalPageId: targetId } : {},
+  })
+}
 
 /** Waits for the last edit's save (and any AI generation it triggers) to actually land in
  * `store.order` before navigating to the review step — otherwise its book would mount from the
@@ -1193,8 +1247,7 @@ async function finish(): Promise<void> {
     await requestAiGeneration()
     finishingMessage.value = null
 
-    const missingPhotoPages = collectPhotoSlotPreview(store.order?.journalPages ?? [])
-    if (missingPhotoPages.length > 0) {
+    if (missingPhotoPages.value.length > 0) {
       missingPhotosModalOpen.value = true
       return
     }
@@ -1432,7 +1485,8 @@ onUnmounted(() => {
 
 // Deliberately not the theme's `warning` color — that maps to a muted brown (see theme.ts, same
 // reasoning as JournalStructurePanel.vue's own incomplete-badge) — this needs to read as a clear,
-// warm amber notice at a glance. Opens MissingPhotosModal.vue on click.
+// warm amber notice at a glance. Desktop opens MissingPhotosModal.vue; mobile opens the short
+// empty-slot list and sends the visitor back to the photo step.
 .questionnaire-page__missing-photos-pill {
   display: inline-flex;
   align-items: center;

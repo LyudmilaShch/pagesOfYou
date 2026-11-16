@@ -71,7 +71,7 @@
 
     <!-- ── Body: 3D spread book (left) + uploader (right) — same split as the anketa step ────── -->
     <div class="photo-upload-page__body">
-      <div class="photo-upload-page__body-inner">
+      <div ref="bodyInnerRef" class="photo-upload-page__body-inner">
         <!-- Mobile-only: title/subtitle duplicated here so they land ABOVE the book card in the
              column stack — the "real" intro further down (inside main) hides on mobile via CSS,
              see .photo-upload-page__intro. -->
@@ -92,11 +92,14 @@
             :pages="store.order?.journalPages ?? []"
             :canvas-data-by-page-id="canvasDataByPageId"
             :focus-page-id="focusPageId"
+            :focus-element-id="focusElementId"
+            :focus-nonce="focusNonce"
             :pulsing-page-ids="pulsingPageIds"
             :fill-by-page-id="EMPTY_FILL_MAP"
             :pending-element-ids="EMPTY_ELEMENT_IDS"
             drop-enabled
             show-structure-controls
+            :show-view-toggle="false"
             :hide-nav="isMobileViewport"
             :fit-height="isMobileViewport"
             :zoom-enabled="true"
@@ -135,6 +138,18 @@
               </button>
             </template>
           </QuestionnaireBook>
+
+          <!-- Outside the book: the toolbar copy sits under the enlarged page and gets clipped
+               by this card. Same icon as the review step's nav toggle. -->
+          <button
+            v-if="isMobileViewport"
+            type="button"
+            class="photo-upload-page__view-toggle"
+            :aria-label="isSpreadView ? 'Показать постранично' : 'Показать разворотом'"
+            @click="bookRef?.toggleViewFormat()"
+          >
+            <v-icon size="16">{{ isSpreadView ? 'mdi-book-open-page-variant-outline' : 'mdi-book-open-outline' }}</v-icon>
+          </button>
         </div>
 
         <!-- Mobile-only — replaces the book's own built-in nav row (hidden via hide-nav above). -->
@@ -345,45 +360,19 @@
       @save="handleCropSave"
     />
 
-    <BaseModal v-model="incompletePhotosModalOpen" labelledby="incomplete-photos-title" narrow>
-      <div class="photo-upload-page__incomplete">
-        <div class="photo-upload-page__incomplete-icon" aria-hidden="true">
-          <v-icon size="28" color="white">mdi-image-off-outline</v-icon>
-        </div>
-
-        <h2 id="incomplete-photos-title" class="photo-upload-page__incomplete-title">Остались пустые места</h2>
-        <ul class="photo-upload-page__incomplete-list">
-          <li v-for="page in missingPhotoPages" :key="page.journalPageId">
-            <button type="button" class="photo-upload-page__incomplete-item" @click="goToMissingPage(page.journalPageId)">
-              {{ missingPhotoLine(page.pageLabel, page.slots.length) }}
-              <v-icon size="16">mdi-chevron-right</v-icon>
-            </button>
-          </li>
-        </ul>
-        <p v-if="holesModalMode === 'next'" class="photo-upload-page__incomplete-subtitle">
-          Можно вернуться и выбрать фото сейчас или загрузить их позже, до проверки заказа.
-        </p>
-
-        <div class="photo-upload-page__incomplete-actions">
-          <template v-if="holesModalMode === 'next'">
-            <v-btn color="primary" variant="flat" size="large" block @click="incompletePhotosModalOpen = false">
-              Вернуться и загрузить фото
-            </v-btn>
-            <v-btn variant="text" size="large" block @click="continueWithoutPhotos">
-              Загружу позже
-            </v-btn>
-          </template>
-          <v-btn v-else color="primary" variant="flat" size="large" block @click="incompletePhotosModalOpen = false">
-            Понятно
-          </v-btn>
-        </div>
-      </div>
-    </BaseModal>
+    <IncompletePhotosModal
+      :open="incompletePhotosModalOpen"
+      :pages="missingPhotoPages"
+      :variant="holesModalMode === 'next' ? 'continue' : 'notice'"
+      @close="incompletePhotosModalOpen = false"
+      @select="goToMissingPage"
+      @later="continueWithoutPhotos"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { isPhotoElement, type PhotoFitMode } from '@/modules/editor/models'
@@ -402,7 +391,6 @@ import {
   countPhotosToUpload,
   findNextEmptyAutoFillSlot,
   hasMissingCustomerPhotos,
-  missingPhotoLine,
   presentCustomerPageCanvas,
   collectPhotoSlotPreview,
 } from '../utils/missing-photos.util'
@@ -415,7 +403,8 @@ import PhotoUploadFormatsHint from '../components/PhotoUploadFormatsHint.vue'
 import PhotoUploadErrorList from '../components/PhotoUploadErrorList.vue'
 import PhotoGalleryPickerDialog from '../components/PhotoGalleryPickerDialog.vue'
 import PhotoCropModal from '../components/PhotoCropModal.vue'
-import BaseModal from '@/components/ui/BaseModal.vue'
+import IncompletePhotosModal from '../components/IncompletePhotosModal.vue'
+import { preferredEmptySlotElementId } from '../utils/spread-half.util'
 import PrintResolutionBadge from '@/modules/editor/components/PrintResolutionBadge.vue'
 import { useUploadResolutionWarning } from '@/modules/editor/composables/use-upload-resolution-warning'
 import { uploadResolutionMessage } from '@/modules/editor/utils/print-resolution.util'
@@ -512,7 +501,10 @@ async function handlePickerSelect(url: string): Promise<void> {
 // The book jumps here (no flip animation) when the user clicks a usage badge/list entry — see
 // `handleUsageClick`/`goToUsage`. `pulsingPageIds` briefly highlights the same page, same pattern
 // as QuestionnairePage.vue's own post-answer pulse.
+const bodyInnerRef = ref<HTMLElement | null>(null)
 const focusPageId = ref<string | null>(null)
+const focusElementId = ref<string | null>(null)
+const focusNonce = ref(0)
 const pulsingPageIds = ref<Set<string>>(new Set())
 // Mirrors QuestionnaireBook's own built-in nav state — see `hide-nav`/`update:viewing` on its
 // usage above; only actually read on mobile (.photo-upload-page__book-hint), but harmless to keep
@@ -530,8 +522,20 @@ const isSpreadView = ref(false)
 const bookHintDismissed = ref(false)
 let pulseTimer: ReturnType<typeof setTimeout> | null = null
 
-function jumpTo(journalPageId: string): void {
+function revealJournal(): void {
+  if (!isMobileViewport.value) {
+    return
+  }
+  nextTick(() => {
+    bodyInnerRef.value?.scrollTo({ top: 0, behavior: 'smooth' })
+  })
+}
+
+function jumpTo(journalPageId: string, elementId?: string | null): void {
+  focusElementId.value = elementId ?? null
   focusPageId.value = journalPageId
+  focusNonce.value += 1
+  revealJournal()
   if (pulseTimer) {
     clearTimeout(pulseTimer)
   }
@@ -596,7 +600,7 @@ const usageModalEntries = computed<PhotoUsage[]>(
 function handleUsageClick(url: string): void {
   const usage = usageByUrl.value.get(url) ?? []
   if (usage.length === 1) {
-    jumpTo(usage[0].journalPageId)
+    jumpTo(usage[0].journalPageId, usage[0].elementId)
     return
   }
   if (usage.length > 1) {
@@ -605,7 +609,7 @@ function handleUsageClick(url: string): void {
 }
 
 function goToUsage(entry: PhotoUsage): void {
-  jumpTo(entry.journalPageId)
+  jumpTo(entry.journalPageId, entry.elementId)
   usageModalPhotoUrl.value = null
 }
 
@@ -636,6 +640,8 @@ async function ensureOrderLoaded(): Promise<void> {
   await store.loadOrder(orderId.value)
 }
 
+let pendingFocusPageId: string | null = null
+
 async function load(): Promise<void> {
   isLoading.value = true
   loadErrorMessage.value = null
@@ -646,11 +652,33 @@ async function load(): Promise<void> {
       throw new Error('Заказ не найден.')
     }
     photos.value = await photoGalleryApi.list(galleryScope.value)
+    pendingFocusPageId = readFocusPageFromNavigation()
   } catch (err: unknown) {
     loadErrorMessage.value = err instanceof Error ? err.message : 'Не удалось загрузить страницу.'
   } finally {
     isLoading.value = false
   }
+
+  if (pendingFocusPageId) {
+    const pageId = pendingFocusPageId
+    pendingFocusPageId = null
+    await nextTick()
+    const slotIds =
+      missingPhotoPages.value.find((page) => page.journalPageId === pageId)?.slots.map((slot) => slot.elementId) ??
+      []
+    jumpTo(pageId, preferredEmptySlotElementId(canvasDataByPageId.value.get(pageId), slotIds))
+  }
+}
+
+function readFocusPageFromNavigation(): string | null {
+  const pageId = history.state?.focusJournalPageId
+  if (typeof pageId !== 'string') {
+    return null
+  }
+  const nextState = { ...history.state }
+  delete nextState.focusJournalPageId
+  history.replaceState(nextState, '')
+  return pageId
 }
 
 async function autoPlacePhoto(url: string): Promise<void> {
@@ -884,7 +912,10 @@ function openHolesModal(mode: 'list' | 'next'): void {
 
 function goToMissingPage(journalPageId: string): void {
   incompletePhotosModalOpen.value = false
-  jumpTo(journalPageId)
+  const slotIds =
+    missingPhotoPages.value.find((page) => page.journalPageId === journalPageId)?.slots.map((slot) => slot.elementId) ??
+    []
+  jumpTo(journalPageId, preferredEmptySlotElementId(canvasDataByPageId.value.get(journalPageId), slotIds))
 }
 
 function goToNextStep(): void {
@@ -1209,6 +1240,11 @@ onBeforeUnmount(() => {
     padding: $spacing-3;
     border: none;
     border-radius: 16px;
+    // Column, not the desktop row that centers the book: the view-toggle sits in the toolbar
+    // under the frame, and centering a book taller than this card was clipping that button away.
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
     // QuestionnaireBook's own page-mode clip (`.questionnaire-book__page-mode-layer--clipped`)
     // bounds the enlarged frame to ITS OWN box, which should match this card's inner content area
     // — but this is the actual visual boundary that matters (the rounded pink card itself), so it
@@ -1221,6 +1257,46 @@ onBeforeUnmount(() => {
 
     &::before {
       display: none;
+    }
+
+    :deep(.questionnaire-book) {
+      // Fill the card so the toolbar (the spread/page toggle) stays inside the 460px clip
+      // instead of being laid out below it.
+      flex: 1 1 auto;
+      align-self: stretch;
+      min-height: 0;
+      width: 100%;
+      height: 100%;
+      max-height: 100%;
+    }
+  }
+}
+
+// Sits on the card itself, above the enlarged spread. The book's own toolbar toggle is clipped
+// once the frame fills this fixed-height card, so the photo step draws the same icon here.
+.photo-upload-page__view-toggle {
+  display: none;
+
+  @include mobile-only {
+    position: absolute;
+    z-index: 6;
+    bottom: $spacing-3;
+    left: calc(50% + 58px);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: 1px solid $accent;
+    border-radius: 50%;
+    background: $white;
+    color: $accent-deep;
+    cursor: pointer;
+
+    :deep(.v-icon) {
+      width: 14px !important;
+      height: 14px !important;
+      font-size: 14px !important;
     }
   }
 }
@@ -1809,80 +1885,4 @@ onBeforeUnmount(() => {
   border-bottom: none;
 }
 
-// ── Incomplete-photos confirm modal ───────────────────────────────────────────────────────────
-// Same visual language as MissingContentModal.vue's own BaseModal-based notice (icon circle,
-// centered title/subtitle, full-width stacked actions) — kept as its own local style here since
-// this modal's copy/actions are specific to Шаг 2 and it's used from nowhere else.
-.photo-upload-page__incomplete {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: $spacing-3;
-  width: min(100%, 400px);
-  margin-inline: auto;
-  padding-top: $spacing-2;
-  text-align: center;
-}
-
-.photo-upload-page__incomplete-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 3.5rem;
-  height: 3.5rem;
-  flex-shrink: 0;
-  border-radius: 9999px;
-  background: $accent;
-}
-
-.photo-upload-page__incomplete-title {
-  margin: 0;
-  font-family: $font-family-display;
-  font-size: $font-size-h4;
-  font-weight: $font-weight-semibold;
-  color: $text-primary;
-}
-
-.photo-upload-page__incomplete-list {
-  width: 100%;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  text-align: left;
-}
-
-.photo-upload-page__incomplete-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: $spacing-3;
-  width: 100%;
-  padding: $spacing-3 0;
-  border: none;
-  border-bottom: 1px solid $border-light;
-  background: none;
-  color: $text-primary;
-  font-size: $font-size-body-sm;
-  text-align: left;
-  cursor: pointer;
-}
-
-.photo-upload-page__incomplete-subtitle {
-  margin: 0;
-  font-size: $font-size-body-sm;
-  line-height: 1.5;
-  color: $text-secondary;
-}
-
-.photo-upload-page__incomplete-actions {
-  display: flex;
-  flex-direction: column;
-  gap: $spacing-2;
-  width: 100%;
-  margin-top: $spacing-2;
-
-  .v-btn {
-    text-transform: none;
-  }
-}
 </style>

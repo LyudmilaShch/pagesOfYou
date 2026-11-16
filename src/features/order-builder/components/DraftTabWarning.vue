@@ -1,5 +1,5 @@
 <template>
-  <div v-if="visible" class="draft-tab-warning" role="status">
+  <div v-if="visible" ref="bannerEl" class="draft-tab-warning" role="status">
     Этот журнал открыт в другой вкладке. Если править в обеих, сохранится последняя правка.
   </div>
 </template>
@@ -18,6 +18,34 @@ import {
   writeDraftPresence,
   type TabPresence,
 } from '../utils/draft-tab-lock.util'
+
+const bannerEl = ref<HTMLElement | null>(null)
+let bannerResizeObserver: ResizeObserver | null = null
+
+/** The order screens are locked to the viewport. This banner sits above them in the document, so
+ * its height is published for those screens to shrink by — otherwise the page grows past the
+ * window and the whole layout starts scrolling. */
+function syncBannerOffset(): void {
+  const height = bannerEl.value?.offsetHeight ?? 0
+  const root = document.documentElement
+  if (height > 0) {
+    root.classList.add('draft-tab-warning-open')
+    root.style.setProperty('--draft-tab-warning-height', `${height}px`)
+    return
+  }
+  root.classList.remove('draft-tab-warning-open')
+  root.style.removeProperty('--draft-tab-warning-height')
+}
+
+function observeBanner(el: HTMLElement | null): void {
+  bannerResizeObserver?.disconnect()
+  bannerResizeObserver = null
+  if (el) {
+    bannerResizeObserver = new ResizeObserver(() => syncBannerOffset())
+    bannerResizeObserver.observe(el)
+  }
+  syncBannerOffset()
+}
 
 const store = useOrderBuilderStore()
 const tabId = createTabId()
@@ -75,7 +103,12 @@ onMounted(() => {
   window.addEventListener('beforeunload', release)
 })
 
+watch(bannerEl, (el) => observeBanner(el))
+
 onBeforeUnmount(() => {
+  bannerResizeObserver?.disconnect()
+  document.documentElement.classList.remove('draft-tab-warning-open')
+  document.documentElement.style.removeProperty('--draft-tab-warning-height')
   stop?.()
   if (heartbeat) {
     clearInterval(heartbeat)

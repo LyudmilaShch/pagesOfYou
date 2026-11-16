@@ -109,7 +109,9 @@ export function answerMapOf(answers: QuestionAnswer[]): Map<string, string | nul
   return new Map(answers.map((answer) => [answer.questionKey, answer.textValue]))
 }
 
-const UNWRITTEN_MESSAGE =
+const UNWRITTEN_GUEST_MESSAGE =
+  'Текст не создан — сегодня ИИ уже не может писать новые тексты. Напишите его вручную (✏️) или войдите в профиль, чтобы получить больше генераций'
+const UNWRITTEN_USER_MESSAGE =
   'Текст не создан — сегодня ИИ уже не может писать новые тексты. Напишите его вручную (✏️) или вернитесь завтра'
 const OUTDATED_GUEST_MESSAGE =
   'Текст написан по прежнему ответу. Войдите, чтобы обновить его (🔄), или поправьте вручную (✏️)'
@@ -172,7 +174,7 @@ export function buildAiTextMarkers(
       ids.forEach((id) => awaiting.add(id))
       markers.awaitingByPageId.set(status.journalPageId, awaiting)
     } else if (status.state === 'missing') {
-      flag(status.journalPageId, ids, UNWRITTEN_MESSAGE)
+      flag(status.journalPageId, ids, isGuest ? UNWRITTEN_GUEST_MESSAGE : UNWRITTEN_USER_MESSAGE)
       markers.unwrittenCount += ids.length
     } else {
       flag(status.journalPageId, ids, isGuest ? OUTDATED_GUEST_MESSAGE : OUTDATED_USER_MESSAGE)
@@ -194,7 +196,7 @@ export function buildAiTextMarkers(
           })
           .map((part) => part.id)
         if (ids.length > 0) {
-          flag(page.id, ids, UNWRITTEN_MESSAGE)
+          flag(page.id, ids, isGuest ? UNWRITTEN_GUEST_MESSAGE : UNWRITTEN_USER_MESSAGE)
           markers.unwrittenCount += ids.length
         }
       }
