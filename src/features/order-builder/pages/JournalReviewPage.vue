@@ -233,7 +233,7 @@ import {
   collectPhotoSlotPreview,
   countEmptyPhotoSlots,
   hasMissingCustomerPhotos,
-  presentCustomerPageCanvas,
+  presentCustomerPages,
 } from '../utils/missing-photos.util'
 import {
   buildAiTextFitContext,
@@ -314,13 +314,7 @@ async function load(): Promise<void> {
   }
 }
 
-const canvasDataByPageId = computed(() => {
-  const map = new Map<string, ReturnType<typeof presentCustomerPageCanvas>>()
-  for (const page of store.order?.journalPages ?? []) {
-    map.set(page.id, presentCustomerPageCanvas(page))
-  }
-  return map
-})
+const canvasDataByPageId = computed(() => presentCustomerPages(store.order?.journalPages ?? []))
 
 const missingPhotoCount = computed(() =>
   countEmptyPhotoSlots(collectPhotoSlotPreview(store.order?.journalPages ?? [])),

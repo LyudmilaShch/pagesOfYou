@@ -38,7 +38,7 @@
   <!-- A row of a list, or a text inside a row: a summary — the list's settings open on their own
        screen, so the selected object's own properties stay in reach. -->
   <div v-else-if="isTemplateEditor && list" class="editor-properties__section editor-list-section">
-    <p class="editor-properties__section-title">Строка {{ rowNumber }} списка</p>
+    <p class="editor-properties__section-title">Строка {{ rowNumber }} {{ list?.settings.source === 'toc' ? 'содержания' : 'списка' }}</p>
 
     <template v-if="textElement">
       <v-select
@@ -52,15 +52,83 @@
         hide-details
         @update:model-value="store.setListRole(textElement.id, $event === 'none' ? null : ($event as ListRole))"
       />
-      <p class="editor-list-section__hint">{{ ROLE_HINTS[textElement.listRole ?? 'none'] }}</p>
+      <p class="editor-list-section__hint">{{ (list?.settings.source === 'toc' ? TOC_ROLE_HINTS : ROLE_HINTS)[textElement.listRole ?? 'none'] }}</p>
     </template>
 
     <p class="editor-list-section__hint">{{ summary }}</p>
-    <v-btn variant="outlined" block prepend-icon="mdi-format-list-numbered" @click="openListSettings">
-      Настройки списка
+    <p v-if="list?.settings.source === 'toc'" class="editor-list-section__hint">
+      Ширина строки — боковые маркеры. Номер страницы кликается отдельно: его можно сдвинуть и
+      поменять шрифт, не трогая название.
+    </p>
+    <v-btn
+      variant="outlined"
+      size="small"
+      prepend-icon="mdi-cog-outline"
+      @click="openListSettings"
+    >
+      Настройки
     </v-btn>
-    <div class="editor-list-section__row-actions">
-      <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+    <template v-if="list?.settings.source === 'toc'">
+      <v-btn
+        variant="outlined"
+        size="small"
+        prepend-icon="mdi-minus"
+        :disabled="store.previewMode"
+        @click="addLine"
+      >
+        Добавить линию
+      </v-btn>
+      <p class="editor-list-section__hint">
+        Линия встанет в эту строку. Её можно сдвинуть, укоротить и перекрасить. Новые строки
+        содержания копируют последнюю, поэтому линия на последней строке попадёт и в них.
+      </p>
+    </template>
+    <div v-if="list?.settings.source === 'toc'" class="editor-list-section__copy">
+      <p class="editor-list-section__hint">
+        Перенести с этой строки. Стиль — шрифт, размер, цвет и линии. Расположение — где номер стоит
+        относительно названия. Место строк на странице не меняется.
+      </p>
+      <div class="editor-list-section__copy-flags">
+        <v-checkbox v-model="copyStyle" label="Стиль" density="compact" hide-details />
+        <v-checkbox v-model="copyLayout" label="Расположение" density="compact" hide-details />
+      </div>
+      <div class="editor-list-section__copy-all">
+        <v-checkbox
+          :model-value="allTargetsSelected"
+          label="Все строки"
+          density="compact"
+          hide-details
+          :disabled="otherRows.length === 0"
+          @update:model-value="setAllTargets($event === true)"
+        />
+      </div>
+      <div class="editor-list-section__copy-rows">
+        <v-checkbox
+          v-for="row in otherRows"
+          :key="row.id"
+          :model-value="copyTargetIds.includes(row.id)"
+          :label="String(row.number)"
+          density="compact"
+          hide-details
+          @update:model-value="toggleTarget(row.id, $event === true)"
+        />
+      </div>
+      <v-btn
+        class="editor-list-section__row-action"
+        variant="tonal"
+        size="small"
+        prepend-icon="mdi-format-paint"
+        :disabled="store.previewMode || !canApplyCopy"
+        @click="applyCopy"
+      >
+        Применить
+      </v-btn>
+    </div>
+    <div
+      class="editor-list-section__row-actions"
+      :class="{ 'editor-list-section__row-actions--single': list?.settings.source === 'toc' }"
+    >
+      <v-tooltip v-if="list?.settings.source !== 'toc'" location="top" content-class="editor-tooltip--arrow-top">
         <template #activator="{ props: tooltipProps }">
           <v-btn
             v-bind="tooltipProps"
@@ -118,7 +186,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject, nextTick, ref } from 'vue'
+import { computed, inject, nextTick, ref, watch } from 'vue'
 
 import { useEditorStore } from '../../store/editor.store'
 import { isTextElement, type ListRole } from '../../models'
@@ -150,6 +218,13 @@ const ROLE_HINTS: Record<ListRole | 'none', string> = {
   none: 'Останется как есть и переместится вместе со строкой.',
 }
 
+const TOC_ROLE_HINTS: Record<ListRole | 'none', string> = {
+  number: 'Номер страницы раздела в готовом журнале.',
+  item: 'Название раздела — подставится из названия разворота.',
+  detail: 'Описание раздела — подставится из описания разворота или страницы в админке.',
+  none: 'Останется как есть и переместится вместе со строкой.',
+}
+
 const selected = computed(() => store.selectedElement)
 
 /** The list the selection is a row of, or sits inside a row of. */
@@ -171,7 +246,8 @@ const listOptions = computed(() =>
     const question = item.settings.questionKey
       ? editorQuestions.value.find((candidate) => candidate.key === item.settings.questionKey)?.label
       : null
-    return { value: item.listId, title: `${question ?? `Список ${index + 1}`} · ${item.rows.length} строк` }
+    const toc = item.settings.source === 'toc'
+    return { value: item.listId, title: `${toc ? 'Содержание' : (question ?? `Список ${index + 1}`)} · ${item.rows.length} строк` }
   }),
 )
 
@@ -196,7 +272,70 @@ function addSelectionToList(): void {
 function applyRowStyle(): void {
   const row = list.value?.rows[rowIndex.value]
   if (row) {
-    store.applyListRowStyle(row.node.id)
+    store.applyListRowStyle(row.node.id, { style: true, layout: false })
+  }
+}
+
+const copyStyle = ref(true)
+const copyLayout = ref(true)
+const copyTargetIds = ref<string[]>([])
+
+/** Other rows of this contents, numbered the same way as the badges on the canvas. */
+const otherRows = computed(() => {
+  const rows = list.value?.rows ?? []
+  return rows
+    .map((row, index) => ({ id: row.node.id, number: index + 1 }))
+    .filter((_, index) => index !== rowIndex.value)
+})
+
+const otherRowKey = computed(() => otherRows.value.map((row) => row.id).join(','))
+
+watch(
+  otherRowKey,
+  () => {
+    copyTargetIds.value = otherRows.value.map((row) => row.id)
+  },
+  { immediate: true },
+)
+
+const allTargetsSelected = computed(
+  () => otherRows.value.length > 0 && otherRows.value.every((row) => copyTargetIds.value.includes(row.id)),
+)
+
+function setAllTargets(on: boolean): void {
+  copyTargetIds.value = on ? otherRows.value.map((row) => row.id) : []
+}
+
+function toggleTarget(id: string, on: boolean): void {
+  const next = new Set(copyTargetIds.value)
+  if (on) {
+    next.add(id)
+  } else {
+    next.delete(id)
+  }
+  copyTargetIds.value = otherRows.value.map((row) => row.id).filter((rowId) => next.has(rowId))
+}
+
+const canApplyCopy = computed(
+  () => (copyStyle.value || copyLayout.value) && copyTargetIds.value.length > 0,
+)
+
+function applyCopy(): void {
+  const row = list.value?.rows[rowIndex.value]
+  if (!row || !canApplyCopy.value) {
+    return
+  }
+  store.applyListRowStyle(row.node.id, {
+    style: copyStyle.value,
+    layout: copyLayout.value,
+    rowIds: [...copyTargetIds.value],
+  })
+}
+
+function addLine(): void {
+  const row = list.value?.rows[rowIndex.value]
+  if (row) {
+    store.addTocRowLine(row.node.id)
   }
 }
 
@@ -214,6 +353,9 @@ const summary = computed(() => {
     return ''
   }
   const { settings, rows } = list.value
+  if (settings.source === 'toc') {
+    return `${rows.length} строк · названия и номера страниц подставятся сами`
+  }
   const question = settings.questionKey
     ? (editorQuestions.value.find((item) => item.key === settings.questionKey)?.label ?? settings.questionKey)
     : 'вопрос не выбран'
@@ -221,8 +363,12 @@ const summary = computed(() => {
   return `${rows.length} строк · ${question}${min}`
 })
 
+const settingsLabel = computed(() =>
+  list.value?.settings.source === 'toc' ? 'Настройки содержания' : 'Настройки списка',
+)
+
 function openListSettings(): void {
-  panelStack?.push({ id: 'list-config', title: 'Настройки списка' })
+  panelStack?.push({ id: 'list-config', title: settingsLabel.value })
 }
 
 /** The rows are made, then the first one is selected so the settings screen has a list to show —
@@ -257,6 +403,10 @@ async function makeList(): Promise<void> {
   gap: $spacing-2;
 }
 
+.editor-list-section__row-actions--single {
+  grid-template-columns: 1fr;
+}
+
 .editor-list-section__row-action {
   min-width: 0;
   height: auto !important;
@@ -271,6 +421,29 @@ async function makeList(): Promise<void> {
     white-space: normal;
     text-align: left;
   }
+}
+
+.editor-list-section__copy {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-2;
+}
+
+.editor-list-section__copy-flags,
+.editor-list-section__copy-rows {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 $spacing-2;
+}
+
+.editor-list-section__copy-flags :deep(.v-checkbox),
+.editor-list-section__copy-all :deep(.v-checkbox),
+.editor-list-section__copy-rows :deep(.v-checkbox) {
+  flex: 0 0 auto;
+}
+
+.editor-list-section__copy-rows :deep(.v-checkbox) {
+  min-width: 52px;
 }
 
 .editor-list-section__add {

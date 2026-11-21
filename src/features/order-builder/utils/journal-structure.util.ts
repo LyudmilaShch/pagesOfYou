@@ -239,6 +239,51 @@ export interface LocalJournalSlotDraft {
   pageSnapshot: CanvasData
 }
 
+/** A contents list the admin laid out. An older TOC page can be only a placeholder. */
+function canvasHasTocList(canvas: unknown): boolean {
+  const elements = (canvas as { elements?: unknown[] } | null)?.elements
+  const walk = (nodes: unknown[]): boolean => {
+    for (const node of nodes) {
+      if (!node || typeof node !== 'object') {
+        continue
+      }
+      const row = node as {
+        listId?: string
+        list?: { source?: string } | null
+        children?: unknown[]
+      }
+      if (row.listId && row.list?.source === 'toc') {
+        return true
+      }
+      if (Array.isArray(row.children) && walk(row.children)) {
+        return true
+      }
+    }
+    return false
+  }
+  return Array.isArray(elements) ? walk(elements) : false
+}
+
+/** The contents page a new journal starts from. Several TOC templates can exist; the first by
+ * sort order is often an old placeholder with no list, so the layout saved on the real contents
+ * page never reached a new journal. Prefer a page that has a contents list, and among those the
+ * one the admin saved last. */
+export function pickDefaultTocTemplate(pages: CatalogMagazinePage[]): CatalogMagazinePage | null {
+  if (pages.length === 0) {
+    return null
+  }
+  const designed = pages.filter((page) => canvasHasTocList(page.canvasData))
+  const pool = designed.length > 0 ? designed : pages
+  const savedAt = (page: CatalogMagazinePage): number => {
+    const value = Date.parse(page.updatedAt ?? '')
+    return Number.isFinite(value) ? value : 0
+  }
+  return [...pool].sort((left, right) => {
+    const updated = savedAt(right) - savedAt(left)
+    return updated !== 0 ? updated : right.sortOrder - left.sortOrder
+  })[0]
+}
+
 export function buildInitialJournalSlots(
   templates: CatalogMagazinePage[],
   options: BuildInitialJournalOptions,
@@ -246,7 +291,7 @@ export function buildInitialJournalSlots(
   const catalog = groupTemplatesByPageType(templates)
   const coverTemplate = catalog.cover[0] ?? null
   const backCoverTemplate = catalog.backCover[0] ?? null
-  const tocTemplate = catalog.toc[0] ?? null
+  const tocTemplate = pickDefaultTocTemplate(catalog.toc)
   const spreadDefault = pickDefaultSpreadTemplate(catalog)
   const spreadCount = resolveInitialSpreadCount(options.includedSpreads, Boolean(tocTemplate))
 
@@ -322,6 +367,7 @@ export function toMagazinePageSummary(page: CatalogMagazinePage) {
   return {
     id: page.id,
     name: page.name,
+    description: page.description,
     pageType: page.pageType,
     previewImage: page.previewImage,
     isRequired: page.isRequired,
@@ -360,7 +406,13 @@ export function getJournalPageDisplayName(
  * (currently impossible) case of a toc-placeholder ending up on a non-TOC page.
  */
 export function buildTocEntries(
-  pages: Array<{ id: string; slotType: JournalSlotType; magazinePage: { name: string } }>,
+  pages: Array<{
+    id: string
+    slotType: JournalSlotType
+    layoutMode?: string | null
+    magazinePage: { name: string; description?: string | null }
+    rightMagazinePage?: { name: string; description?: string | null } | null
+  }>,
   excludePageId?: string | null,
 ): TocEntry[] {
   const entries: TocEntry[] = []
@@ -382,10 +434,45 @@ export function buildTocEntries(
       pageId: page.id,
       title: page.magazinePage.name,
       pageLabel: String(start),
+      description: page.magazinePage.description?.trim() || undefined,
     })
+
+    // A spread made of two pages lists each page: the right-hand one is the next physical page.
+    if (page.layoutMode === 'SPLIT_PAGES' && page.rightMagazinePage) {
+      entries.push({
+        pageId: `${page.id}#right`,
+        title: page.rightMagazinePage.name,
+        pageLabel: String(start + 1),
+        description: page.rightMagazinePage.description?.trim() || undefined,
+      })
+    }
   }
 
   return entries
+}
+
+/** Entries for one page of a journal: the page itself is left out, so a contents spread does not
+ * list itself. `slotType` is a plain string at some call sites (admin orders). */
+export function tocEntriesForPage(
+  pages: Array<{
+    id: string
+    slotType: string
+    layoutMode?: string | null
+    magazinePage: { name: string; description?: string | null }
+    rightMagazinePage?: { name: string; description?: string | null } | null
+  }>,
+  pageId: string,
+): TocEntry[] {
+  return buildTocEntries(
+    pages.map((page) => ({
+      id: page.id,
+      slotType: page.slotType as JournalSlotType,
+      layoutMode: page.layoutMode,
+      magazinePage: page.magazinePage,
+      rightMagazinePage: page.rightMagazinePage,
+    })),
+    pageId,
+  )
 }
 
 export function findTemplateById(

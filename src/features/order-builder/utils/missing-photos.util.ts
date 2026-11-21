@@ -18,6 +18,8 @@ import {
   type MissingCustomerPhotoPage,
 } from './photo-slot-rules.util'
 import type { JournalPage } from '../types/order.types'
+import type { TocEntry } from '@/modules/editor/models/toc-placeholder.model'
+import { tocEntriesForPage } from './journal-structure.util'
 
 export type { MissingCustomerPhotoPage, AutoFillPhotoTarget }
 export { missingPhotoLine, missingPhotoPill } from './photo-slot-rules.util'
@@ -122,11 +124,13 @@ export function findNextEmptyAutoFillSlot(
 export function presentCustomerPageCanvas(
   page: Pick<JournalPage, 'slotType' | 'pageSnapshot' | 'placeholderValues'>,
   localByElementId?: Map<string, LocalPlaceholderDraft>,
+  tocEntries?: TocEntry[],
 ): CanvasData {
   const canvas = materializeCanvasData(
     normalizeCanvasData(page.pageSnapshot),
     page.placeholderValues,
     localByElementId,
+    tocEntries,
   )
   if (page.slotType !== 'COVER') {
     return canvas
@@ -148,6 +152,15 @@ export function presentCustomerPageCanvas(
       return { ...leaf, defaultImageUrl: null } as LeafElement
     }),
   }
+}
+
+/** Every page of a journal, each with its table of contents filled from the same page list. */
+export function presentCustomerPages(pages: JournalPage[]): Map<string, CanvasData> {
+  const map = new Map<string, CanvasData>()
+  for (const page of pages) {
+    map.set(page.id, presentCustomerPageCanvas(page, undefined, tocEntriesForPage(pages, page.id)))
+  }
+  return map
 }
 
 export type { MissingCustomerPhotoPage as MissingPhotoPage }

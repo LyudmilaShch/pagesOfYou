@@ -400,7 +400,7 @@ import { flattenTree } from '@/modules/editor/utils/element-tree.util'
 import { catalogApi } from '../api/catalog.api'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
 import { getGalleryScope } from '../utils/photo-gallery-scope.util'
-import { getJournalPageDisplayName } from '../utils/journal-structure.util'
+import { getJournalPageDisplayName, tocEntriesForPage } from '../utils/journal-structure.util'
 import {
   buildQuestionnaireFlow,
   isQuestionAnswered,
@@ -424,6 +424,7 @@ import {
   countEmptyPhotoSlots,
   hasMissingCustomerPhotos,
   presentCustomerPageCanvas,
+  presentCustomerPages,
 } from '../utils/missing-photos.util'
 import AiLimitNotice from '../components/AiLimitNotice.vue'
 import AuthModal from '@/components/auth/AuthModal.vue'
@@ -952,13 +953,7 @@ const fillByPageId = computed(() => {
 
 // Base layer — only from store.order (confirmed placeholderValues), recomputed whole only when a
 // real autosave lands, not on every keystroke.
-const baseCanvasByPageId = computed(() => {
-  const map = new Map<string, ReturnType<typeof presentCustomerPageCanvas>>()
-  for (const page of store.order?.journalPages ?? []) {
-    map.set(page.id, presentCustomerPageCanvas(page))
-  }
-  return map
-})
+const baseCanvasByPageId = computed(() => presentCustomerPages(store.order?.journalPages ?? []))
 
 // Pages touched by at least one not-yet-confirmed answer — typically 0-3 even mid-session (the
 // pending set only holds answers whose save hasn't resolved yet), never all pages at once.
@@ -1041,7 +1036,7 @@ const canvasDataByPageId = computed(() => {
     }
     map.set(
       pageId,
-      presentCustomerPageCanvas(page, overrides),
+      presentCustomerPageCanvas(page, overrides, tocEntriesForPage(store.order?.journalPages ?? [], page.id)),
     )
   }
   return map

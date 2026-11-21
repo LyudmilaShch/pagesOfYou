@@ -16,6 +16,7 @@ import { normalizeCanvasData } from '@/modules/editor/models/canvas-data.model'
 import { ensureCustomFontsLoaded } from '@/modules/editor/utils/custom-fonts.util'
 import { pendingImageLoads } from '@/modules/editor/utils/image-loading-tracker.util'
 import { materializeCanvasData } from '@/features/order-builder/utils/merge-placeholder-element.util'
+import { tocEntriesForPage } from '@/features/order-builder/utils/journal-structure.util'
 import { adminOrdersApi } from '@/shared/api/admin/orders.api'
 import { ADMIN_TOKEN_KEY } from '../api/admin-http'
 
@@ -45,12 +46,21 @@ const store = useEditorStore()
 const loadError = ref<string | null>(null)
 
 async function fetchDocument(): Promise<EditorSourceDocument> {
-  const page = await adminOrdersApi.getJournalPage(orderId, journalPageId)
+  const order = await adminOrdersApi.getOne(orderId)
+  const page = order.journalPages.find((item) => item.id === journalPageId)
+  if (!page) {
+    throw new Error('Страница не найдена в этом заказе.')
+  }
   return {
     id: page.id,
     name: page.magazinePage.name,
     pageType: page.slotType,
-    canvasData: materializeCanvasData(normalizeCanvasData(page.pageSnapshot), page.placeholderValues),
+    canvasData: materializeCanvasData(
+      normalizeCanvasData(page.pageSnapshot),
+      page.placeholderValues,
+      undefined,
+      tocEntriesForPage(order.journalPages, page.id),
+    ),
   }
 }
 

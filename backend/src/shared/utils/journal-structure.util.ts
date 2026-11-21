@@ -46,11 +46,49 @@ export function pickDefaultBackCoverTemplate(catalog: TemplateCatalog): Magazine
   return catalog.backCover[0] ?? null;
 }
 
+/** A contents list the admin actually laid out (`source: 'toc'` on its rows). An older TOC page
+ * can still be only a placeholder, with no list and therefore no layout to apply. */
+function canvasHasTocList(canvas: unknown): boolean {
+  const elements = (canvas as { elements?: unknown[] } | null)?.elements;
+  const walk = (nodes: unknown[]): boolean => {
+    for (const node of nodes) {
+      if (!node || typeof node !== 'object') {
+        continue;
+      }
+      const row = node as {
+        listId?: string;
+        list?: { source?: string } | null;
+        children?: unknown[];
+      };
+      if (row.listId && row.list?.source === 'toc') {
+        return true;
+      }
+      if (Array.isArray(row.children) && walk(row.children)) {
+        return true;
+      }
+    }
+    return false;
+  };
+  return Array.isArray(elements) ? walk(elements) : false;
+}
+
 /** Unlike cover/back-cover, a table of contents is optional — a magazine type with none simply
  * never gets a TOC slot (see buildInitialJournalSlots, which skips the pushSlot call entirely
- * rather than letting it fall back to an unrelated template). */
+ * rather than letting it fall back to an unrelated template).
+ *
+ * When several TOC pages exist, a new journal takes the one the admin laid out most recently.
+ * The first page by sort order is often an old placeholder, and its canvas has no list, so the
+ * layout chosen on the real contents page never reached a new journal. */
 export function pickDefaultTocTemplate(catalog: TemplateCatalog): MagazinePage | null {
-  return catalog.toc[0] ?? null;
+  if (catalog.toc.length === 0) {
+    return null;
+  }
+  const designed = catalog.toc.filter((page) => canvasHasTocList(page.canvasData));
+  const pool = designed.length > 0 ? designed : catalog.toc;
+  return [...pool].sort((left, right) => {
+    const updated = right.updatedAt.getTime() - left.updatedAt.getTime();
+    return updated !== 0 ? updated : right.sortOrder - left.sortOrder;
+  })[0];
 }
 
 export interface BuildInitialJournalOptions {

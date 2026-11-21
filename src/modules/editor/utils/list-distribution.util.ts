@@ -283,6 +283,19 @@ function listTargets(list: ListInfo, count: number, foldX: number | null, column
   return onPlaces(autoListSlots(list, count, foldX))
 }
 
+/** Contents places, in reading order across both pages. `start` keeps the first rows where the
+ * admin put them; the other modes move those sections onto the chosen rows. */
+function tocTargets(list: ListInfo, count: number): ListTarget[] {
+  const anchors = list.rows.map((row) => row.anchor)
+  const manual = manualListSlots(list, count)
+  if (list.settings.mode === 'path' && !manual) {
+    return pointsAlongPath(anchors, count).map((point) => ({ point, column: 0 }))
+  }
+  const mode = list.settings.mode === 'path' || list.settings.mode === undefined ? 'slots' : list.settings.mode
+  const indices = manual ?? pickSlotIndices(list.rows.length, count, mode)
+  return indices.map((index) => ({ point: anchors[index], column: 0 }))
+}
+
 /** Measures a text's height at a given font size, wrapped to its own box width — injected so this
  * file stays free of Konva (materializeCanvasData passes the editor's own text measurement). */
 export type MeasureTextHeight = (text: TextPlaceholder, content: string, fontSize: number) => number
@@ -340,7 +353,12 @@ function rowLayout(
     push: number
     text?: RowLayout['text']
   }> = []
-  const byTop = [...node.children].sort((a, b) => a.position.y - b.position.y)
+  const byTop = [...node.children]
+    .filter((child) => child.visible !== false)
+    .sort((a, b) => a.position.y - b.position.y)
+  if (byTop.length === 0) {
+    return { top: 0, height: node.size.height, shifts }
+  }
   for (const child of byTop) {
     const inner = rowLayout(child, measure, fontSizeOf)
     inner.shifts.forEach((value, id) => shifts.set(id, value))
@@ -349,22 +367,43 @@ function rowLayout(
     // Placed below everything that starts above it and overlaps it horizontally, keeping the gap the
     // template had between them — measured from the box's bottom when the child sits below the box,
     // from the first line when it's tucked inside the box (a title box taller than its one line, the
-    // description right under that line), so an unchanged one-line text moves nothing. When the text
-    // above was shrunk, that gap shrinks by the same factor — the only case that may pull up.
+    // description right under that line), so an unchanged one-line text moves nothing. A child that
+    // already sits below the glyphs is not pushed again by the overflow past a short box. When the
+    // text above was shrunk, that gap shrinks by the same factor — the only case that may pull up.
+    // A drawn line is not in this stack: it keeps the y the admin set and only follows a neighbour
+    // that moved (see below).
     const aboves = placed.filter(
       (above) => above.top + STACK_TOLERANCE < child.position.y && above.left < right && left < above.right,
     )
     const candidates = aboves.map((above) => {
       const scale = above.text?.scale ?? 1
+      const textBottom = above.text ? above.top + above.text.height : above.bottom
+      const clearsText = child.position.y >= textBottom - STACK_TOLERANCE
+      if (clearsText) {
+        const gap = (child.position.y - textBottom) * scale
+        return textBottom + above.push + gap - child.position.y
+      }
       const tucked = child.position.y < above.templateBottom - STACK_TOLERANCE
-      const gap = tucked && above.text
-        ? child.position.y - (above.top + above.text.lineHeight)
-        : child.position.y - above.templateBottom
+      const gap =
+        (tucked && above.text
+          ? child.position.y - (above.top + above.text.lineHeight)
+          : child.position.y - above.templateBottom) * scale
       const contentBottom = tucked && above.text ? above.top + above.text.height : above.bottom
-      return contentBottom + above.push + gap * scale - child.position.y
+      return contentBottom + above.push + gap - child.position.y
     })
     const shrunkAbove = aboves.some((above) => (above.text?.scale ?? 1) < 1)
-    const push = candidates.length === 0 ? 0 : shrunkAbove ? Math.max(...candidates) : Math.max(0, ...candidates)
+    // A line the admin drew keeps the place they gave it. Text that grows past its box must not
+    // drag the stroke down by that whole height — that is what put the line far below the
+    // description. It still follows a neighbour that itself moved (a description pushed down by a
+    // title that wrapped), so the gap the admin left stays.
+    const drawnLine = child.type === 'shape-line'
+    const push = drawnLine
+      ? aboves.reduce((max, above) => Math.max(max, above.push), 0)
+      : candidates.length === 0
+        ? 0
+        : shrunkAbove
+          ? Math.max(...candidates)
+          : Math.max(0, ...candidates)
     if (Math.abs(push) > 1e-9) {
       shifts.set(child.id, push)
     }
@@ -578,7 +617,13 @@ function planList(
   }
 
   const columns = splitColumns(list.rows, foldX)
-  const targets = listTargets(list, filledCount, foldX, columns)
+  // Contents picks places across the whole reading order and sits on those designed rows.
+  // Sharing the count between pages first (the list rule) would move a left-page row onto the
+  // right page before the layout mode had a chance to say otherwise. Text-height restacking is
+  // also skipped: it stretches the chosen rows and the preview stops matching the spread.
+  const targets = list.settings.source === 'toc'
+    ? tocTargets(list, filledCount)
+    : listTargets(list, filledCount, foldX, columns)
   const assigned: Array<{ index: number; target: ListTarget }> = []
   list.rows.forEach((_, index) => {
     if (filled[index]) {
@@ -588,7 +633,7 @@ function planList(
 
   // heightMode 'text': each column re-stacks its rows by real height (y only, x from the target).
   const flowed = new Map<number, FlowPlace>()
-  if (list.settings.heightMode === 'text' && measure) {
+  if (list.settings.heightMode === 'text' && measure && list.settings.source !== 'toc') {
     columns.forEach((columnRows, c) => {
       const inColumn = assigned.filter((entry) => entry.target.column === c)
       for (const [index, place] of flowColumn(list, columnRows, inColumn, measure)) {
@@ -628,16 +673,18 @@ function planList(
  */
 export function findListProblems(elements: PageElement[]): string[] {
   return collectLists(elements).flatMap((list, index) => {
-    const name = `Список ${index + 1}`
+    const toc = list.settings.source === 'toc'
+    const name = toc ? 'Содержание' : `Список ${index + 1}`
     const problems: string[] = []
-    if (!list.settings.questionKey) {
+    if (!toc && !list.settings.questionKey) {
       problems.push(`${name}: не выбран вопрос`)
     }
     const withoutItem = list.rows
       .map((row, rowIndex) => (collectAnswerLeaves(row.node).length === 0 ? rowIndex + 1 : null))
       .filter((rowNumber): rowNumber is number => rowNumber !== null)
     if (withoutItem.length > 0) {
-      problems.push(`${name}: нет заголовка и описания пункта в ${withoutItem.length > 1 ? 'строках' : 'строке'} ${withoutItem.join(', ')}`)
+      const missing = toc ? 'нет названия раздела' : 'нет заголовка и описания пункта'
+      problems.push(`${name}: ${missing} в ${withoutItem.length > 1 ? 'строках' : 'строке'} ${withoutItem.join(', ')}`)
     }
     if ((list.settings.minItems ?? 0) > list.rows.length) {
       problems.push(`${name}: минимум ${list.settings.minItems} больше числа строк (${list.rows.length})`)
@@ -682,9 +729,10 @@ export function distributeLists(elements: PageElement[], options: DistributeList
         return hide(node)
       }
       if (change) {
+        // A table of contents keeps the page labels applyTocEntries wrote into its number texts.
         const numbered = patchRowInside(
           node,
-          new Set(collectRoleLeaves(node, 'number')),
+          node.list?.source === 'toc' ? new Set() : new Set(collectRoleLeaves(node, 'number')),
           change.number,
           change.fontSizes,
           change.shifts,

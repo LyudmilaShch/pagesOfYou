@@ -12,6 +12,7 @@ import type { SaveJournalPageCanvasDto } from '../orders/dto/save-journal-page-c
 const MAGAZINE_PAGE_SUMMARY = {
   id: true,
   name: true,
+  description: true,
   pageType: true,
   previewImage: true,
 } as const;

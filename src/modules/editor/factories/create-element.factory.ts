@@ -69,7 +69,7 @@ export const LIBRARY_ELEMENTS: LibraryElementDefinition[] = [
     type: 'toc-placeholder',
     label: 'Содержание',
     icon: 'mdi-format-list-bulleted',
-    description: 'Список разворотов с номерами страниц, собирается автоматически',
+    description: 'Список разделов с номерами страниц. Собирается из разворотов сам; раскладка на две страницы, отступы и шрифт — как у списка',
     category: 'text',
   },
   {
@@ -249,7 +249,6 @@ export function createElementFromLibrary(
         color: '#111111',
         effect: null,
         entryGap: 12,
-        dotLeader: true,
       }
 
     case 'shape-rectangle':

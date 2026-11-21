@@ -182,7 +182,7 @@ import {
   countEmptyPhotoSlots,
   findNextEmptyAutoFillSlot,
   missingPhotoLine,
-  presentCustomerPageCanvas,
+  presentCustomerPages,
 } from '../utils/missing-photos.util'
 import { prependUniqueById } from '../utils/gallery-list.util'
 import { usePhotoTouchDrag } from '../composables/use-photo-touch-drag'
@@ -356,13 +356,7 @@ function goToUsage(entry: PhotoUsage): void {
   usageModalPhotoUrl.value = null
 }
 
-const canvasDataByPageId = computed(() => {
-  const map = new Map<string, ReturnType<typeof presentCustomerPageCanvas>>()
-  for (const page of store.order?.journalPages ?? []) {
-    map.set(page.id, presentCustomerPageCanvas(page))
-  }
-  return map
-})
+const canvasDataByPageId = computed(() => presentCustomerPages(store.order?.journalPages ?? []))
 
 async function autoPlacePhoto(url: string): Promise<void> {
   const slot = findNextEmptyAutoFillSlot(store.order?.journalPages ?? [])

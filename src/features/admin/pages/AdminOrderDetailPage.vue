@@ -133,6 +133,7 @@ import { adminOrdersApi, type AdminOrderJournalPage, type AdminOrderStatus } fro
 import type { CanvasData } from '@/modules/editor/models/canvas-data.model'
 import { normalizeCanvasData } from '@/modules/editor/models/canvas-data.model'
 import { materializeCanvasData } from '@/features/order-builder/utils/merge-placeholder-element.util'
+import { tocEntriesForPage } from '@/features/order-builder/utils/journal-structure.util'
 import JournalSpreadThumbnail from '@/modules/editor/components/JournalSpreadThumbnail.vue'
 
 const route = useRoute()
@@ -187,7 +188,13 @@ async function handleExportPdf(): Promise<void> {
  * advanced editor uses — so the thumbnail reflects what the customer actually placed, not just
  * the bare template. */
 function materializedCanvas(page: AdminOrderJournalPage): CanvasData {
-  return materializeCanvasData(normalizeCanvasData(page.pageSnapshot), page.placeholderValues)
+  const pages = order.value?.journalPages ?? [page]
+  return materializeCanvasData(
+    normalizeCanvasData(page.pageSnapshot),
+    page.placeholderValues,
+    undefined,
+    tocEntriesForPage(pages, page.id),
+  )
 }
 
 const STATUS_LABELS: Record<AdminOrderStatus, string> = {

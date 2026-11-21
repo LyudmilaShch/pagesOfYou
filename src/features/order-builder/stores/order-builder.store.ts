@@ -437,7 +437,8 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     const page = order.value.journalPages[pageIndex]
     const primary = findTemplateById(templateCatalog.value, payload.magazinePageId)
     if (!primary) {
-      return
+      orderError.value = 'Шаблон не найден.'
+      throw new Error(orderError.value)
     }
 
     const layoutMode =
@@ -450,7 +451,7 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
         ? findTemplateById(templateCatalog.value, payload.rightMagazinePageId)
         : null
 
-    order.value.journalPages[pageIndex] = {
+    const nextPage: JournalPage = {
       ...page,
       layoutMode,
       magazinePage: toMagazinePageSummary(primary),
@@ -462,6 +463,10 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
         right ?? null,
       ),
       placeholderValues: [],
+    }
+    order.value = {
+      ...order.value,
+      journalPages: order.value.journalPages.map((item, index) => (index === pageIndex ? nextPage : item)),
     }
 
     syncAnswersOntoJournalPages(

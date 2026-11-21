@@ -17,6 +17,8 @@ import {
 } from '@/modules/editor/utils/element-stroke.util'
 import { mapTree } from '@/modules/editor/utils/element-tree.util'
 import { distributeLists } from '@/modules/editor/utils/list-distribution.util'
+import { applyTocEntries, tocFilledItemIds } from '@/modules/editor/utils/toc-list.util'
+import type { TocEntry } from '@/modules/editor/models/toc-placeholder.model'
 import { measureListTextHeight } from '@/modules/editor/utils/list-text-measure.util'
 import { A4_PAGE_HEIGHT, A4_PAGE_WIDTH } from '@/modules/editor/constants/page.constants'
 import { buildAiTextElementPreview } from '@/modules/editor/utils/ai-text-preview.util'
@@ -218,6 +220,8 @@ export function materializeCanvasData(
   canvasData: CanvasData,
   placeholderValues: PlaceholderValue[],
   localByElementId?: Map<string, LocalPlaceholderDraft>,
+  /** Real table-of-contents rows for this page. Omit on a template, where the sample titles stay. */
+  tocEntries?: TocEntry[],
 ): CanvasData {
   const byElementId = new Map(placeholderValues.map((value) => [value.elementId, value]))
 
@@ -229,16 +233,24 @@ export function materializeCanvasData(
     ) as LeafElement,
   )
 
+  // A toc-list is a list whose rows are the journal's sections — written before distribution so
+  // spare rows hide and the rest take the list's places, gaps and font. See toc-list.util.ts.
+  const prepared = tocEntries ? applyTocEntries(merged, tocEntries) : merged
+  const tocFilled = tocEntries ? tocFilledItemIds(prepared) : new Set<string>()
+
   // Lists are laid out for what's actually filled — after the merge, so a row moved by hand keeps
   // its own offset — see list-distribution.util.ts.
   const isItemFilled = (elementId: string): boolean => {
+    if (tocFilled.has(elementId)) {
+      return true
+    }
     const local = localByElementId?.get(elementId)?.textValue
     return Boolean((local !== undefined ? local : byElementId.get(elementId)?.textValue)?.trim())
   }
 
   return {
     ...canvasData,
-    elements: distributeLists(merged, {
+    elements: distributeLists(prepared, {
       isItemFilled,
       pageWidth: canvasData.pageWidth ?? A4_PAGE_WIDTH,
       pageHeight: canvasData.pageHeight ?? A4_PAGE_HEIGHT,

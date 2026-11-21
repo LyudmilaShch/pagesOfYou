@@ -10,6 +10,7 @@ const PUBLIC_PAGE_SELECT = {
   description: true,
   pageType: true,
   sortOrder: true,
+  updatedAt: true,
   previewImage: true,
   canvasData: true,
   isRequired: true,

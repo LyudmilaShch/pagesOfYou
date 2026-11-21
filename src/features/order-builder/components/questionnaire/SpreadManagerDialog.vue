@@ -32,12 +32,28 @@
             </div>
           </div>
 
-          <div v-if="tocCanvas" key="toc" class="spread-reorder__item spread-reorder__item--fixed">
+          <div v-if="tocPage" key="toc" class="spread-reorder__item spread-reorder__item--fixed">
             <div class="spread-reorder__thumb">
-              <JournalSpreadThumbnail :canvas-data="tocCanvas" :container-ratio="1.19" />
+              <JournalSpreadThumbnail
+                v-if="tocCanvas"
+                :key="tocPage.magazinePage.id"
+                :canvas-data="tocCanvas"
+                :container-ratio="1.19"
+                :toc-entries="tocEntriesForPage(pages, tocPage.id)"
+              />
             </div>
             <div class="spread-reorder__body">
-              <span class="spread-reorder__label">Содержание</span>
+              <span class="spread-reorder__label">{{ tocPage.magazinePage.name }}</span>
+              <div class="spread-reorder__controls">
+                <button
+                  type="button"
+                  class="spread-reorder__template-btn"
+                  @click="openTemplatePicker(tocPage)"
+                >
+                  <v-icon size="12">mdi-view-grid-outline</v-icon>
+                  Шаблон
+                </button>
+              </div>
             </div>
           </div>
 
@@ -196,7 +212,7 @@ import type { CanvasData } from '@/modules/editor/models/canvas-data.model'
 import type { SetJournalPageTemplatePayload } from '../../api/orders.api'
 import { useOrderBuilderStore } from '../../stores/order-builder.store'
 import type { JournalPage, TrashedJournalPage } from '../../types/order.types'
-import { countSpreadSlots } from '../../utils/journal-structure.util'
+import { countSpreadSlots, tocEntriesForPage } from '../../utils/journal-structure.util'
 import { presentCustomerPageCanvas } from '../../utils/missing-photos.util'
 import JournalTemplatePickerDialog from '../JournalTemplatePickerDialog.vue'
 
@@ -231,10 +247,12 @@ const backCoverCanvas = computed(() => {
 // Same fixed, non-draggable treatment as cover/back-cover — a TOC slot never appears in
 // dto.spreadIds server-side either (see orders.service.ts's reorderJournalSpreads), so it can
 // only ever sit right after the cover.
-const tocCanvas = computed(() => {
-  const page = props.pages.find((item) => item.slotType === 'TOC')
-  return page ? props.canvasDataByPageId.get(page.id) ?? null : null
-})
+const tocPage = computed(() => props.pages.find((item) => item.slotType === 'TOC') ?? null)
+const tocCanvas = computed(() =>
+  tocPage.value
+    ? presentCustomerPageCanvas(tocPage.value, undefined, tocEntriesForPage(props.pages, tocPage.value.id))
+    : null,
+)
 
 // Printing requires the final page count to be a multiple of 4 — equivalent to
 // `countSpreadSlots` (SPREAD+TOC, same metric the backend and pricing use) staying odd, the same
@@ -632,7 +650,7 @@ const trashItems = ref<TrashedJournalPage[]>([])
 const trashCanvasByPageId = computed(() => {
   const map = new Map<string, CanvasData>()
   for (const item of trashItems.value) {
-    map.set(item.id, presentCustomerPageCanvas(item))
+    map.set(item.id, presentCustomerPageCanvas(item, undefined, tocEntriesForPage(props.pages, item.id)))
   }
   return map
 })

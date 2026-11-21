@@ -177,9 +177,10 @@ const canApply = computed(() => {
 })
 
 watch(
-  () => [props.open, props.journalPage] as const,
-  ([open, page]) => {
-    if (!open || !page) {
+  () => (props.open ? props.journalPage?.id ?? null : null),
+  (pageId) => {
+    const page = props.journalPage
+    if (!props.open || !pageId || !page) {
       return
     }
 

@@ -57,6 +57,7 @@ export interface PlaceholderValue {
 export interface MagazinePageSummary {
   id: string
   name: string
+  description?: string | null
   pageType: string
   previewImage: string | null
   isRequired: boolean

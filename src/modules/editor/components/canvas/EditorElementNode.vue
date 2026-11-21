@@ -169,7 +169,7 @@ import {
 } from '../../constants/page.constants'
 import type { GroupElement, PageElement } from '../../models'
 import { isGroupElement } from '../../models'
-import { getSiblings } from '../../utils/element-tree.util'
+import { getSiblings, locateNode } from '../../utils/element-tree.util'
 import { useElementCanvasStore } from '../../composables/use-element-canvas-store'
 import { useEditorStore } from '../../store/editor.store'
 
@@ -357,7 +357,7 @@ const outerGroupConfig = computed(() => ({
     !isPhotoCropEditing.value &&
     !isPhotoDimmed.value &&
     !store.textEditingElementId &&
-    isAtActiveScope.value,
+    (isAtActiveScope.value || isEditableListNumber.value),
 }))
 
 const innerGroupShellConfig = {
@@ -462,6 +462,24 @@ const isAtActiveScope = computed(() => {
   }
 
   return (props.parentId ?? null) === (editorStore.groupEditingId ?? null)
+})
+
+/** Page number of a contents/list row. It stays clickable while the row itself is the selection,
+ * so it can be moved and styled on its own. The title stays part of the row. */
+const isEditableListNumber = computed(() => {
+  if (orderCanvas || props.parentId == null || !editorStore.document) {
+    return false
+  }
+  if (!isTextPlaceholderElement(props.element) || props.element.listRole !== 'number') {
+    return false
+  }
+  const list = editorStore.findListOf(props.parentId)
+  if (!list?.rows.some((row) => row.node.id === props.parentId)) {
+    return false
+  }
+  const location = locateNode(editorStore.document.canvasData.elements, props.parentId)
+  const groupParentId = location?.parent?.id ?? null
+  return groupParentId === (editorStore.groupEditingId ?? null)
 })
 
 const isContainerElement = computed(() => isGroupElement(props.element))
@@ -821,28 +839,77 @@ const requiredEmptyOutlineConfig = computed(() => {
   }
 })
 
-const selectionOutlineConfig = computed(() => {
-  const bounds =
-    props.element.type === 'shape-line'
-      ? {
-          x: 0,
-          y: -8,
-          width: Math.max(props.element.size.width, 1),
-          height: 16,
-        }
-      : {
-          x: 0,
-          y: 0,
-          width: props.element.size.width,
-          height: Math.max(props.element.size.height, 1),
-        }
+/** A list row keeps the box it was created with, while the admin moves the title, page number
+ * and line to negative coordinates inside it. The stored box then sits in empty space. The
+ * outline follows the visible children instead. */
+function selectionOutlineBounds(element: PageElement): {
+  x: number
+  y: number
+  width: number
+  height: number
+} {
+  if (element.type === 'shape-line') {
+    return {
+      x: 0,
+      y: -8,
+      width: Math.max(element.size.width, 1),
+      height: 16,
+    }
+  }
 
+  const stored = {
+    x: 0,
+    y: 0,
+    width: element.size.width,
+    height: Math.max(element.size.height, 1),
+  }
+
+  if (!isGroupElement(element)) {
+    return stored
+  }
+
+  const children = element.children.filter((child) => child.visible !== false)
+  if (children.length === 0) {
+    return stored
+  }
+
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  for (const child of children) {
+    const height = child.type === 'shape-line' ? 0 : child.size.height
+    minX = Math.min(minX, child.position.x)
+    minY = Math.min(minY, child.position.y)
+    maxX = Math.max(maxX, child.position.x + child.size.width)
+    maxY = Math.max(maxY, child.position.y + height)
+  }
+
+  const sticksOut =
+    minX < -0.5 ||
+    minY < -0.5 ||
+    maxX > element.size.width + 0.5 ||
+    maxY > element.size.height + 0.5
+
+  if (!sticksOut) {
+    return stored
+  }
+
+  return {
+    x: minX,
+    y: minY,
+    width: Math.max(maxX - minX, 1),
+    height: Math.max(maxY - minY, 1),
+  }
+}
+
+const selectionOutlineConfig = computed(() => {
   if (!showSelectionOutline.value) {
     return null
   }
 
   return {
-    ...bounds,
+    ...selectionOutlineBounds(props.element),
     stroke: '#111111',
     strokeWidth: 1,
     dash: [4, 4],
@@ -1053,8 +1120,11 @@ function handleSelect(event: Konva.KonvaEventObject<MouseEvent | TouchEvent>): v
   }
 
   if (!isAtActiveScope.value) {
-    // Not interactive at this scope — don't cancelBubble, so the event reaches the enclosing
-    // (interactive) container's own handler instead of getting stuck on this locked descendant.
+    if (isEditableListNumber.value) {
+      event.cancelBubble = true
+      store.selectElement(props.element.id)
+    }
+    // Otherwise don't cancelBubble, so the event reaches the enclosing container.
     return
   }
 
@@ -1102,6 +1172,11 @@ function handleSelect(event: Konva.KonvaEventObject<MouseEvent | TouchEvent>): v
 
 function handleDblClick(event: Konva.KonvaEventObject<MouseEvent | TouchEvent>): void {
   if (store.previewMode || props.element.locked) {
+    return
+  }
+
+  if (isEditableListNumber.value) {
+    event.cancelBubble = true
     return
   }
 
@@ -1593,6 +1668,35 @@ function handleDragEnd(event: Konva.KonvaEventObject<DragEvent>): void {
   })
 }
 
+function bakeListRowWidthFromNode(
+  inner: Konva.Group,
+  anchor: string | null,
+): { width: number; height: number; position: { x: number; y: number } } | null {
+  const outer = getOuterNode()
+  if (!outer) {
+    return null
+  }
+
+  const rawWidth = Math.abs(inner.width() * inner.scaleX())
+  const height = Math.max(8, props.element.size.height)
+  const width = Math.max(MIN_TEXT_BOX_WIDTH, rawWidth)
+  const centerX = outer.x() + inner.x()
+  const centerY = outer.y() + inner.y()
+  let left = centerX - rawWidth / 2
+  if (anchor === 'middle-left') {
+    left = centerX + rawWidth / 2 - width
+  }
+
+  const position = toLogicalPosition({
+    x: left,
+    y: centerY - height / 2,
+  })
+
+  applyOuterTopLeftPosition(outer, left, centerY - height / 2)
+  syncInnerTransformNode(inner, { width, height }, props.element.rotation)
+  return { width, height, position }
+}
+
 function bakeBoxTransformFromNode(
   inner: Konva.Group,
 ): { width: number; height: number; rotation: number } | null {
@@ -1689,6 +1793,7 @@ function handleTransformEnd(event: Konva.KonvaEventObject<Event>): void {
     const outer = getOuterNode()
     const activeAnchor = activeTransformerAnchor.value ?? getActiveTransformerAnchor(inner)
     const isText = isTextPlaceholderElement(props.element)
+    const isListRow = isGroupElement(props.element) && Boolean(props.element.listId)
     const isTextRotation =
       isText &&
       (activeAnchor === 'rotater' || Math.abs(inner.rotation() - props.element.rotation) > 0.001)
@@ -1709,6 +1814,10 @@ function handleTransformEnd(event: Konva.KonvaEventObject<Event>): void {
     if (isResizing && !isTextRotation) {
       if (isText) {
         bakedText = bakeTextTransformFromNode(inner, activeAnchor)
+      } else if (isListRow) {
+        // Side handles change the width only. Baking scaleY here is what stretched the frame
+        // far below the words.
+        bakedText = bakeListRowWidthFromNode(inner, activeAnchor)
       } else {
         resizedBox = bakeBoxTransformFromNode(inner)
       }
@@ -1719,15 +1828,15 @@ function handleTransformEnd(event: Konva.KonvaEventObject<Event>): void {
 
     const size = getPivotSize()
 
-    if (!isText) {
+    if (bakedText) {
+      size.width = bakedText.width
+      size.height = bakedText.height
+    } else if (!isText) {
       size.width = Math.max(8, resizedBox?.width ?? inner.width())
       size.height = Math.max(
         props.element.type === 'shape-line' ? 0 : 8,
         resizedBox?.height ?? inner.height(),
       )
-    } else if (bakedText) {
-      size.width = bakedText.width
-      size.height = bakedText.height
     }
 
     syncInnerTransformNode(
@@ -1746,7 +1855,21 @@ function handleTransformEnd(event: Konva.KonvaEventObject<Event>): void {
       applyOuterPosition(outer, topLeft)
     }
 
-    if (isText) {
+    if (isListRow) {
+      store.updateElement(
+        props.element.id,
+        bakedText
+          ? {
+              position: topLeft,
+              size: { width: size.width, height: size.height },
+            }
+          : {
+              position: topLeft,
+              rotation: Math.round(inner.rotation()),
+            },
+        { skipTextLayoutRecalc: true },
+      )
+    } else if (isText) {
       store.updateElement(
         props.element.id,
         bakedText

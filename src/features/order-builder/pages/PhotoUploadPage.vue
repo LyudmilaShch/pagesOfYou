@@ -391,7 +391,7 @@ import {
   countPhotosToUpload,
   findNextEmptyAutoFillSlot,
   hasMissingCustomerPhotos,
-  presentCustomerPageCanvas,
+  presentCustomerPages,
   collectPhotoSlotPreview,
 } from '../utils/missing-photos.util'
 import QuestionnaireBook from '../components/questionnaire/QuestionnaireBook.vue'
@@ -615,13 +615,7 @@ function goToUsage(entry: PhotoUsage): void {
 
 // Same base-layer materialization QuestionnairePage.vue uses for the book preview — no live
 // overlay needed here, since nothing on this page edits any placeholder value.
-const canvasDataByPageId = computed(() => {
-  const map = new Map<string, ReturnType<typeof presentCustomerPageCanvas>>()
-  for (const page of store.order?.journalPages ?? []) {
-    map.set(page.id, presentCustomerPageCanvas(page))
-  }
-  return map
-})
+const canvasDataByPageId = computed(() => presentCustomerPages(store.order?.journalPages ?? []))
 
 /** Mirrors QuestionnairePage.vue's ensureOrderLoaded 1-1: a local draft only exists once the user
  * has already gone through CreateOrderPage in this session — a cold URL hit for a guest has

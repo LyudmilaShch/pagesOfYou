@@ -25,9 +25,23 @@ export const DEFAULT_LIST_MIN_FONT_SCALE = 0.85
  * of a chained AI text. These settings are list-wide, mirrored onto every row by the editor; the
  * first row's are authoritative. See list-distribution.util.ts.
  */
+/** 'question' (unset) — rows fill from a LIST answer. 'toc' — rows are a table of contents:
+ * titles and page numbers are written from the journal at render time, and the list's layout
+ * (two pages, placement, gaps, font) is the whole of the contents' behaviour. */
+export type ListSource = 'question' | 'toc'
+
+/** How a contents row prints its page number. Unset — `plain` (`3`). */
+export type TocNumberFormat = 'plain' | 'pad2' | 'page'
+
+/** What a long section title does inside its box. Unset — `wrap` (the row grows with the lines). */
+export type TocTitleFit = 'wrap' | 'shrink'
+
 export interface ListSettings {
-  /** The LIST question whose items fill the rows — mirrored onto every row's 'item' text. */
+  /** The LIST question whose items fill the rows — mirrored onto every row's 'item' text.
+   * Null for a table of contents (`source: 'toc'`), which has no question. */
   questionKey: string | null
+  /** Unset — 'question'. */
+  source?: ListSource
   /** Fewest items the customer must fill (0/unset — none); makes the question required. The most is
    * the row count. */
   minItems?: number
@@ -60,6 +74,12 @@ export interface ListSettings {
    * default below. The list's name (its question), the answers, the items already written and the
    * length limit are always added around it. */
   suggestPrompt?: string
+  /** Contents only. Unset — `plain`. */
+  numberFormat?: TocNumberFormat
+  /** Contents only. Unset — `wrap`. */
+  titleFit?: TocTitleFit
+  /** Contents only. A line under each title. Unset — off. The text comes from the spread or page. */
+  showDescription?: boolean
 }
 
 /** Mirrored in the backend's orders.service.ts (DEFAULT_LIST_SUGGEST_PROMPT) — keep in sync. */

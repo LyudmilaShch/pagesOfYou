@@ -53,6 +53,7 @@ import type { PageElement } from '@/modules/editor/models'
 import { useEditorStore } from '@/modules/editor/store/editor.store'
 import JournalSpreadThumbnail from '@/modules/editor/components/JournalSpreadThumbnail.vue'
 import { materializeCanvasData } from '@/features/order-builder/utils/merge-placeholder-element.util'
+import { tocEntriesForPage } from '@/features/order-builder/utils/journal-structure.util'
 import { isFillableElement, isPlaceholderFilled } from '@/features/order-builder/utils/placeholder.utils'
 import { useAdminOrdersStore } from '../stores/orders.store'
 import type { AdminOrderJournalPage } from '@/shared/api/admin/orders.api'
@@ -112,7 +113,13 @@ const sidebarEntries = computed(() => {
  * advanced editor uses — so the row thumbnail reflects what's actually placed, not just the bare
  * template. */
 function materializedCanvas(page: AdminOrderJournalPage): CanvasData {
-  return materializeCanvasData(normalizeCanvasData(page.pageSnapshot), page.placeholderValues)
+  const pages = store.current?.journalPages ?? [page]
+  return materializeCanvasData(
+    normalizeCanvasData(page.pageSnapshot),
+    page.placeholderValues,
+    undefined,
+    tocEntriesForPage(pages, page.id),
+  )
 }
 
 /** Required-field completeness — mirrors the customer-facing `JournalStructurePanel.vue`, so an

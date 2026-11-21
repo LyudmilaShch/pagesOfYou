@@ -62,6 +62,7 @@ import { userEditorAssetsProvider } from '../services/user-editor-assets'
 import { ordersApi } from '../api/orders.api'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
 import { hasMissingCustomerPhotos, presentCustomerPageCanvas } from '../utils/missing-photos.util'
+import { tocEntriesForPage } from '../utils/journal-structure.util'
 import { getGalleryScope } from '../utils/photo-gallery-scope.util'
 import JournalStructurePanel from '../components/JournalStructurePanel.vue'
 import QuestionnaireEntryPanel from '../components/QuestionnaireEntryPanel.vue'
@@ -341,7 +342,8 @@ async function fetchDocument(): Promise<EditorSourceDocument> {
     throw new Error('Страница не найдена в этом заказе.')
   }
 
-  const canvasData = presentCustomerPageCanvas(journalPage)
+  const pages = orderBuilderStore.order?.journalPages ?? []
+  const canvasData = presentCustomerPageCanvas(journalPage, undefined, tocEntriesForPage(pages, journalPage.id))
 
   return {
     id: journalPage.id,
