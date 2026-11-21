@@ -32,6 +32,7 @@ import {
 } from '@/modules/editor/services/editor-questions'
 import { adminMagazinePagesApi } from '@/shared/api/admin/magazine-pages.api'
 import { adminQuestionsApi } from '@/shared/api/admin/questions.api'
+import { loadTocAdminSamples } from '@/modules/editor/utils/toc-admin-samples'
 
 const route = useRoute()
 const store = useEditorStore()
@@ -53,6 +54,11 @@ onMounted(async () => {
       () => adminMagazinePagesApi.getOne(magazineTypeId, pageId),
       (canvasData) => adminMagazinePagesApi.update(magazineTypeId, pageId, { canvasData }).then(() => undefined),
     )
+    try {
+      store.applyTocSamples(await loadTocAdminSamples(magazineTypeId))
+    } catch {
+      // The contents keeps its saved text when the page list cannot be loaded.
+    }
   } catch (err: unknown) {
     const message =
       (err as { response?: { data?: { message?: string } } })?.response?.data?.message ??

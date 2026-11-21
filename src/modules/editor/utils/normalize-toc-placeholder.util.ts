@@ -75,7 +75,6 @@ export function normalizeTocPlaceholderElement(element: PageElement): PageElemen
     effect: isTextEffect(element.effect) ? element.effect : null,
     entryGap:
       typeof element.entryGap === 'number' && element.entryGap >= 0 ? element.entryGap : 12,
-    dotLeader: typeof element.dotLeader === 'boolean' ? element.dotLeader : true,
   }
 
   return normalized

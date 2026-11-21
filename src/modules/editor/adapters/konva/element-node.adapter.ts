@@ -4,7 +4,6 @@ import type { PageElement } from '../../models'
 import type { PhotoPlaceholder } from '../../models/photo-placeholder.model'
 import { hasPhotoStroke } from '../../utils/element-stroke.util'
 import type { TextPlaceholder } from '../../models/text-placeholder.model'
-import type { TocPlaceholder } from '../../models/toc-placeholder.model'
 import type { TextEffect } from '../../models/text-effect.model'
 import type { PhotoFilter } from '../../models/photo-filter.model'
 import { SHAPE_SHADOW_DESCRIPTORS } from '../../models/shape-shadow.model'
@@ -891,18 +890,17 @@ const TOC_PREVIEW_ENTRIES = [
 /** The template editor has no "real" order to number pages against — a magazine type can back
  * orders with different final spread counts — so this is illustrative only, purely for the admin
  * to gauge font/spacing while designing. The real, per-order rows render in the customer-facing
- * DOM book (JournalSpreadThumbnail.vue), which can lay out title/dot-leader/number as separate
- * flex columns; Konva's single Text node here can only approximate that with padded strings. */
-function buildTocPreviewText(element: TocPlaceholder): string {
-  const leaderChar = element.dotLeader ? '⋯' : ' '
-  return TOC_PREVIEW_ENTRIES.map((entry) => `${entry.title} ${leaderChar.repeat(8)} ${entry.pageLabel}`).join('\n\n')
+ * DOM book (JournalSpreadThumbnail.vue). Konva's single Text node here can only approximate that
+ * with padded strings. */
+function buildTocPreviewText(): string {
+  return TOC_PREVIEW_ENTRIES.map((entry) => `${entry.title}  ${entry.pageLabel}`).join('\n\n')
 }
 
 function getTextPlaceholderElement(element: PageElement): TextPlaceholder | null {
   if (element.type === 'toc-placeholder') {
     return {
       ...element,
-      defaultText: buildTocPreviewText(element),
+      defaultText: buildTocPreviewText(),
       textSizingMode: 'auto',
       maxLength: 0,
       required: false,

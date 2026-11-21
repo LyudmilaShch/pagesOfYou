@@ -105,7 +105,7 @@
       </div>
     </div>
 
-    <v-dialog v-model="formDialog.open" max-width="480">
+    <v-dialog v-model="formDialog.open" max-width="560">
       <v-card>
         <v-card-title>{{ formDialog.editId ? 'Редактировать страницу' : 'Новая страница' }}</v-card-title>
         <v-divider />
@@ -120,6 +120,16 @@
               label="Тип страницы"
               variant="outlined"
               hide-details="auto"
+            />
+            <v-textarea
+              v-if="form.pageType === 'SPREAD' || form.pageType === 'PAGE'"
+              v-model="form.description"
+              label="Описание для содержания"
+              hint="Строка под названием в содержании. Можно оставить пустым."
+              persistent-hint
+              rows="2"
+              auto-grow
+              variant="outlined"
             />
             <v-switch v-model="form.isRequired" label="Обязательная страница" color="primary" hide-details />
           </div>
@@ -202,7 +212,7 @@ const missingTemplatesLabel = computed(() => {
 
 const formDialog = reactive({ open: false, editId: null as string | null, submitting: false })
 const deleteDialog = reactive({ open: false, id: null as string | null, name: '', loading: false })
-const form = reactive({ name: '', pageType: 'PAGE' as PageType, isRequired: false })
+const form = reactive({ name: '', pageType: 'PAGE' as PageType, isRequired: false, description: '' })
 
 async function loadPages(): Promise<void> {
   loading.value = true
@@ -218,6 +228,7 @@ function openCreate(): void {
   form.name = ''
   form.pageType = 'PAGE'
   form.isRequired = false
+  form.description = ''
   formDialog.open = true
 }
 
@@ -226,6 +237,7 @@ function openEdit(page: AdminMagazinePage): void {
   form.name = page.name
   form.pageType = page.pageType
   form.isRequired = page.isRequired
+  form.description = page.description ?? ''
   formDialog.open = true
 }
 
@@ -261,6 +273,7 @@ async function submitForm(): Promise<void> {
         name: form.name.trim(),
         pageType: form.pageType,
         isRequired: form.isRequired,
+        description: form.pageType === 'SPREAD' || form.pageType === 'PAGE' ? form.description.trim() : '',
       })
       formDialog.open = false
       await loadPages()
@@ -271,6 +284,7 @@ async function submitForm(): Promise<void> {
       name: form.name.trim(),
       pageType: form.pageType,
       isRequired: form.isRequired,
+      description: form.pageType === 'SPREAD' || form.pageType === 'PAGE' ? form.description.trim() : '',
     })
     formDialog.open = false
     void openEditor(created.id)

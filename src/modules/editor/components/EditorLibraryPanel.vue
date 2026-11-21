@@ -68,25 +68,42 @@
         </v-tooltip>
       </div>
     </div>
+
+    <EditorTocDescriptionDialog v-model:open="tocChoiceOpen" @choose="createToc" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 
 import { LIBRARY_ELEMENTS } from '../factories/create-element.factory'
 import type { LibraryElementCategory, LibraryElementType } from '../factories/create-element.factory'
 import { useEditorStore } from '../store/editor.store'
 import { editorAssets } from '../services/editor-assets'
 import type { AdminPhotoFrame } from '@/shared/api/admin/photo-frames.api'
+import EditorTocDescriptionDialog from './EditorTocDescriptionDialog.vue'
+import { loadTocAdminSamples } from '../utils/toc-admin-samples'
 
 const props = defineProps<{
   category: LibraryElementCategory
 }>()
 
 const store = useEditorStore()
+const route = useRoute()
 
-const items = computed(() => LIBRARY_ELEMENTS.filter((item) => item.category === props.category))
+const items = computed(() =>
+  LIBRARY_ELEMENTS.filter((item) => {
+    if (item.category !== props.category) {
+      return false
+    }
+    // Contents belongs only on a contents template, whether that template is one page or a spread.
+    if (item.type === 'toc-placeholder' && store.document?.pageType !== 'TOC') {
+      return false
+    }
+    return true
+  }),
+)
 
 // Cover lines only make sense on a cover — offered there alone, at the top of the text category.
 const showCoverPhrase = computed(() => props.category === 'text' && store.document?.pageType === 'COVER')
@@ -101,6 +118,7 @@ function handleAddCoverPhrase(): void {
 const frames = ref<AdminPhotoFrame[]>([])
 const loadingFrames = ref(false)
 const activeFrames = computed(() => frames.value.filter((frame) => frame.isActive))
+const tocChoiceOpen = ref(false)
 
 async function loadFrames(): Promise<void> {
   loadingFrames.value = true
@@ -117,7 +135,24 @@ function handleAdd(type: LibraryElementType): void {
   if (store.previewMode) {
     return
   }
+  if (type === 'toc-placeholder') {
+    tocChoiceOpen.value = true
+    return
+  }
   store.addElement(type)
+}
+
+async function createToc(showDescription: boolean): Promise<void> {
+  const typeId = route.params.magazineTypeId
+  let samples: Awaited<ReturnType<typeof loadTocAdminSamples>> = []
+  if (typeof typeId === 'string') {
+    try {
+      samples = await loadTocAdminSamples(typeId)
+    } catch {
+      samples = []
+    }
+  }
+  store.addTocList({ showDescription, samples })
 }
 
 function handleAddFramedPhoto(frame: AdminPhotoFrame): void {

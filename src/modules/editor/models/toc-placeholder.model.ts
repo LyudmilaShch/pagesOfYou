@@ -10,8 +10,11 @@ import type { TextEffect } from './text-effect.model'
 export interface TocEntry {
   pageId: string
   title: string
-  /** Already formatted for display, e.g. "3–4" for a spread or "12" for a single page. */
+  /** Already formatted for display, e.g. "3" for the spread's first page. `numberFormat` on the
+   * contents list may still rewrite it (`03`, `стр. 3`) when the rows are filled. */
   pageLabel: string
+  /** Optional line under the title, written by the admin on the spread or page template. */
+  description?: string
 }
 
 /**
@@ -33,9 +36,7 @@ export interface TocPlaceholder extends PageElementBase {
   fontItalic: boolean
   letterSpacing: number
   lineHeight: number
-  /** Alignment of each entry's title within its row — the page number always sits at the
-   * opposite (trailing) edge, except with a dot leader, which always overrides this to a
-   * title-left/number-right layout. */
+  /** Alignment of each entry's title and page number within the row. */
   textAlign: TextAlign
   verticalAlign: TextVerticalAlign
   textTransform: TextTransform
@@ -44,6 +45,4 @@ export interface TocPlaceholder extends PageElementBase {
 
   /** Vertical gap between entries, in page points (same unit as `size`/`position`). */
   entryGap: number
-  /** Dotted leader line filling the gap between a title and its page number. */
-  dotLeader: boolean
 }

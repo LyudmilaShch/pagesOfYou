@@ -226,7 +226,6 @@
             :style="tocEntryStyle(leaf)"
           >
             <span class="spread-thumb__toc-title">{{ entry.title }}</span>
-            <span v-if="leaf.dotLeader" class="spread-thumb__toc-leader" aria-hidden="true" />
             <span class="spread-thumb__toc-number">{{ entry.pageLabel }}</span>
           </div>
         </div>
@@ -979,14 +978,7 @@ function tocContainerStyle(leaf: TocPlaceholder): Record<string, string> {
   }
 }
 
-// With a dot leader, the classic layout (title flush left, number flush right, dots filling the
-// gap) always wins — `textAlign` has nothing meaningful to add there. Without one, the title and
-// number sit together as a single unit that `textAlign` positions within the row.
 function tocEntryStyle(leaf: TocPlaceholder): Record<string, string> {
-  if (leaf.dotLeader) {
-    return { display: 'flex', alignItems: 'baseline', gap: `${4 * scale.value}px` }
-  }
-
   return {
     display: 'flex',
     alignItems: 'baseline',
@@ -1244,15 +1236,6 @@ function shapeStyle(leaf: ShapeElement): Record<string, string> {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.spread-thumb__toc-leader {
-  flex: 1;
-  min-width: 12px;
-  align-self: flex-end;
-  margin-bottom: 0.2em;
-  border-bottom: 1px dotted currentColor;
-  opacity: 0.5;
 }
 
 .spread-thumb__toc-number {

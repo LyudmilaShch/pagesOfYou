@@ -32,6 +32,7 @@ import { ensureCustomFontsLoaded } from '@/modules/editor/utils/custom-fonts.uti
 import { provideEditorLeftPanelExtraCategories } from '@/modules/editor/services/editor-left-panel-extra-category'
 import { provideEditorPhotoPicker } from '@/modules/editor/services/editor-photo-picker'
 import { materializeCanvasData } from '@/features/order-builder/utils/merge-placeholder-element.util'
+import { tocEntriesForPage } from '@/features/order-builder/utils/journal-structure.util'
 import { adminOrdersApi } from '@/shared/api/admin/orders.api'
 import { useAdminOrdersStore } from '../stores/orders.store'
 import AdminOrderStructurePanel from '../components/AdminOrderStructurePanel.vue'
@@ -109,7 +110,12 @@ async function fetchDocument(): Promise<EditorSourceDocument> {
     id: page.id,
     name: page.magazinePage.name,
     pageType: page.slotType,
-    canvasData: materializeCanvasData(normalizeCanvasData(page.pageSnapshot), page.placeholderValues),
+    canvasData: materializeCanvasData(
+      normalizeCanvasData(page.pageSnapshot),
+      page.placeholderValues,
+      undefined,
+      tocEntriesForPage(adminOrdersStore.current?.journalPages ?? [page], page.id),
+    ),
   }
 }
 

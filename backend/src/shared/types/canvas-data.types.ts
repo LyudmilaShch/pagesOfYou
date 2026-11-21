@@ -324,6 +324,8 @@ export type CanvasLeafElement =
 export interface CanvasListSettings {
   /** The LIST question whose items fill the rows — mirrored onto every row's 'item' text. */
   questionKey: string | null;
+  /** 'toc' — the list is a table of contents, filled from the journal rather than a question. */
+  source?: 'question' | 'toc';
   /** Fewest items the customer must fill (0/unset — none); enforced by the questionnaire. */
   minItems?: number;
   /** How k filled rows are placed among the template's rows; unset — 'slots'. */
@@ -344,6 +346,12 @@ export interface CanvasListSettings {
   suggestEnabled?: boolean;
   /** The admin's instruction for suggested items; unset/blank — DEFAULT_LIST_SUGGEST_PROMPT. */
   suggestPrompt?: string;
+  /** Contents only. Unset — `plain`. */
+  numberFormat?: 'plain' | 'pad2' | 'page';
+  /** Contents only. Unset — `wrap`. */
+  titleFit?: 'wrap' | 'shrink';
+  /** Contents only. A line under each title. Unset — off. */
+  showDescription?: boolean;
 }
 
 /** A plain container node — a group is not a separate mechanism, just a node with children. */

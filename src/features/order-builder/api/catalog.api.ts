@@ -125,6 +125,8 @@ export interface CatalogMagazinePage {
   description: string | null
   pageType: string
   sortOrder: number
+  /** ISO timestamp. A new journal picks the contents page the admin saved last. */
+  updatedAt?: string
   previewImage: string | null
   canvasData: unknown
   isRequired: boolean

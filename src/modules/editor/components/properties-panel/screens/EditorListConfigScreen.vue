@@ -1,27 +1,72 @@
 <template>
   <div v-if="listInfo && settings" class="editor-list-config-screen">
-    <p class="editor-list-config-screen__title">Список · {{ rows.length }} {{ pluralRows(rows.length) }}</p>
+    <p class="editor-list-config-screen__title">
+      {{ isToc ? 'Содержание' : 'Список' }} · {{ rows.length }} {{ pluralRows(rows.length) }}
+    </p>
+    <p v-if="isToc" class="editor-list-config-screen__hint">
+      Названия, описания и номера страниц подставятся из разворотов журнала. Если разделов меньше,
+      чем строк, они встают на места, выбранные раскладкой ниже. Лишние строки скрываются.
+    </p>
+
+    <template v-if="isToc && listInfo && settings">
+      <p class="editor-list-config-screen__hint">
+        <template v-if="settings.showDescription === true">
+          Описание включено: под названием есть строка. Текст берётся из поля «Описание для содержания».
+          Это выбирается при создании содержания и потом не меняется.
+        </template>
+        <template v-else>
+          Описание выключено. Оно выбирается при создании содержания и потом не меняется.
+        </template>
+      </p>
+      <v-select
+        :model-value="settings.numberFormat ?? 'plain'"
+        :items="NUMBER_FORMATS"
+        item-title="title"
+        item-value="value"
+        label="Формат номера"
+        variant="outlined"
+        density="compact"
+        hide-details
+        @update:model-value="store.setTocAppearance(listInfo.listId, { numberFormat: $event })"
+      />
+      <v-select
+        :model-value="settings.titleFit ?? 'wrap'"
+        :items="TITLE_FITS"
+        item-title="title"
+        item-value="value"
+        label="Длинное название"
+        variant="outlined"
+        density="compact"
+        hide-details
+        @update:model-value="store.setTocAppearance(listInfo.listId, { titleFit: $event })"
+      />
+      <p class="editor-list-config-screen__hint">
+        Перенос увеличивает строку по числу строк названия. Уменьшение шрифта оставляет название в одну строку.
+      </p>
+    </template>
 
     <EditorQuestionPickerField
-      v-if="hasEditorQuestions"
+      v-if="!isToc && hasEditorQuestions"
       :model-value="settings.questionKey ? [settings.questionKey] : []"
       hint="Вопрос с типом «Список пунктов». Строк в шаблоне — это максимум пунктов в анкете."
       @update:model-value="store.setListQuestion(listInfo.listId, $event[0] ?? null)"
     />
 
     <EditorStepperField
+      v-if="!isToc"
       :model-value="settings.minItems ?? 0"
       label="Минимум пунктов"
       :min="0"
       :max="rows.length"
       @update:model-value="store.setListMinItems(listInfo.listId, $event)"
     />
-    <p class="editor-list-config-screen__hint">
+    <p v-if="!isToc" class="editor-list-config-screen__hint">
       {{ (settings.minItems ?? 0) > 0
         ? `Пользователь не сможет продолжить, пока не заполнит хотя бы ${settings.minItems} из ${rows.length}.`
         : `Без минимума: можно заполнить от 1 до ${rows.length} пунктов или пропустить вопрос.` }}
     </p>
 
+    <template v-if="!isToc">
     <div v-for="field in limitFields" :key="field.key" class="editor-list-config-screen__limit">
       <p class="editor-list-config-screen__title">{{ field.title }}</p>
       <div class="editor-list-config-screen__limit-row">
@@ -49,13 +94,14 @@
           : 'Не задано — лимит берётся из самого текста шаблона, в символах.' }}
       </p>
     </div>
+    </template>
 
     <v-select
       :model-value="settings.mode ?? 'slots'"
       :items="LAYOUT_MODES"
       item-title="title"
       item-value="value"
-      label="Раскладка, если пунктов меньше"
+      :label="isToc ? 'Раскладка, если разделов меньше' : 'Раскладка, если пунктов меньше'"
       variant="outlined"
       density="compact"
       hide-details
@@ -64,6 +110,7 @@
     <p class="editor-list-config-screen__hint">{{ LAYOUT_MODE_HINTS[settings.mode ?? 'slots'] }}</p>
 
     <v-select
+      v-if="!isToc"
       :model-value="settings.heightMode ?? 'fixed'"
       :items="HEIGHT_MODES"
       item-title="title"
@@ -74,12 +121,12 @@
       hide-details
       @update:model-value="store.setListFlowSettings(listInfo.listId, { heightMode: $event })"
     />
-    <p class="editor-list-config-screen__hint">
+    <p v-if="!isToc" class="editor-list-config-screen__hint">
       {{ settings.heightMode === 'text'
         ? 'Область колонки (от верха первой строки до низа последней) не двигается — строки внутри неё раздвигаются по реальной высоте текста. Только для вертикальных колонок.'
         : 'Строки стоят ровно на своих местах; длинное описание может наехать на следующую строку.' }}
     </p>
-    <template v-if="settings.heightMode === 'text'">
+    <template v-if="!isToc && settings.heightMode === 'text'">
       <v-select
         :model-value="settings.flowAlign ?? 'spread'"
         :items="FLOW_ALIGNS"
@@ -114,7 +161,7 @@
       </p>
     </template>
 
-    <div class="editor-list-config-screen__suggest">
+    <div v-if="!isToc" class="editor-list-config-screen__suggest">
       <EditorSwitch
         :model-value="settings.suggestEnabled !== false"
         label="Кнопка «Предложить пункты» (ИИ)"
@@ -172,7 +219,7 @@
               class="editor-list-config-screen__row-roles"
               :class="{ 'editor-list-config-screen__row-roles--warn': !row.fromAnswer }"
             >
-              {{ row.fromAnswer ? row.roles : 'нет заголовка и описания пункта' }}
+              {{ row.fromAnswer ? row.roles : (isToc ? 'нет названия раздела' : 'нет заголовка и описания пункта') }}
             </span>
           </span>
         </button>
@@ -225,7 +272,9 @@
     </v-btn>
 
     <div v-if="previewCanvas" class="editor-list-config-screen__preview">
-      <p class="editor-list-config-screen__title">Как будет при {{ previewCount }} из {{ rows.length }}</p>
+      <p class="editor-list-config-screen__title">
+        Как будет при {{ previewCount }} из {{ rows.length }}{{ isToc ? ' разделов' : '' }}
+      </p>
       <v-slider
         v-model="previewCount"
         :min="Math.max(1, settings.minItems ?? 0)"
@@ -274,20 +323,85 @@
       </p>
     </div>
 
+    <template v-if="isToc && listInfo && tocCapacity">
+      <p
+        v-if="baseShortfall > 0"
+        class="editor-list-config-screen__hint editor-list-config-screen__hint--warn"
+      >
+        Базовому журналу нужно {{ tocCapacity.entries }} {{ pluralSections(tocCapacity.entries) }}.
+        Строк {{ rows.length }}. Не хватает {{ baseShortfall }} {{ missingRows(baseShortfall) }}.
+      </p>
+      <v-btn
+        v-if="baseShortfall > 0"
+        class="editor-list-config-screen__action"
+        variant="outlined"
+        size="small"
+        prepend-icon="mdi-plus"
+        :disabled="store.previewMode"
+        @click="store.ensureTocRowCount(listInfo.listId, tocCapacity.entries)"
+      >
+        Добавить строки для базового журнала
+      </v-btn>
+      <template v-else>
+        <p class="editor-list-config-screen__hint">
+          Базовый журнал закрыт: {{ tocCapacity.entries }} {{ pluralSections(tocCapacity.entries) }},
+          строк {{ rows.length }}.
+        </p>
+        <p v-if="tocCapacity.extras" class="editor-list-config-screen__hint">
+          <template v-if="spareRows === 0">
+            Запасных строк нет. Чтобы покрыть ещё {{ rowsForNextBlock }}
+            {{ pluralSections(rowsForNextBlock) }}, добавьте {{ rowsForNextBlock }}
+            {{ addRows(rowsForNextBlock) }}.
+          </template>
+          <template v-else>
+            Запасных строк {{ spareRows }} — ещё на {{ spareRows }} {{ pluralSections(spareRows) }}.
+            Чтобы покрыть ещё {{ rowsForNextBlock }} {{ pluralSections(rowsForNextBlock) }},
+            добавьте {{ rowsForNextBlock }} {{ addRows(rowsForNextBlock) }}.
+          </template>
+        </p>
+        <v-btn
+          v-if="tocCapacity.extras"
+          class="editor-list-config-screen__action"
+          variant="outlined"
+          size="small"
+          prepend-icon="mdi-plus"
+          :disabled="store.previewMode"
+          @click="store.ensureTocRowCount(listInfo.listId, rows.length + rowsForNextBlock)"
+        >
+          Добавить строки ещё на {{ rowsForNextBlock }} {{ pluralSections(rowsForNextBlock) }}
+        </v-btn>
+        <p v-else-if="spareRows > 0" class="editor-list-config-screen__hint">
+          Запасных строк {{ spareRows }} — в базовом журнале они останутся пустыми.
+        </p>
+      </template>
+      <v-btn
+        class="editor-list-config-screen__action"
+        variant="outlined"
+        size="small"
+        prepend-icon="mdi-plus"
+        :disabled="store.previewMode"
+        @click="store.addTocListRow(listInfo.listId)"
+      >
+        Добавить строку
+      </v-btn>
+    </template>
+
     <v-btn
+      class="editor-list-config-screen__action"
       variant="text"
       size="small"
       color="error"
       prepend-icon="mdi-format-list-bulleted-square"
       @click="removeList"
     >
-      Убрать список
+      {{ isToc ? 'Убрать содержание' : 'Убрать список' }}
     </v-btn>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, inject, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 
 import { useEditorStore } from '../../../store/editor.store'
 import {
@@ -318,6 +432,10 @@ import {
   DEFAULT_LIST_SUGGEST_PROMPT,
 } from '../../../models/list.model'
 import JournalSpreadThumbnail from '../../JournalSpreadThumbnail.vue'
+import { adminMagazineTypesApi } from '@/shared/api/admin/magazine-types.api'
+import { adminMagazinePagesApi } from '@/shared/api/admin/magazine-pages.api'
+import { resolveInitialSpreadCount } from '@/features/order-builder/utils/journal-structure.util'
+import type { TocNumberFormat, TocTitleFit } from '../../../models/list.model'
 
 /** The list's own settings — opened from the "Настройки списка" button on the list, one of its
  * rows or a text in a row (see EditorListSection.vue); works on whichever list that selection is in. */
@@ -328,6 +446,56 @@ const hasEditorQuestions = computed(() => editorQuestions.value.length > 0 || cr
 
 const listInfo = computed(() => (store.selectedElement ? store.findListOf(store.selectedElement.id) : null))
 const settings = computed(() => listInfo.value?.settings ?? null)
+const isToc = computed(() => settings.value?.source === 'toc')
+
+const NUMBER_FORMATS: Array<{ value: TocNumberFormat; title: string }> = [
+  { value: 'plain', title: '3' },
+  { value: 'pad2', title: '03' },
+  { value: 'page', title: 'стр. 3' },
+]
+const TITLE_FITS: Array<{ value: TocTitleFit; title: string }> = [
+  { value: 'wrap', title: 'Переносить на строки' },
+  { value: 'shrink', title: 'Уменьшать шрифт' },
+]
+
+const route = useRoute()
+const tocCapacity = ref<{ entries: number; perBlock: number; extras: boolean } | null>(null)
+let tocCapacityRequest = 0
+
+const baseShortfall = computed(() => Math.max(0, (tocCapacity.value?.entries ?? 0) - rows.value.length))
+const spareRows = computed(() => Math.max(0, rows.value.length - (tocCapacity.value?.entries ?? 0)))
+/** Rows still needed to cover the next two sections. A leftover spare row counts toward that pair. */
+const rowsForNextBlock = computed(() => {
+  const block = tocCapacity.value?.perBlock || 1
+  const remainder = spareRows.value % block
+  return remainder === 0 ? block : block - remainder
+})
+
+watch(
+  () => [isToc.value, route.params.magazineTypeId] as const,
+  async ([toc, typeId]) => {
+    const request = ++tocCapacityRequest
+    if (!toc || typeof typeId !== 'string') {
+      tocCapacity.value = null
+      return
+    }
+    const [type, pages] = await Promise.all([
+      adminMagazineTypesApi.getOne(typeId),
+      adminMagazinePagesApi.list(typeId),
+    ])
+    if (request !== tocCapacityRequest) {
+      return
+    }
+    const spreads = resolveInitialSpreadCount(type.includedSpreads, pages.some((page) => page.pageType === 'TOC'))
+    const perSpread = pages.some((page) => page.pageType === 'PAGE') ? 2 : 1
+    tocCapacity.value = {
+      entries: spreads * perSpread,
+      perBlock: 2,
+      extras: Number(type.pricePerExtraFourPages) > 0,
+    }
+  },
+  { immediate: true },
+)
 
 /** The row the current selection sits in, highlighted in the rows list. */
 const currentRowId = computed(() => {
@@ -525,6 +693,22 @@ function pluralItems(n: number): string {
   return 'пунктов'
 }
 
+function addRows(n: number): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod100 >= 11 && mod100 <= 19) return 'строк'
+  if (mod10 === 1) return 'строку'
+  if (mod10 >= 2 && mod10 <= 4) return 'строки'
+  return 'строк'
+}
+
+function missingRows(n: number): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return 'строки'
+  return 'строк'
+}
+
 function pluralRows(n: number): string {
   const mod10 = n % 10
   const mod100 = n % 100
@@ -532,6 +716,15 @@ function pluralRows(n: number): string {
   if (mod10 === 1) return 'строка'
   if (mod10 >= 2 && mod10 <= 4) return 'строки'
   return 'строк'
+}
+
+function pluralSections(n: number): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod100 >= 11 && mod100 <= 19) return 'разделов'
+  if (mod10 === 1) return 'раздел'
+  if (mod10 >= 2 && mod10 <= 4) return 'раздела'
+  return 'разделов'
 }
 </script>
 
@@ -542,6 +735,21 @@ function pluralRows(n: number): string {
   display: flex;
   flex-direction: column;
   gap: $spacing-3;
+}
+
+// The panel is narrower than a single uppercase line of «Добавить строки ещё на N раздела».
+.editor-list-config-screen__action.v-btn {
+  height: auto !important;
+  min-height: 36px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  white-space: normal;
+
+  :deep(.v-btn__content) {
+    white-space: normal;
+    line-height: 1.25;
+    text-align: center;
+  }
 }
 
 .editor-list-config-screen__title {

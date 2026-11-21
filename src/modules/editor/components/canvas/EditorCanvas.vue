@@ -1034,7 +1034,10 @@ const transformerConfig = computed(() => {
     coarseRotationSnap: isShiftRotationSnap.value,
     enabledAnchors: getTransformerEnabledAnchors({
       isMultiSelection,
-      isText: Boolean(selected && isTextPlaceholderType(selected.type)),
+      isText: Boolean(
+        selected &&
+          (isTextPlaceholderType(selected.type) || (isGroupElement(selected) && selected.listId)),
+      ),
       isLine: Boolean(selected && selected.type === 'shape-line'),
     }),
     boundBoxFunc: (
@@ -1045,7 +1048,10 @@ const transformerConfig = computed(() => {
         return oldBox
       }
 
-      if (selected && isTextPlaceholderType(selected.type)) {
+      if (
+        selected &&
+        (isTextPlaceholderType(selected.type) || (isGroupElement(selected) && selected.listId))
+      ) {
         // Konva's own box. Rewriting height or the anchored edge here fought the transformer's
         // anchor math and jerked the frame while the width grew. The only limit is the minimum
         // width, in stage pixels (the page group is scaled by pageScale).
@@ -1715,7 +1721,7 @@ watch(
   () => {
     void syncTransformer()
   },
-  { deep: true },
+  { deep: true, immediate: true },
 )
 
 watch(pageScale, () => {
@@ -1765,6 +1771,7 @@ function handleCanvasKeydown(event: KeyboardEvent): void {
 }
 
 onMounted(() => {
+  store.repairTocRowFrames()
   updateStageSize()
   maybePlaySpreadIntro()
 

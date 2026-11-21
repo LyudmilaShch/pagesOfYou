@@ -126,7 +126,7 @@ import type { CanvasData } from '@/modules/editor/models/canvas-data.model'
 import type { PageElement } from '@/modules/editor/models'
 import { useEditorStore } from '@/modules/editor/store/editor.store'
 import JournalSpreadThumbnail from '@/modules/editor/components/JournalSpreadThumbnail.vue'
-import { getJournalPageDisplayName } from '../utils/journal-structure.util'
+import { getJournalPageDisplayName, tocEntriesForPage } from '../utils/journal-structure.util'
 import { isFillableElement, isPlaceholderFilled } from '../utils/placeholder.utils'
 import { presentCustomerPageCanvas } from '../utils/missing-photos.util'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
@@ -209,7 +209,8 @@ const sidebarEntries = computed(() => {
  * advanced editor uses — so the row thumbnail reflects what's actually placed, not just the bare
  * template. */
 function materializedCanvas(page: JournalPage): CanvasData {
-  return presentCustomerPageCanvas(page)
+  const pages = store.order?.journalPages ?? []
+  return presentCustomerPageCanvas(page, undefined, tocEntriesForPage(pages, page.id))
 }
 
 /** Required-field completeness — falls back to the element's own `defaultText`/`defaultImageUrl`

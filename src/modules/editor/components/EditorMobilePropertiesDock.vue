@@ -960,7 +960,7 @@ watch(
     // Picking a row from the list's own settings screen keeps that screen open.
     const previousList = previousId ? store.findListOf(previousId) : null
     if (
-      panelStack.current.value.id === 'list-config' &&
+      (panelStack.current.value.id === 'list-config') &&
       previousList &&
       nextId &&
       store.findListOf(nextId)?.listId === previousList.listId
