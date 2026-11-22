@@ -172,6 +172,37 @@ describe('tightenTocRows', () => {
     expect(group.size.height).toBeLessThan(40)
   })
 
+  it('drops the empty space under a description and keeps the width', () => {
+    const row = createTocListRows(A4_PAGE_WIDTH, A4_PAGE_HEIGHT, { showDescription: true })[0]
+    if (!row || !isGroupElement(row)) {
+      throw new Error('expected a row')
+    }
+    const detail = row.children.find((child) => isTextElement(child) && child.listRole === 'detail')
+    if (!detail || !isTextElement(detail)) {
+      throw new Error('row is missing its description')
+    }
+    const width = detail.size.width
+    detail.size = { width, height: 48 }
+
+    const fitted = tightenTocRows([row], (text) =>
+      text.listRole === 'detail'
+        ? { width: 40, height: 16 }
+        : { width: text.size.width, height: text.size.height },
+    )
+    const group = fitted[0]
+    if (!group || !isGroupElement(group)) {
+      throw new Error('expected a group')
+    }
+    const next = group.children.find((child) => isTextElement(child) && child.listRole === 'detail')
+    if (!next || !isTextElement(next)) {
+      throw new Error('fitted row is missing its description')
+    }
+
+    expect(next.size.height).toBe(16)
+    expect(next.size.width).toBe(width)
+    expect(next.position.y + next.size.height).toBeLessThan(detail.position.y + 48)
+  })
+
   it('leaves a one-line row untouched', () => {
     const rows = createTocListRows(A4_PAGE_WIDTH, A4_PAGE_HEIGHT)
     const again = tightenTocRows(rows, (text) => ({

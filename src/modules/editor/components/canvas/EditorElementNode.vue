@@ -177,6 +177,7 @@ import { getPlaceholderDisplayText, getPlaceholderPhotoUrl, isPhotoPlaceholderEl
 import { loadHtmlImage } from '../../utils/load-image.util'
 import { trackImageLoad } from '../../utils/image-loading-tracker.util'
 import { computeSmartGuidesSnap } from '../../utils/smart-guides.util'
+import { selectionOutlineBounds } from '../../utils/selection-outline.util'
 import { getTextMaxWidth } from '../../utils/text-auto-size.util'
 import {
   elementSpansSpreadFold,
@@ -838,70 +839,6 @@ const requiredEmptyOutlineConfig = computed(() => {
     listening: false,
   }
 })
-
-/** A list row keeps the box it was created with, while the admin moves the title, page number
- * and line to negative coordinates inside it. The stored box then sits in empty space. The
- * outline follows the visible children instead. */
-function selectionOutlineBounds(element: PageElement): {
-  x: number
-  y: number
-  width: number
-  height: number
-} {
-  if (element.type === 'shape-line') {
-    return {
-      x: 0,
-      y: -8,
-      width: Math.max(element.size.width, 1),
-      height: 16,
-    }
-  }
-
-  const stored = {
-    x: 0,
-    y: 0,
-    width: element.size.width,
-    height: Math.max(element.size.height, 1),
-  }
-
-  if (!isGroupElement(element)) {
-    return stored
-  }
-
-  const children = element.children.filter((child) => child.visible !== false)
-  if (children.length === 0) {
-    return stored
-  }
-
-  let minX = Infinity
-  let minY = Infinity
-  let maxX = -Infinity
-  let maxY = -Infinity
-  for (const child of children) {
-    const height = child.type === 'shape-line' ? 0 : child.size.height
-    minX = Math.min(minX, child.position.x)
-    minY = Math.min(minY, child.position.y)
-    maxX = Math.max(maxX, child.position.x + child.size.width)
-    maxY = Math.max(maxY, child.position.y + height)
-  }
-
-  const sticksOut =
-    minX < -0.5 ||
-    minY < -0.5 ||
-    maxX > element.size.width + 0.5 ||
-    maxY > element.size.height + 0.5
-
-  if (!sticksOut) {
-    return stored
-  }
-
-  return {
-    x: minX,
-    y: minY,
-    width: Math.max(maxX - minX, 1),
-    height: Math.max(maxY - minY, 1),
-  }
-}
 
 const selectionOutlineConfig = computed(() => {
   if (!showSelectionOutline.value) {

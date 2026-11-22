@@ -320,10 +320,19 @@
           </p>
 
           <p class="editor-properties__section-title editor-properties__section-title--nested">
-            Выравнивание
+            Между собой
           </p>
-          <div class="editor-properties__align-row">
-            <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+          <div
+            v-for="(row, rowIndex) in relativeAlignRows"
+            :key="rowIndex"
+            class="editor-properties__align-row"
+          >
+            <v-tooltip
+              v-for="action in row"
+              :key="action.mode"
+              location="top"
+              content-class="editor-tooltip--arrow-top"
+            >
               <template #activator="{ props: tooltipProps }">
                 <v-btn
                   v-bind="tooltipProps"
@@ -331,102 +340,14 @@
                   rounded="circle"
                   size="small"
                   variant="outlined"
-                  aria-label="По левому краю"
-                  :disabled="store.previewMode || store.alignableSelectedElements.length < 2"
-                  @click="alignMulti('left')"
+                  :aria-label="action.label"
+                  :disabled="store.previewMode || store.alignableSelectedElements.length < action.min"
+                  @click="alignMulti(action.mode)"
                 >
-                  <v-icon size="20">mdi-format-horizontal-align-left</v-icon>
+                  <v-icon size="20">{{ action.icon }}</v-icon>
                 </v-btn>
               </template>
-              По левому краю
-            </v-tooltip>
-            <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
-              <template #activator="{ props: tooltipProps }">
-                <v-btn
-                  v-bind="tooltipProps"
-                  icon
-                  rounded="circle"
-                  size="small"
-                  variant="outlined"
-                  aria-label="По верхнему краю"
-                  :disabled="store.previewMode || store.alignableSelectedElements.length < 2"
-                  @click="alignMulti('top')"
-                >
-                  <v-icon size="20">mdi-format-vertical-align-top</v-icon>
-                </v-btn>
-              </template>
-              По верхнему краю
-            </v-tooltip>
-            <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
-              <template #activator="{ props: tooltipProps }">
-                <v-btn
-                  v-bind="tooltipProps"
-                  icon
-                  rounded="circle"
-                  size="small"
-                  variant="outlined"
-                  aria-label="По центру по горизонтали"
-                  :disabled="store.previewMode || store.alignableSelectedElements.length < 2"
-                  @click="alignMulti('center-horizontal')"
-                >
-                  <v-icon size="20">mdi-format-horizontal-align-center</v-icon>
-                </v-btn>
-              </template>
-              По центру по горизонтали
-            </v-tooltip>
-            <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
-              <template #activator="{ props: tooltipProps }">
-                <v-btn
-                  v-bind="tooltipProps"
-                  icon
-                  rounded="circle"
-                  size="small"
-                  variant="outlined"
-                  aria-label="По центру по вертикали"
-                  :disabled="store.previewMode || store.alignableSelectedElements.length < 2"
-                  @click="alignMulti('center-vertical')"
-                >
-                  <v-icon size="20">mdi-format-vertical-align-center</v-icon>
-                </v-btn>
-              </template>
-              По центру по вертикали
-            </v-tooltip>
-          </div>
-
-          <div class="editor-properties__align-row">
-            <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
-              <template #activator="{ props: tooltipProps }">
-                <v-btn
-                  v-bind="tooltipProps"
-                  icon
-                  rounded="circle"
-                  size="small"
-                  variant="outlined"
-                  aria-label="Распределить по горизонтали (3+)"
-                  :disabled="store.previewMode || store.alignableSelectedElements.length < 3"
-                  @click="alignMulti('distribute-horizontal')"
-                >
-                  <v-icon size="20">mdi-distribute-horizontal-center</v-icon>
-                </v-btn>
-              </template>
-              Распределить по горизонтали (3+)
-            </v-tooltip>
-            <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
-              <template #activator="{ props: tooltipProps }">
-                <v-btn
-                  v-bind="tooltipProps"
-                  icon
-                  rounded="circle"
-                  size="small"
-                  variant="outlined"
-                  aria-label="Распределить по вертикали (3+)"
-                  :disabled="store.previewMode || store.alignableSelectedElements.length < 3"
-                  @click="alignMulti('distribute-vertical')"
-                >
-                  <v-icon size="20">mdi-distribute-vertical-center</v-icon>
-                </v-btn>
-              </template>
-              Распределить по вертикали (3+)
+              {{ action.label }}
             </v-tooltip>
           </div>
 
@@ -466,6 +387,134 @@
               @keyup.enter="onVerticalGapBlur"
               @update:model-value="onVerticalGapChange"
             />
+          </div>
+
+          <p class="editor-properties__section-title editor-properties__section-title--nested">
+            {{ store.groupEditingId ? 'В группе' : 'На странице' }}
+          </p>
+          <p class="editor-properties__hint-inline">{{ frameLayoutHint }}</p>
+
+          <div v-if="!store.groupEditingId" class="editor-properties__frame-options">
+            <div
+              v-if="store.isSpreadPage && !store.groupEditingId"
+              class="editor-properties__spread-bg-mode"
+              role="group"
+              aria-label="Кадр раскладки"
+            >
+              <button
+                type="button"
+                class="editor-properties__spread-bg-mode-btn"
+                :class="{ 'editor-properties__spread-bg-mode-btn--active': frameTarget === 'page' }"
+                :aria-pressed="frameTarget === 'page'"
+                @click="frameTarget = 'page'"
+              >
+                Страница
+              </button>
+              <button
+                type="button"
+                class="editor-properties__spread-bg-mode-btn"
+                :class="{ 'editor-properties__spread-bg-mode-btn--active': frameTarget === 'spread' }"
+                :aria-pressed="frameTarget === 'spread'"
+                @click="frameTarget = 'spread'"
+              >
+                Разворот
+              </button>
+            </div>
+
+            <EditorSwitch
+              v-if="!store.groupEditingId"
+              :model-value="useSafeMargin"
+              label="С учётом поля печати"
+              @update:model-value="useSafeMargin = $event"
+            />
+          </div>
+
+          <div
+            v-for="(row, rowIndex) in frameAlignRows"
+            :key="`frame-${rowIndex}`"
+            class="editor-properties__align-row"
+          >
+            <v-tooltip
+              v-for="action in row"
+              :key="action.mode"
+              location="top"
+              content-class="editor-tooltip--arrow-top"
+            >
+              <template #activator="{ props: tooltipProps }">
+                <v-btn
+                  v-bind="tooltipProps"
+                  icon
+                  rounded="circle"
+                  size="small"
+                  variant="outlined"
+                  :aria-label="action.label"
+                  :disabled="store.previewMode || store.alignableSelectedElements.length < 1"
+                  @click="alignToFrame(action.mode)"
+                >
+                  <v-icon size="20">{{ action.icon }}</v-icon>
+                </v-btn>
+              </template>
+              {{ action.label }}
+            </v-tooltip>
+          </div>
+
+          <div class="editor-properties__align-row">
+            <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+              <template #activator="{ props: tooltipProps }">
+                <v-btn
+                  v-bind="tooltipProps"
+                  icon
+                  rounded="circle"
+                  size="small"
+                  variant="outlined"
+                  aria-label="Равные промежутки по ширине кадра"
+                  :disabled="store.previewMode || store.alignableSelectedElements.length < 2"
+                  @click="distributeInPage('horizontal')"
+                >
+                  <v-icon size="20">mdi-arrow-expand-horizontal</v-icon>
+                </v-btn>
+              </template>
+              Равные промежутки по ширине кадра
+            </v-tooltip>
+            <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+              <template #activator="{ props: tooltipProps }">
+                <v-btn
+                  v-bind="tooltipProps"
+                  icon
+                  rounded="circle"
+                  size="small"
+                  variant="outlined"
+                  aria-label="Равные промежутки по высоте кадра"
+                  :disabled="store.previewMode || store.alignableSelectedElements.length < 2"
+                  @click="distributeInPage('vertical')"
+                >
+                  <v-icon size="20">mdi-arrow-expand-vertical</v-icon>
+                </v-btn>
+              </template>
+              Равные промежутки по высоте кадра
+            </v-tooltip>
+          </div>
+
+          <p class="editor-properties__hint-inline">
+            Собрать с зазором из полей выше и отцентровать блок в кадре.
+          </p>
+          <div class="editor-properties__spread-bg-mode">
+            <button
+              type="button"
+              class="editor-properties__spread-bg-mode-btn"
+              :disabled="packDisabled('horizontal')"
+              @click="packInPage('horizontal')"
+            >
+              В ряд
+            </button>
+            <button
+              type="button"
+              class="editor-properties__spread-bg-mode-btn"
+              :disabled="packDisabled('vertical')"
+              @click="packInPage('vertical')"
+            >
+              В колонку
+            </button>
           </div>
         </div>
       </template>
@@ -1630,7 +1679,7 @@ import EditorSwitch from './EditorSwitch.vue'
 import EditorPositionFields from './EditorPositionFields.vue'
 import EditorTextField from './EditorTextField.vue'
 
-import type { MultiAlignMode } from '../utils/align-elements.util'
+import type { FrameAlignMode, LayoutFrameTarget, MultiAlignMode, SelectionLayoutOptions } from '../utils/align-elements.util'
 import {
   getAverageHorizontalGap,
   getAverageVerticalGap,
@@ -1762,6 +1811,67 @@ const horizontalGapDraft = ref('')
 const verticalGapDraft = ref('')
 const horizontalGapFocused = ref(false)
 const verticalGapFocused = ref(false)
+const frameTarget = ref<LayoutFrameTarget>('page')
+const useSafeMargin = ref(true)
+
+interface RelativeAlignAction {
+  mode: MultiAlignMode
+  label: string
+  icon: string
+  min: number
+}
+
+interface FrameAlignAction {
+  mode: FrameAlignMode
+  label: string
+  icon: string
+}
+
+const relativeAlignRows: RelativeAlignAction[][] = [
+  [
+    { mode: 'left', label: 'По левому краю', icon: 'mdi-format-horizontal-align-left', min: 2 },
+    { mode: 'center-horizontal', label: 'По центру по горизонтали', icon: 'mdi-format-horizontal-align-center', min: 2 },
+    { mode: 'right', label: 'По правому краю', icon: 'mdi-format-horizontal-align-right', min: 2 },
+  ],
+  [
+    { mode: 'top', label: 'По верхнему краю', icon: 'mdi-format-vertical-align-top', min: 2 },
+    { mode: 'center-vertical', label: 'По центру по вертикали', icon: 'mdi-format-vertical-align-center', min: 2 },
+    { mode: 'bottom', label: 'По нижнему краю', icon: 'mdi-format-vertical-align-bottom', min: 2 },
+  ],
+  [
+    { mode: 'distribute-horizontal', label: 'Распределить по горизонтали (3+)', icon: 'mdi-distribute-horizontal-center', min: 3 },
+    { mode: 'distribute-vertical', label: 'Распределить по вертикали (3+)', icon: 'mdi-distribute-vertical-center', min: 3 },
+  ],
+]
+
+const frameAlignRows: FrameAlignAction[][] = [
+  [
+    { mode: 'left', label: 'К левому краю кадра', icon: 'mdi-format-horizontal-align-left' },
+    { mode: 'center-horizontal', label: 'По центру кадра по горизонтали', icon: 'mdi-format-horizontal-align-center' },
+    { mode: 'right', label: 'К правому краю кадра', icon: 'mdi-format-horizontal-align-right' },
+  ],
+  [
+    { mode: 'top', label: 'К верхнему краю кадра', icon: 'mdi-format-vertical-align-top' },
+    { mode: 'center-vertical', label: 'По центру кадра по вертикали', icon: 'mdi-format-vertical-align-center' },
+    { mode: 'bottom', label: 'К нижнему краю кадра', icon: 'mdi-format-vertical-align-bottom' },
+  ],
+]
+
+const frameLayoutHint = computed(() => {
+  if (store.groupEditingId) {
+    return 'Кадр — рамка группы.'
+  }
+
+  if (store.isSpreadPage && frameTarget.value === 'spread') {
+    return 'Кадр — весь разворот, сгиб его не делит.'
+  }
+
+  if (store.isSpreadPage) {
+    return 'Левая и правая половины раскладываются отдельно и не переезжают через сгиб.'
+  }
+
+  return 'Кадр — страница.'
+})
 
 const textSpacingMenuOpen = ref(false)
 
@@ -2103,6 +2213,52 @@ function alignMulti(mode: MultiAlignMode): void {
   }
 
   store.alignSelectedElements(mode)
+}
+
+function layoutOptions(): SelectionLayoutOptions {
+  return {
+    target: frameTarget.value,
+    safeMargin: useSafeMargin.value,
+  }
+}
+
+function alignToFrame(mode: FrameAlignMode): void {
+  if (store.previewMode) {
+    return
+  }
+
+  store.alignSelectionToFrame(mode, layoutOptions())
+}
+
+function distributeInPage(axis: 'horizontal' | 'vertical'): void {
+  if (store.previewMode) {
+    return
+  }
+
+  store.distributeSelectionInFrame(axis, layoutOptions())
+}
+
+function gapDraftNumber(axis: 'horizontal' | 'vertical'): number | null {
+  const raw = axis === 'horizontal' ? horizontalGapDraft.value : verticalGapDraft.value
+  if (raw.trim() === '') {
+    return null
+  }
+
+  const gap = Number(raw)
+  return Number.isFinite(gap) ? gap : null
+}
+
+function packDisabled(axis: 'horizontal' | 'vertical'): boolean {
+  return store.previewMode || store.alignableSelectedElements.length < 2 || gapDraftNumber(axis) == null
+}
+
+function packInPage(axis: 'horizontal' | 'vertical'): void {
+  const gap = gapDraftNumber(axis)
+  if (store.previewMode || gap == null) {
+    return
+  }
+
+  store.packSelectionInFrame(axis, gap, layoutOptions())
 }
 
 function syncGapDrafts(): void {
@@ -2855,10 +3011,15 @@ function handleRemove(): void {
     border-color 0.18s ease,
     color 0.18s ease;
 
-  &:hover {
+  &:hover:not(:disabled) {
     background: $state-hover-bg;
     border-color: $border-default;
     color: $text-primary;
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: default;
   }
 
   &--active {
@@ -2982,6 +3143,12 @@ function handleRemove(): void {
 
   color: $text-muted;
 
+}
+
+.editor-properties__frame-options {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-3;
 }
 
 

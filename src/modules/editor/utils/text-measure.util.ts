@@ -1,7 +1,119 @@
 import Konva from 'konva'
 
-import type { TextPlaceholder } from '../models/text-placeholder.model'
+import type { TextAlign, TextPlaceholder, TextVerticalAlign } from '../models/text-placeholder.model'
 import { resolveKonvaFontStyle } from './text-style.util'
+
+export interface TextInkRect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/** Glyph box inside a text frame. A line wider than the frame spills out: right-aligned
+ * text spills to the left, which is how a page number sits outside its row box. */
+export function inkRectFromLineWidths(input: {
+  boxWidth: number
+  boxHeight: number
+  lineWidths: number[]
+  blockHeight: number
+  align: TextAlign
+  verticalAlign: TextVerticalAlign
+}): TextInkRect {
+  const widths = input.lineWidths.filter((width) => width > 0)
+  if (widths.length === 0 || input.blockHeight <= 0) {
+    return { x: 0, y: 0, width: 0, height: 0 }
+  }
+
+  const maxLine = Math.max(...widths)
+  const boxWidth = Math.max(1, input.boxWidth)
+  let x = 0
+  let width = maxLine
+  if (input.align === 'right') {
+    x = boxWidth - maxLine
+  } else if (input.align === 'center') {
+    x = (boxWidth - maxLine) / 2
+  } else if (input.align === 'justify' && widths.length > 1) {
+    x = 0
+    width = Math.max(boxWidth, maxLine)
+  }
+
+  const slack = input.boxHeight - input.blockHeight
+  let y = 0
+  if (slack > 1 && input.verticalAlign === 'middle') {
+    y = slack / 2
+  } else if (slack > 1 && input.verticalAlign === 'bottom') {
+    y = slack
+  }
+
+  return { x, y, width, height: input.blockHeight }
+}
+
+function estimatedInkRect(element: TextPlaceholder, text: string): TextInkRect {
+  const content = text.trim()
+  if (!content) {
+    return { x: 0, y: 0, width: 0, height: 0 }
+  }
+
+  const fontSize = element.fontSize > 0 ? element.fontSize : 16
+  const boxWidth = Math.max(1, element.size.width)
+  const lineHeight = element.lineHeight || 1.2
+  const charWidth = fontSize * 0.5
+  const charsPerLine = Math.max(1, Math.floor(boxWidth / charWidth))
+  const lineCount = content.split('\n').reduce(
+    (count, line) => count + Math.max(1, Math.ceil(line.length / charsPerLine)),
+    0,
+  )
+  const blockHeight = fontSize * lineHeight * lineCount
+
+  return inkRectFromLineWidths({
+    boxWidth,
+    boxHeight: Math.max(element.size.height, blockHeight, 1),
+    lineWidths: [Math.min(boxWidth, content.length * charWidth)],
+    blockHeight,
+    align: element.textAlign,
+    verticalAlign: element.verticalAlign ?? 'top',
+  })
+}
+
+/** Where the letters actually paint, in the text element's own coordinates. */
+export function getTextInkRect(element: TextPlaceholder, text: string): TextInkRect {
+  const content = text.trim()
+  if (!content) {
+    return { x: 0, y: 0, width: 0, height: 0 }
+  }
+
+  try {
+    const boxWidth = Math.max(1, element.size.width)
+    const node = new Konva.Text({
+      text: content,
+      fontFamily: element.fontFamily,
+      fontSize: element.fontSize,
+      fontStyle: resolveKonvaFontStyle(element),
+      lineHeight: element.lineHeight,
+      letterSpacing: element.letterSpacing,
+      align: element.textAlign,
+      wrap: 'word',
+      width: boxWidth,
+    })
+    const blockHeight = Math.max(node.height(), element.fontSize * (element.lineHeight || 1))
+    const lineWidths = ((node as Konva.Text & { textArr?: Array<{ width: number }> }).textArr ?? []).map(
+      (line) => line.width,
+    )
+    node.destroy()
+
+    return inkRectFromLineWidths({
+      boxWidth,
+      boxHeight: Math.max(1, element.size.height),
+      lineWidths,
+      blockHeight,
+      align: element.textAlign,
+      verticalAlign: element.verticalAlign ?? 'top',
+    })
+  } catch {
+    return estimatedInkRect(element, content)
+  }
+}
 
 export interface TextMeasureInput {
   text: string

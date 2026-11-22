@@ -503,8 +503,9 @@ function placeDetail(
   const titlePerLine = Math.max(1, Math.floor(Math.max(16, title.size.width) / ((title.fontSize || fontSize) * 0.55)))
   const titleLines = Math.max(1, Math.ceil((title.defaultText ?? '').length / titlePerLine))
   const underTitle = title.position.y + Math.min(title.size.height, titleLines * titleLine)
-  // A box the admin already sized stays where they put it. Replacing it on every refresh
-  // snapped the description to a different height and started another pass.
+  // Leave the height alone in this pass. Rewriting it from the character-count guess on every
+  // refresh snapped the row and started another pass. tightenTocRows then sets the height from
+  // the measured text, so the empty space under the last line does not stay.
   if (detail && detail.visible !== false && detail.size.height > 0) {
     if (detail.visible === true && detail.defaultText === description) {
       return detail
@@ -677,14 +678,22 @@ function tightenTocRow(row: GroupElement, measure: MeasureTocText, hug: boolean)
   }
 
   const framed = texts.filter((text) => text.listRole !== 'detail')
-  const measured = new Map(framed.map((text) => [text.id, measure(text)]))
-  const line = measured.size > 0 ? Math.max(...[...measured.values()].map((box) => box.height)) : 0
+  const measured = new Map(texts.map((text) => [text.id, measure(text)]))
+  // The description height is a character-count guess, then it is frozen. The author has no
+  // height handle, and vertical centering leaves empty space under the last line. The box is
+  // the measured text; the width the author set with the side handles stays.
+  const hugged = row.children.map((child) => hugDetailHeight(child, measured))
+  const detailChanged = hugged.some((child, index) => child !== row.children[index])
+  const line =
+    framed.length > 0
+      ? Math.max(...framed.map((text) => measured.get(text.id)?.height ?? 0))
+      : 0
   const childrenBottom = Math.max(...row.children.map((child) => child.position.y + child.size.height))
   const frameTallerThanWords =
     line > 0 && (row.size.height > line * 2 || framed.some((text) => text.size.height > line * 2))
   const frameTallerThanChildren = row.size.height > childrenBottom + 2
 
-  if (!hug && !frameTallerThanWords && !frameTallerThanChildren) {
+  if (!hug && !frameTallerThanWords && !frameTallerThanChildren && !detailChanged) {
     return row
   }
 
@@ -695,7 +704,7 @@ function tightenTocRow(row: GroupElement, measure: MeasureTocText, hug: boolean)
   // A number that was moved off that edge leaves the rest of the box empty — drop that empty width.
   const hugWidth = hug || ((frameTallerThanWords || frameTallerThanChildren) && !numberOnRight)
 
-  let children = row.children.map((child) => {
+  let children = hugged.map((child) => {
     if (!isTextElement(child) || child.listRole === 'detail') {
       return child
     }
@@ -737,6 +746,24 @@ function tightenTocRow(row: GroupElement, measure: MeasureTocText, hug: boolean)
   }
 
   return fitGroupToChildren(row, children)
+}
+
+function hugDetailHeight(
+  child: PageElement,
+  measured: Map<string, TocTextMeasure>,
+): PageElement {
+  if (!isTextElement(child) || child.listRole !== 'detail' || child.visible === false) {
+    return child
+  }
+  const box = measured.get(child.id)
+  if (!box || box.height <= 0) {
+    return child
+  }
+  const height = Math.max(1, Math.ceil(box.height))
+  if (Math.abs(child.size.height - height) < 1) {
+    return child
+  }
+  return { ...child, size: { ...child.size, height } }
 }
 
 function fitGroupToChildren(row: GroupElement, children: PageElement[]): GroupElement {

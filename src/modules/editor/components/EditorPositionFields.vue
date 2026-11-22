@@ -98,9 +98,54 @@
     </div>
 
     <div class="editor-properties__section">
-      <p class="editor-properties__section-title">Выравнивание</p>
-      <div class="editor-properties__align-row">
-        <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+      <p class="editor-properties__section-title">{{ store.groupEditingId ? 'В группе' : 'На странице' }}</p>
+      <p class="editor-properties__hint-inline">{{ frameLayoutHint }}</p>
+
+      <div v-if="!store.groupEditingId" class="editor-properties__frame-options">
+        <div
+          v-if="store.isSpreadPage"
+          class="editor-properties__spread-bg-mode"
+          role="group"
+          aria-label="Кадр раскладки"
+        >
+          <button
+            type="button"
+            class="editor-properties__spread-bg-mode-btn"
+            :class="{ 'editor-properties__spread-bg-mode-btn--active': frameTarget === 'page' }"
+            :aria-pressed="frameTarget === 'page'"
+            @click="frameTarget = 'page'"
+          >
+            Страница
+          </button>
+          <button
+            type="button"
+            class="editor-properties__spread-bg-mode-btn"
+            :class="{ 'editor-properties__spread-bg-mode-btn--active': frameTarget === 'spread' }"
+            :aria-pressed="frameTarget === 'spread'"
+            @click="frameTarget = 'spread'"
+          >
+            Разворот
+          </button>
+        </div>
+
+        <EditorSwitch
+          :model-value="useSafeMargin"
+          label="С учётом поля печати"
+          @update:model-value="useSafeMargin = $event"
+        />
+      </div>
+
+      <div
+        v-for="(row, rowIndex) in frameAlignRows"
+        :key="rowIndex"
+        class="editor-properties__align-row"
+      >
+        <v-tooltip
+          v-for="action in row"
+          :key="action.mode"
+          location="top"
+          content-class="editor-tooltip--arrow-top"
+        >
           <template #activator="{ props: tooltipProps }">
             <v-btn
               v-bind="tooltipProps"
@@ -108,59 +153,14 @@
               rounded="circle"
               size="small"
               variant="outlined"
-              aria-label="По центру по горизонтали"
+              :aria-label="action.label"
               :disabled="store.previewMode || selected!.locked"
-              @click="alignToPageCenter('horizontal')"
+              @click="alignToFrame(action.mode)"
             >
-              <svg class="editor-properties__align-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 4v16" />
-                <path d="M3 12h6M9 12l-2.5-2.5M9 12l-2.5 2.5" />
-                <path d="M21 12h-6M15 12l2.5-2.5M15 12l2.5 2.5" />
-              </svg>
+              <v-icon size="20">{{ action.icon }}</v-icon>
             </v-btn>
           </template>
-          По центру по горизонтали
-        </v-tooltip>
-        <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
-          <template #activator="{ props: tooltipProps }">
-            <v-btn
-              v-bind="tooltipProps"
-              icon
-              rounded="circle"
-              size="small"
-              variant="outlined"
-              aria-label="По центру по вертикали"
-              :disabled="store.previewMode || selected!.locked"
-              @click="alignToPageCenter('vertical')"
-            >
-              <svg class="editor-properties__align-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M4 12h16" />
-                <path d="M12 3v6M12 9l-2.5-2.5M12 9l2.5-2.5" />
-                <path d="M12 21v-6M12 15l-2.5 2.5M12 15l2.5 2.5" />
-              </svg>
-            </v-btn>
-          </template>
-          По центру по вертикали
-        </v-tooltip>
-        <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
-          <template #activator="{ props: tooltipProps }">
-            <v-btn
-              v-bind="tooltipProps"
-              icon
-              rounded="circle"
-              size="small"
-              variant="outlined"
-              aria-label="По центру страницы"
-              :disabled="store.previewMode || selected!.locked"
-              @click="alignToPageCenter('both')"
-            >
-              <svg class="editor-properties__align-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="8" />
-                <path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
-              </svg>
-            </v-btn>
-          </template>
-          По центру страницы
+          {{ action.label }}
         </v-tooltip>
       </div>
     </div>
@@ -169,12 +169,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 
 import { useEditorStore } from '../store/editor.store'
 import type { ElementPatch } from '../store/editor.store'
 import EditorAngleField from './EditorAngleField.vue'
+import EditorSwitch from './EditorSwitch.vue'
+import type { FrameAlignMode, LayoutFrameTarget } from '../utils/align-elements.util'
 import { A4_SPREAD_PAGE_HEIGHT, A4_SPREAD_PAGE_WIDTH } from '../constants/page.constants'
 import {
   getSpreadPageSide,
@@ -292,12 +294,47 @@ function rotateBy(delta: number): void {
   updateRotation(displayRotation.value + delta)
 }
 
-function alignToPageCenter(axis: 'horizontal' | 'vertical' | 'both'): void {
+const frameTarget = ref<LayoutFrameTarget>('page')
+const useSafeMargin = ref(true)
+
+const frameAlignRows: { mode: FrameAlignMode; label: string; icon: string }[][] = [
+  [
+    { mode: 'left', label: 'К левому краю кадра', icon: 'mdi-format-horizontal-align-left' },
+    { mode: 'center-horizontal', label: 'По центру кадра по горизонтали', icon: 'mdi-format-horizontal-align-center' },
+    { mode: 'right', label: 'К правому краю кадра', icon: 'mdi-format-horizontal-align-right' },
+  ],
+  [
+    { mode: 'top', label: 'К верхнему краю кадра', icon: 'mdi-format-vertical-align-top' },
+    { mode: 'center-vertical', label: 'По центру кадра по вертикали', icon: 'mdi-format-vertical-align-center' },
+    { mode: 'bottom', label: 'К нижнему краю кадра', icon: 'mdi-format-vertical-align-bottom' },
+  ],
+]
+
+const frameLayoutHint = computed(() => {
+  if (store.groupEditingId) {
+    return 'Кадр — рамка группы.'
+  }
+
+  if (store.isSpreadPage && frameTarget.value === 'spread') {
+    return 'Кадр — весь разворот, сгиб его не делит.'
+  }
+
+  if (store.isSpreadPage) {
+    return 'Элемент остаётся на своей половине разворота и не переезжает через сгиб.'
+  }
+
+  return 'Кадр — страница.'
+})
+
+function alignToFrame(mode: FrameAlignMode): void {
   if (!selected.value || store.previewMode || selected.value.locked) {
     return
   }
 
-  store.alignSelectedToPageCenter(axis)
+  store.alignSelectionToFrame(mode, {
+    target: frameTarget.value,
+    safeMargin: useSafeMargin.value,
+  })
 }
 </script>
 
@@ -400,10 +437,55 @@ function alignToPageCenter(axis: 'horizontal' | 'vertical' | 'both'): void {
   border-right: 1px solid pp.$border;
 }
 
+.editor-properties__hint-inline {
+  margin: 0 0 $spacing-3;
+  font-size: $font-size-caption;
+  color: $text-muted;
+}
+
+.editor-properties__frame-options {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-3;
+  margin-bottom: $spacing-3;
+}
+
+.editor-properties__spread-bg-mode {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: $spacing-2;
+}
+
+.editor-properties__spread-bg-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: $spacing-1 $spacing-2;
+  border: 1px solid $border-light;
+  border-radius: $radius-sm;
+  background: $bg-primary;
+  font-size: $font-size-caption;
+  font-weight: $font-weight-medium;
+  color: $text-secondary;
+  cursor: pointer;
+
+  &--active {
+    background: $bg-primary;
+    border-color: $border-strong;
+    color: $text-primary;
+    box-shadow: inset 0 0 0 1px $border-strong;
+  }
+}
+
 .editor-properties__align-row {
   display: flex;
   gap: $spacing-3;
   flex-wrap: wrap;
+
+  & + & {
+    margin-top: $spacing-3;
+  }
 
   :deep(.v-btn) {
     width: 52px;

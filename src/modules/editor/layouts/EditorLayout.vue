@@ -253,6 +253,22 @@ function isEditableTarget(target: EventTarget | null): boolean {
 }
 
 function handleKeyDown(event: KeyboardEvent): void {
+  // Single-line fields commit on blur (`change`). Enter never blurs them, so the typed value
+  // stayed on the screen and was not applied. A textarea keeps Enter as a new line.
+  if (
+    event.key === 'Enter' &&
+    event.target instanceof HTMLInputElement &&
+    !event.target.disabled &&
+    !event.target.readOnly
+  ) {
+    const type = event.target.type
+    if (type !== 'button' && type !== 'submit' && type !== 'checkbox' && type !== 'radio' && type !== 'file') {
+      event.preventDefault()
+      event.target.blur()
+      return
+    }
+  }
+
   if (isEditableTarget(event.target)) {
     return
   }
@@ -334,6 +350,23 @@ function handleKeyDown(event: KeyboardEvent): void {
   }
 
   if (store.previewMode) {
+    return
+  }
+
+  const nudge =
+    event.key === 'ArrowLeft'
+      ? { dx: -1, dy: 0 }
+      : event.key === 'ArrowRight'
+        ? { dx: 1, dy: 0 }
+        : event.key === 'ArrowUp'
+          ? { dx: 0, dy: -1 }
+          : event.key === 'ArrowDown'
+            ? { dx: 0, dy: 1 }
+            : null
+
+  if (nudge && store.hasSelection) {
+    event.preventDefault()
+    store.nudgeSelectedElements(nudge.dx, nudge.dy, event.shiftKey)
     return
   }
 
