@@ -11,6 +11,7 @@
       <span class="ms-bar__handle-bar" />
     </div>
 
+    <div class="ms-bar__body">
     <div class="ms-bar__top-row">
       <div class="ms-bar__count">Выбрано: <span>{{ store.selectionCount }}</span></div>
 
@@ -61,6 +62,166 @@
       </div>
     </div>
 
+    <div class="ms-bar__layout">
+      <p class="ms-bar__layout-title">Между собой</p>
+      <div
+        v-for="(row, rowIndex) in relativeAlignRows"
+        :key="`rel-${rowIndex}`"
+        class="ms-bar__icon-row"
+      >
+        <button
+          v-for="action in row"
+          :key="action.mode"
+          type="button"
+          class="ms-bar__icon-btn"
+          :aria-label="action.label"
+          :title="action.label"
+          :disabled="store.previewMode || store.alignableSelectedElements.length < action.min"
+          @click="alignMulti(action.mode)"
+        >
+          <v-icon size="20">{{ action.icon }}</v-icon>
+        </button>
+      </div>
+
+      <p class="ms-bar__layout-title">Отступы между элементами</p>
+      <p class="ms-bar__hint">
+        Между соседними элементами на холсте. Измените значение — отступ применится от якорного элемента.
+      </p>
+      <div class="ms-bar__gaps">
+        <label class="ms-bar__gap">
+          <span>Горизонтально</span>
+          <span class="ms-bar__gap-field">
+            <input
+              :value="horizontalGapDraft"
+              type="number"
+              inputmode="decimal"
+              :disabled="store.previewMode || store.alignableSelectedElements.length < 2"
+              @focus="horizontalGapFocused = true"
+              @blur="onHorizontalGapBlur"
+              @keyup.enter="onHorizontalGapBlur"
+              @input="onHorizontalGapChange(($event.target as HTMLInputElement).value)"
+            />
+            <span class="ms-bar__gap-suffix">px</span>
+          </span>
+        </label>
+        <label class="ms-bar__gap">
+          <span>Вертикально</span>
+          <span class="ms-bar__gap-field">
+            <input
+              :value="verticalGapDraft"
+              type="number"
+              inputmode="decimal"
+              :disabled="store.previewMode || store.alignableSelectedElements.length < 2"
+              @focus="verticalGapFocused = true"
+              @blur="onVerticalGapBlur"
+              @keyup.enter="onVerticalGapBlur"
+              @input="onVerticalGapChange(($event.target as HTMLInputElement).value)"
+            />
+            <span class="ms-bar__gap-suffix">px</span>
+          </span>
+        </label>
+      </div>
+
+      <p class="ms-bar__layout-title">{{ store.groupEditingId ? 'В группе' : 'На странице' }}</p>
+      <p class="ms-bar__hint">{{ frameLayoutHint }}</p>
+
+      <div v-if="!store.groupEditingId" class="ms-bar__frame-options">
+        <div
+          v-if="store.isSpreadPage"
+          class="ms-bar__segment"
+          role="group"
+          aria-label="Кадр раскладки"
+        >
+          <button
+            type="button"
+            class="ms-bar__segment-btn"
+            :class="{ 'ms-bar__segment-btn--active': frameTarget === 'page' }"
+            :aria-pressed="frameTarget === 'page'"
+            @click="frameTarget = 'page'"
+          >
+            Страница
+          </button>
+          <button
+            type="button"
+            class="ms-bar__segment-btn"
+            :class="{ 'ms-bar__segment-btn--active': frameTarget === 'spread' }"
+            :aria-pressed="frameTarget === 'spread'"
+            @click="frameTarget = 'spread'"
+          >
+            Разворот
+          </button>
+        </div>
+        <EditorSwitch
+          :model-value="useSafeMargin"
+          label="С учётом поля печати"
+          size="large"
+          @update:model-value="useSafeMargin = $event"
+        />
+      </div>
+
+      <div
+        v-for="(row, rowIndex) in frameAlignRows"
+        :key="`frame-${rowIndex}`"
+        class="ms-bar__icon-row"
+      >
+        <button
+          v-for="action in row"
+          :key="action.mode"
+          type="button"
+          class="ms-bar__icon-btn"
+          :aria-label="action.label"
+          :title="action.label"
+          :disabled="store.previewMode || store.alignableSelectedElements.length < 1"
+          @click="alignToFrame(action.mode)"
+        >
+          <v-icon size="20">{{ action.icon }}</v-icon>
+        </button>
+      </div>
+
+      <div class="ms-bar__icon-row">
+        <button
+          type="button"
+          class="ms-bar__icon-btn"
+          aria-label="Равные промежутки по ширине кадра"
+          title="Равные промежутки по ширине кадра"
+          :disabled="store.previewMode || store.alignableSelectedElements.length < 2"
+          @click="distributeInPage('horizontal')"
+        >
+          <v-icon size="20">mdi-arrow-expand-horizontal</v-icon>
+        </button>
+        <button
+          type="button"
+          class="ms-bar__icon-btn"
+          aria-label="Равные промежутки по высоте кадра"
+          title="Равные промежутки по высоте кадра"
+          :disabled="store.previewMode || store.alignableSelectedElements.length < 2"
+          @click="distributeInPage('vertical')"
+        >
+          <v-icon size="20">mdi-arrow-expand-vertical</v-icon>
+        </button>
+      </div>
+
+      <p class="ms-bar__hint">Собрать с зазором из полей выше и отцентровать блок в кадре.</p>
+      <div class="ms-bar__segment">
+        <button
+          type="button"
+          class="ms-bar__segment-btn"
+          :disabled="packDisabled('horizontal')"
+          @click="packInPage('horizontal')"
+        >
+          В ряд
+        </button>
+        <button
+          type="button"
+          class="ms-bar__segment-btn"
+          :disabled="packDisabled('vertical')"
+          @click="packInPage('vertical')"
+        >
+          В колонку
+        </button>
+      </div>
+    </div>
+
     <div class="ms-bar__grid">
       <button
         type="button"
@@ -90,18 +251,204 @@
         Удалить
       </button>
     </div>
+    </div>
 
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
+import EditorSwitch from './EditorSwitch.vue'
 import { useEditorStore } from '../store/editor.store'
 import { createEditorQuestion, editorQuestions } from '../services/editor-questions'
+import {
+  getAverageHorizontalGap,
+  getAverageVerticalGap,
+  type FrameAlignMode,
+  type LayoutFrameTarget,
+  type MultiAlignMode,
+  type SelectionLayoutOptions,
+} from '../utils/align-elements.util'
 
 const store = useEditorStore()
 const barRootRef = ref<HTMLElement | null>(null)
+
+interface RelativeAlignAction {
+  mode: MultiAlignMode
+  label: string
+  icon: string
+  min: number
+}
+
+interface FrameAlignAction {
+  mode: FrameAlignMode
+  label: string
+  icon: string
+}
+
+const relativeAlignRows: RelativeAlignAction[][] = [
+  [
+    { mode: 'left', label: 'По левому краю', icon: 'mdi-format-horizontal-align-left', min: 2 },
+    { mode: 'center-horizontal', label: 'По центру по горизонтали', icon: 'mdi-format-horizontal-align-center', min: 2 },
+    { mode: 'right', label: 'По правому краю', icon: 'mdi-format-horizontal-align-right', min: 2 },
+  ],
+  [
+    { mode: 'top', label: 'По верхнему краю', icon: 'mdi-format-vertical-align-top', min: 2 },
+    { mode: 'center-vertical', label: 'По центру по вертикали', icon: 'mdi-format-vertical-align-center', min: 2 },
+    { mode: 'bottom', label: 'По нижнему краю', icon: 'mdi-format-vertical-align-bottom', min: 2 },
+  ],
+  [
+    { mode: 'distribute-horizontal', label: 'Распределить по горизонтали (3+)', icon: 'mdi-distribute-horizontal-center', min: 3 },
+    { mode: 'distribute-vertical', label: 'Распределить по вертикали (3+)', icon: 'mdi-distribute-vertical-center', min: 3 },
+  ],
+]
+
+const frameAlignRows: FrameAlignAction[][] = [
+  [
+    { mode: 'left', label: 'К левому краю кадра', icon: 'mdi-format-horizontal-align-left' },
+    { mode: 'center-horizontal', label: 'По центру кадра по горизонтали', icon: 'mdi-format-horizontal-align-center' },
+    { mode: 'right', label: 'К правому краю кадра', icon: 'mdi-format-horizontal-align-right' },
+  ],
+  [
+    { mode: 'top', label: 'К верхнему краю кадра', icon: 'mdi-format-vertical-align-top' },
+    { mode: 'center-vertical', label: 'По центру кадра по вертикали', icon: 'mdi-format-vertical-align-center' },
+    { mode: 'bottom', label: 'К нижнему краю кадра', icon: 'mdi-format-vertical-align-bottom' },
+  ],
+]
+
+const horizontalGapDraft = ref('')
+const verticalGapDraft = ref('')
+const horizontalGapFocused = ref(false)
+const verticalGapFocused = ref(false)
+const frameTarget = ref<LayoutFrameTarget>('page')
+const useSafeMargin = ref(true)
+
+const frameLayoutHint = computed(() => {
+  if (store.groupEditingId) {
+    return 'Кадр — рамка группы.'
+  }
+
+  if (store.isSpreadPage && frameTarget.value === 'spread') {
+    return 'Кадр — весь разворот, сгиб его не делит.'
+  }
+
+  if (store.isSpreadPage) {
+    return 'Левая и правая половины раскладываются отдельно и не переезжают через сгиб.'
+  }
+
+  return 'Кадр — страница.'
+})
+
+function layoutOptions(): SelectionLayoutOptions {
+  return {
+    target: frameTarget.value,
+    safeMargin: useSafeMargin.value,
+  }
+}
+
+function alignMulti(mode: MultiAlignMode): void {
+  if (store.previewMode) {
+    return
+  }
+
+  store.alignSelectedElements(mode)
+}
+
+function alignToFrame(mode: FrameAlignMode): void {
+  if (store.previewMode) {
+    return
+  }
+
+  store.alignSelectionToFrame(mode, layoutOptions())
+}
+
+function distributeInPage(axis: 'horizontal' | 'vertical'): void {
+  if (store.previewMode) {
+    return
+  }
+
+  store.distributeSelectionInFrame(axis, layoutOptions())
+}
+
+function gapDraftNumber(axis: 'horizontal' | 'vertical'): number | null {
+  const raw = axis === 'horizontal' ? horizontalGapDraft.value : verticalGapDraft.value
+  if (raw.trim() === '') {
+    return null
+  }
+
+  const gap = Number(raw)
+  return Number.isFinite(gap) ? gap : null
+}
+
+function packDisabled(axis: 'horizontal' | 'vertical'): boolean {
+  return store.previewMode || store.alignableSelectedElements.length < 2 || gapDraftNumber(axis) == null
+}
+
+function packInPage(axis: 'horizontal' | 'vertical'): void {
+  const gap = gapDraftNumber(axis)
+  if (store.previewMode || gap == null) {
+    return
+  }
+
+  store.packSelectionInFrame(axis, gap, layoutOptions())
+}
+
+function syncGapDrafts(): void {
+  if (!horizontalGapFocused.value) {
+    const gap = getAverageHorizontalGap(store.alignableSelectedElements)
+    horizontalGapDraft.value = gap !== null ? String(gap) : ''
+  }
+
+  if (!verticalGapFocused.value) {
+    const gap = getAverageVerticalGap(store.alignableSelectedElements)
+    verticalGapDraft.value = gap !== null ? String(gap) : ''
+  }
+}
+
+function onHorizontalGapChange(value: string): void {
+  horizontalGapDraft.value = value
+  const gap = Number(value)
+  if (value.trim() === '' || !Number.isFinite(gap) || store.alignableSelectedElements.length < 2) {
+    return
+  }
+
+  store.applyDistributionGap('horizontal', gap)
+}
+
+function onVerticalGapChange(value: string): void {
+  verticalGapDraft.value = value
+  const gap = Number(value)
+  if (value.trim() === '' || !Number.isFinite(gap) || store.alignableSelectedElements.length < 2) {
+    return
+  }
+
+  store.applyDistributionGap('vertical', gap)
+}
+
+function onHorizontalGapBlur(): void {
+  horizontalGapFocused.value = false
+  syncGapDrafts()
+}
+
+function onVerticalGapBlur(): void {
+  verticalGapFocused.value = false
+  syncGapDrafts()
+}
+
+watch(
+  () =>
+    store.alignableSelectedElements
+      .map(
+        (element) =>
+          `${element.id}:${element.position.x},${element.position.y},${element.size.width},${element.size.height}`,
+      )
+      .join('|'),
+  () => {
+    syncGapDrafts()
+  },
+  { immediate: true },
+)
 
 const anyVisible = computed(() => store.selectedElements.some((element) => element.visible))
 const anyUnlocked = computed(() => store.selectedElements.some((element) => !element.locked))
@@ -290,11 +637,18 @@ function onHandlePointerUp(): void {
   z-index: 20;
   display: flex;
   flex-direction: column;
+  max-height: 30vh;
   background: $white;
   border-top: 1px solid pp.$border-strong;
   border-radius: 18px 18px 0 0;
   box-shadow: 0 -4px 20px rgba(13, 13, 13, 0.08);
   transition: transform 0.2s ease;
+}
+
+.ms-bar__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .ms-bar__handle {
@@ -397,6 +751,150 @@ function onHandlePointerUp(): void {
   background: pp.$border;
   flex-shrink: 0;
   margin: 0 1px;
+}
+
+.ms-bar__layout {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 20px 16px;
+}
+
+.ms-bar__layout-title {
+  margin: 8px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: pp.$ink;
+}
+
+.ms-bar__hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.35;
+  color: pp.$ink-soft;
+}
+
+.ms-bar__icon-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ms-bar__icon-btn {
+  width: 40px;
+  height: 40px;
+  border: 1px solid pp.$border-strong;
+  border-radius: 999px;
+  background: $white;
+  color: pp.$ink;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+
+  @media (hover: hover) {
+    &:hover:not(:disabled) {
+      background: pp.$field-hover;
+      border-color: pp.$ink-faint;
+    }
+  }
+
+  &:active:not(:disabled) {
+    background: pp.$accent-tint;
+    color: pp.$accent-deep;
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+}
+
+.ms-bar__gaps {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.ms-bar__gap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: pp.$ink-soft;
+}
+
+.ms-bar__gap-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 10px;
+  border: 1px solid pp.$border-strong;
+  border-radius: 10px;
+  background: $white;
+
+  input {
+    width: 100%;
+    min-width: 0;
+    border: none;
+    background: none;
+    color: pp.$ink;
+    font: inherit;
+    font-size: 14px;
+
+    &:focus {
+      outline: none;
+    }
+
+    &:disabled {
+      opacity: 0.4;
+    }
+  }
+}
+
+.ms-bar__gap-suffix {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: pp.$ink-soft;
+}
+
+.ms-bar__frame-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ms-bar__segment {
+  display: flex;
+  padding: 3px;
+  border: 1px solid pp.$border;
+  border-radius: 10px;
+  background: pp.$field-hover;
+}
+
+.ms-bar__segment-btn {
+  flex: 1;
+  min-height: 36px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: pp.$ink-soft;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+
+  &--active {
+    background: $white;
+    color: pp.$ink;
+    box-shadow: 0 1px 2px rgba(13, 13, 13, 0.08);
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
 }
 
 .ms-bar__grid {

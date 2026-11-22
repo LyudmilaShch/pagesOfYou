@@ -403,6 +403,7 @@ import {
   spreadLogicalXToVisual,
 } from '../../utils/spread.util'
 import type { SpreadPageSide } from '../../utils/spread.util'
+import { selectionOutlineBounds } from '../../utils/selection-outline.util'
 import {
   getElementPivotSize,
   prepareInnerNodeForTransformer,
@@ -1268,14 +1269,73 @@ function isEditorElementTarget(target: Konva.Node): boolean {
   return false
 }
 
+function transformedLocalRect(
+  node: Konva.Node,
+  local: { x: number; y: number; width: number; height: number },
+  relativeTo?: Konva.Node,
+): { x: number; y: number; width: number; height: number } {
+  const transform = node.getAbsoluteTransform(relativeTo)
+  const corners = [
+    { x: local.x, y: local.y },
+    { x: local.x + local.width, y: local.y },
+    { x: local.x + local.width, y: local.y + local.height },
+    { x: local.x, y: local.y + local.height },
+  ]
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  for (const corner of corners) {
+    const point = transform.point(corner)
+    minX = Math.min(minX, point.x)
+    minY = Math.min(minY, point.y)
+    maxX = Math.max(maxX, point.x)
+    maxY = Math.max(maxY, point.y)
+  }
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
+}
+
+const originalClientRects = new WeakMap<Konva.Group, Konva.Group['getClientRect']>()
+
+function installOutlineClientRect(node: Konva.Group, element: PageElement): void {
+  if (!originalClientRects.has(node)) {
+    originalClientRects.set(node, node.getClientRect)
+  }
+
+  const bounds = selectionOutlineBounds(element)
+  node.getClientRect = (config: { relativeTo?: Konva.Node; skipTransform?: boolean } = {}) => {
+    if (config.skipTransform) {
+      return { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height }
+    }
+    return transformedLocalRect(node, bounds, config.relativeTo)
+  }
+}
+
+function restoreClientRect(node: Konva.Group): void {
+  const original = originalClientRects.get(node)
+  if (!original) {
+    return
+  }
+
+  node.getClientRect = original
+  originalClientRects.delete(node)
+}
+
 function prepareNodeForTransformer(
   node: Konva.Group,
   element: PageElement,
   isMultiSelection: boolean,
 ): void {
   if (isMultiSelection) {
+    if (isGroupElement(element)) {
+      installOutlineClientRect(node, element)
+    } else {
+      restoreClientRect(node)
+    }
     return
   }
+
+  restoreClientRect(node)
 
   const size = getElementPivotSize(
     element.size.width,

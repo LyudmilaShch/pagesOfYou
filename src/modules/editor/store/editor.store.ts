@@ -8,6 +8,7 @@ import {
   A4_SPREAD_PAGE_WIDTH,
   DEFAULT_PAGE_BACKGROUND,
   DEFAULT_SNAP_GRID_SIZE,
+  PRINT_SAFE_MARGIN,
 } from '../constants/page.constants'
 import { DEFAULT_PAGE_BACKGROUND_IMAGE_FIT, DEFAULT_SPREAD_BACKGROUND_MODE } from '../models/page-background.model'
 import type {
@@ -32,13 +33,20 @@ import {
   snapPosition as snapPositionUtil,
 } from '../utils/snap.util'
 import type { SmartGuideLines } from '../utils/smart-guides.util'
-import { hasElementsInPrintCropZone, elementIntersectsPrintCropZone } from '../utils/print-safe-zone.util'
+import { collectPrintCropViolations } from '../utils/print-safe-zone.util'
 import {
+  alignGroupToFrame,
   computeMultiElementAlignment,
+  distributeInFrame,
   distributeWithFixedHorizontalGap,
   distributeWithFixedVerticalGap,
+  packAndCenterInFrame,
   rectsIntersect,
+  resolveLayoutGroups,
+  type FrameAlignMode,
+  type LayoutFrame,
   type MultiAlignMode,
+  type SelectionLayoutOptions,
 } from '../utils/align-elements.util'
 import { isSelectableEditorElement } from '../utils/element-bounds.util'
 import { createElementFromLibrary } from '../factories/create-element.factory'
@@ -193,6 +201,8 @@ export const useEditorStore = defineStore('editor', () => {
   /** Template editor grows the box downward. The journal editor keeps the frame and shrinks the
    * font so a customer's answer fits the box the template drew. */
   const textFitMode = ref<'grow' | 'shrink'>('grow')
+  /** The customer journal hides the crop warning. The template author already limited the text frame. */
+  const printCropWarningSuppressed = ref(false)
   const canvasZoom = ref(1)
   // Viewport state (mobile pan/pinch-zoom) — sibling to canvasZoom, deliberately never part of
   // CanvasSnapshot/history: pan/zoom describe how the user is looking at the document, not the
@@ -383,17 +393,16 @@ export const useEditorStore = defineStore('editor', () => {
   const isSpreadPage = computed(() => isSpreadPageType(document.value?.pageType))
 
   const printCropZoneViolation = computed(() => {
-    if (previewMode.value) {
+    if (previewMode.value || printCropWarningSuppressed.value) {
       return false
     }
 
-    const elementsForCheck = flattenTree(elements.value, liveDragPositions.value)
-
-    return hasElementsInPrintCropZone(
-      elementsForCheck,
+    return collectPrintCropViolations(
+      elements.value,
       pageWidth.value,
       pageHeight.value,
-    )
+      liveDragPositions.value,
+    ).length > 0
   })
 
   const canUndo = computed(() => historyPast.value.length > 0 || debouncedHistorySnapshot !== null)
@@ -819,6 +828,10 @@ export const useEditorStore = defineStore('editor', () => {
     textFitMode.value = mode
   }
 
+  function setPrintCropWarningSuppressed(suppressed: boolean): void {
+    printCropWarningSuppressed.value = suppressed
+  }
+
   function recalculateTextElementSize(
     id: string,
     displayText?: string | null,
@@ -977,6 +990,33 @@ export const useEditorStore = defineStore('editor', () => {
     isDirty.value = true
   }
 
+  const NUDGE_STEP = 1
+  const NUDGE_STEP_LARGE = 10
+
+  /** Arrow keys. One point per tap, ten with Shift. A held key is one undo step. */
+  function nudgeSelectedElements(dx: number, dy: number, large = false): void {
+    if (
+      !document.value ||
+      previewMode.value ||
+      textEditingElementId.value ||
+      photoCropEditingElementId.value ||
+      pageBackgroundCropEditing.value
+    ) {
+      return
+    }
+
+    const step = large ? NUDGE_STEP_LARGE : NUDGE_STEP
+    const patches = alignableSelectedElements.value.map((element) => ({
+      id: element.id,
+      position: {
+        x: element.position.x + dx * step,
+        y: element.position.y + dy * step,
+      },
+    }))
+
+    moveElementsPositions(patches)
+  }
+
   /** New elements land inside the container currently being edited in isolation, if any. */
   function insertNewElement(element: PageElement, parentId: string | null = groupEditingId.value): void {
     if (!document.value) {
@@ -1068,6 +1108,7 @@ export const useEditorStore = defineStore('editor', () => {
       return
     }
     document.value.canvasData.elements = refreshTocRows(applied)
+    repairTocRowFrames()
     isDirty.value = true
   }
 
@@ -1175,6 +1216,7 @@ export const useEditorStore = defineStore('editor', () => {
       return
     }
     document.value.canvasData.elements = refreshTocRows(document.value.canvasData.elements)
+    repairTocRowFrames()
   }
 
   function addFramedPhoto(frame: PhotoFrameRef): PageElement {
@@ -1756,6 +1798,7 @@ export const useEditorStore = defineStore('editor', () => {
     }
     if (list.settings.source === 'toc' && document.value) {
       document.value.canvasData.elements = refreshTocRows(document.value.canvasData.elements)
+      repairTocRowFrames()
     }
   }
 
@@ -2335,6 +2378,92 @@ export const useEditorStore = defineStore('editor', () => {
 
     applyPositionPatches(targets, patches, { snap: false })
     isDirty.value = true
+  }
+
+  function freshAlignableSelection(): PageElement[] {
+    return alignableSelectedElements.value.map((element) => {
+      const latest = findNodeById(document.value!.canvasData.elements, element.id)
+      return latest ?? element
+    })
+  }
+
+  /** Page, spread half, or the group currently being edited. Safe margin applies only at page root. */
+  function layoutGroupsForSelection(targets: PageElement[], options: SelectionLayoutOptions) {
+    const editingId = groupEditingId.value
+    let localFrame: LayoutFrame | null = null
+
+    if (editingId && document.value) {
+      const node = findNodeById(document.value.canvasData.elements, editingId)
+      if (node && isGroupElement(node)) {
+        localFrame = { x: 0, y: 0, width: node.size.width, height: node.size.height }
+      }
+    }
+
+    const useInset = localFrame == null && options.safeMargin
+
+    return resolveLayoutGroups(targets, {
+      pageWidth: document.value!.width,
+      pageHeight: document.value!.height,
+      target: options.target,
+      safeMargin: useInset ? PRINT_SAFE_MARGIN : 0,
+      localFrame,
+    })
+  }
+
+  function applySelectionLayout(
+    options: SelectionLayoutOptions,
+    build: (elements: PageElement[], frame: LayoutFrame) => Map<string, { x?: number; y?: number }>,
+  ): void {
+    if (!document.value || previewMode.value) {
+      return
+    }
+
+    const targets = freshAlignableSelection()
+    if (targets.length === 0) {
+      return
+    }
+
+    const patches = new Map<string, { x?: number; y?: number }>()
+    for (const group of layoutGroupsForSelection(targets, options)) {
+      if (group.frame.width <= 0 || group.frame.height <= 0) {
+        continue
+      }
+
+      for (const [id, patch] of build(group.elements, group.frame)) {
+        patches.set(id, patch)
+      }
+    }
+
+    if (patches.size === 0) {
+      return
+    }
+
+    pushHistoryImmediate()
+    applyPositionPatches(targets, patches, { snap: false })
+    isDirty.value = true
+  }
+
+  function alignSelectionToFrame(mode: FrameAlignMode, options: SelectionLayoutOptions): void {
+    applySelectionLayout(options, (elements, frame) => alignGroupToFrame(elements, frame, mode))
+  }
+
+  function distributeSelectionInFrame(
+    axis: 'horizontal' | 'vertical',
+    options: SelectionLayoutOptions,
+  ): void {
+    applySelectionLayout(options, (elements, frame) => distributeInFrame(elements, frame, axis))
+  }
+
+  function packSelectionInFrame(
+    axis: 'horizontal' | 'vertical',
+    gap: number,
+    options: SelectionLayoutOptions,
+  ): void {
+    if (!Number.isFinite(gap)) {
+      return
+    }
+
+    applySelectionLayout(options, (elements, frame) => packAndCenterInFrame(elements, frame, axis, gap))
   }
 
   function beginLiveTransform(): void {
@@ -3270,10 +3399,11 @@ export const useEditorStore = defineStore('editor', () => {
       return
     }
 
-    const elementsForCheck = flattenTree(elements.value, liveDragPositions.value)
-
-    const violating = elementsForCheck.filter((element) =>
-      elementIntersectsPrintCropZone(element, pageWidth.value, pageHeight.value),
+    const violating = collectPrintCropViolations(
+      elements.value,
+      pageWidth.value,
+      pageHeight.value,
+      liveDragPositions.value,
     )
 
     if (violating.length === 0) {
@@ -3339,6 +3469,7 @@ export const useEditorStore = defineStore('editor', () => {
     liveDragPositions.value = {}
     previewMode.value = false
     textFitMode.value = 'grow'
+    printCropWarningSuppressed.value = false
     canvasZoom.value = 1
     snapToGridEnabled.value = true
     snapGridSize.value = DEFAULT_SNAP_GRID_SIZE
@@ -3469,10 +3600,14 @@ export const useEditorStore = defineStore('editor', () => {
     renameElement,
     getRemovalImpactCount,
     alignSelectedElements,
+    alignSelectionToFrame,
+    distributeSelectionInFrame,
+    packSelectionInFrame,
     applyDistributionGap,
     updateElement,
     textFitMode,
     setTextFitMode,
+    setPrintCropWarningSuppressed,
     recalculateTextElementSize,
     refitTextFontToFrame,
     setLiveDragPosition,
@@ -3480,6 +3615,7 @@ export const useEditorStore = defineStore('editor', () => {
     clearLiveDragPosition,
     clearLiveDragPositions,
     moveElementsPositions,
+    nudgeSelectedElements,
     finalizeLiveTransform,
     startTextEditing,
     stopTextEditing,

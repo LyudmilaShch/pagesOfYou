@@ -637,16 +637,50 @@
 
               <div class="mobile-dock__align-cluster-row">
                 <div class="mobile-dock__align-group">
-                  <p class="mobile-dock__label-static">Выравнивание</p>
-                  <div class="mobile-dock__align-canvas-row">
-                    <button type="button" class="mobile-dock__align-canvas-btn" aria-label="По центру по горизонтали" @click="alignToPageCenter('horizontal')">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 4v16" /><path d="M3 12h6M9 12l-2.5-2.5M9 12l-2.5 2.5" /><path d="M21 12h-6M15 12l2.5-2.5M15 12l2.5 2.5" /></svg>
+                  <p class="mobile-dock__label-static">{{ store.groupEditingId ? 'В группе' : 'На странице' }}</p>
+                  <p class="mobile-dock__hint">{{ frameLayoutHint }}</p>
+                  <div v-if="!store.groupEditingId && store.isSpreadPage" class="mobile-dock__segment" role="group" aria-label="Кадр раскладки">
+                    <button
+                      type="button"
+                      class="mobile-dock__segment-btn"
+                      :class="{ 'mobile-dock__segment-btn--active': frameTarget === 'page' }"
+                      :aria-pressed="frameTarget === 'page'"
+                      @click="frameTarget = 'page'"
+                    >
+                      Страница
                     </button>
-                    <button type="button" class="mobile-dock__align-canvas-btn" aria-label="По центру по вертикали" @click="alignToPageCenter('vertical')">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 12h16" /><path d="M12 3v6M12 9l-2.5-2.5M12 9l2.5-2.5" /><path d="M12 21v-6M12 15l-2.5 2.5M12 15l2.5 2.5" /></svg>
+                    <button
+                      type="button"
+                      class="mobile-dock__segment-btn"
+                      :class="{ 'mobile-dock__segment-btn--active': frameTarget === 'spread' }"
+                      :aria-pressed="frameTarget === 'spread'"
+                      @click="frameTarget = 'spread'"
+                    >
+                      Разворот
                     </button>
-                    <button type="button" class="mobile-dock__align-canvas-btn" aria-label="По центру страницы" @click="alignToPageCenter('both')">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="8" /><path d="M12 2v4M12 18v4M2 12h4M18 12h4" /></svg>
+                  </div>
+                  <EditorSwitch
+                    v-if="!store.groupEditingId"
+                    :model-value="useSafeMargin"
+                    label="С учётом поля печати"
+                    @update:model-value="useSafeMargin = $event"
+                  />
+                  <div
+                    v-for="(row, rowIndex) in frameAlignRows"
+                    :key="rowIndex"
+                    class="mobile-dock__align-canvas-row"
+                  >
+                    <button
+                      v-for="action in row"
+                      :key="action.mode"
+                      type="button"
+                      class="mobile-dock__align-canvas-btn"
+                      :aria-label="action.label"
+                      :title="action.label"
+                      :disabled="store.previewMode || selected.locked"
+                      @click="alignToFrame(action.mode)"
+                    >
+                      <v-icon size="18">{{ action.icon }}</v-icon>
                     </button>
                   </div>
                 </div>
@@ -801,6 +835,7 @@ import {
   spreadPageLocalXToGlobal,
 } from '../utils/spread.util'
 import { normalizeElementRotation } from '../utils/transformer.util'
+import type { FrameAlignMode, LayoutFrameTarget } from '../utils/align-elements.util'
 import EditorColorPicker from './EditorColorPicker.vue'
 import EditorBorderFields from './EditorBorderFields.vue'
 import EditorShapeStrokeFields from './EditorShapeStrokeFields.vue'
@@ -1492,12 +1527,47 @@ function moveLayerBackward(): void {
   store.moveElementLayer(selected.value.id, 'down')
 }
 
-function alignToPageCenter(axis: 'horizontal' | 'vertical' | 'both'): void {
+const frameTarget = ref<LayoutFrameTarget>('page')
+const useSafeMargin = ref(true)
+
+const frameAlignRows: { mode: FrameAlignMode; label: string; icon: string }[][] = [
+  [
+    { mode: 'left', label: 'К левому краю кадра', icon: 'mdi-format-horizontal-align-left' },
+    { mode: 'center-horizontal', label: 'По центру кадра по горизонтали', icon: 'mdi-format-horizontal-align-center' },
+    { mode: 'right', label: 'К правому краю кадра', icon: 'mdi-format-horizontal-align-right' },
+  ],
+  [
+    { mode: 'top', label: 'К верхнему краю кадра', icon: 'mdi-format-vertical-align-top' },
+    { mode: 'center-vertical', label: 'По центру кадра по вертикали', icon: 'mdi-format-vertical-align-center' },
+    { mode: 'bottom', label: 'К нижнему краю кадра', icon: 'mdi-format-vertical-align-bottom' },
+  ],
+]
+
+const frameLayoutHint = computed(() => {
+  if (store.groupEditingId) {
+    return 'Кадр — рамка группы.'
+  }
+
+  if (store.isSpreadPage && frameTarget.value === 'spread') {
+    return 'Кадр — весь разворот, сгиб его не делит.'
+  }
+
+  if (store.isSpreadPage) {
+    return 'Элемент остаётся на своей половине и не переезжает через сгиб.'
+  }
+
+  return 'Кадр — страница.'
+})
+
+function alignToFrame(mode: FrameAlignMode): void {
   if (!selected.value || store.previewMode || selected.value.locked) {
     return
   }
 
-  store.alignSelectedToPageCenter(axis)
+  store.alignSelectionToFrame(mode, {
+    target: frameTarget.value,
+    safeMargin: useSafeMargin.value,
+  })
 }
 
 function handleDuplicate(): void {
@@ -1753,7 +1823,7 @@ function handleRemove(): void {
 // the icon cluster from EditorMobileMultiSelectBar.vue's header row.
 .mobile-dock__align-cluster-row {
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   justify-content: space-between;
   gap: $spacing-3;
 }
@@ -2348,9 +2418,41 @@ function handleRemove(): void {
   color: pp.$ink;
 }
 
+.mobile-dock__hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.35;
+  color: $text-muted;
+}
+
+.mobile-dock__segment {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.mobile-dock__segment-btn {
+  min-height: 32px;
+  border: 1px solid pp.$border;
+  border-radius: 8px;
+  background: transparent;
+  color: pp.$ink-soft;
+  font-size: 13px;
+  cursor: pointer;
+
+  &--active {
+    color: pp.$ink;
+    border-color: pp.$ink;
+  }
+}
+
 .mobile-dock__align-canvas-row {
   display: flex;
   gap: 10px;
+
+  & + & {
+    margin-top: 8px;
+  }
 }
 
 .mobile-dock__align-canvas-btn {

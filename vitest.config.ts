@@ -1,6 +1,13 @@
+import { fileURLToPath } from 'node:url'
+
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+    },
+  },
   test: {
     // *.spec.ts is the suite from main (print resolution and photo upload).
     // The Konva text-box test stays a *.test.ts file and is listed on its own:

@@ -403,7 +403,9 @@ async function loadCurrentPage(): Promise<void> {
 onMounted(async () => {
   // Customer's answers stay inside the template frame and the font shrinks to fit.
   // The template editor leaves this at 'grow' (the box gets taller instead).
+  // The crop warning stays in the template editor: the author limits the frame, the reader never sees it.
   store.setTextFitMode('shrink')
+  store.setPrintCropWarningSuppressed(true)
 
   // Runs alongside the page fetch below, not blocking it — the font picker fills in reactively
   // once this resolves (mirrors MagazinePageEditorPage.vue).
