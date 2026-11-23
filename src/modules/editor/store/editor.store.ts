@@ -1145,11 +1145,15 @@ export const useEditorStore = defineStore('editor', () => {
       return null
     }
 
+    const clone = cloneSubtree(last.node)
+    if (!isGroupElement(clone)) {
+      return null
+    }
+
     if (options?.recordHistory !== false) {
       pushHistoryImmediate()
     }
 
-    const clone = cloneSubtree(last.node)
     const gap = list.settings.minGap ?? DEFAULT_LIST_MIN_GAP
     const pageWidth = document.value.width
     const pageHeight = document.value.height
@@ -1688,7 +1692,7 @@ export const useEditorStore = defineStore('editor', () => {
       visible: true,
       opacity: 1,
       fill: 'transparent',
-      stroke: isTextElement(title) ? title.color : '#111111',
+      stroke: title && isTextElement(title) ? title.color : '#111111',
       strokeWidth: 1,
       cornerRadius: 0,
       shadow: null,

@@ -100,7 +100,7 @@ describe('createTocListRows', () => {
     const [row] = createTocListRows(A4_PAGE_WIDTH, A4_PAGE_HEIGHT, { showDescription: true })
     const detail = row.children.find((child) => isTextElement(child) && child.listRole === 'detail')
     expect(row.list?.showDescription).toBe(true)
-    expect(isTextElement(detail) && detail.visible && detail.defaultText).toBe('Описание раздела')
+    expect(detail && isTextElement(detail) && detail.visible && detail.defaultText).toBe('Описание раздела')
     expect(row.size.height).toBeGreaterThan(20)
   })
 
@@ -108,7 +108,7 @@ describe('createTocListRows', () => {
     const rows = createTocListRows(A4_PAGE_WIDTH, A4_PAGE_HEIGHT)
     const labels = rows.slice(0, 3).map((row) => {
       const number = row.children.find((child) => isTextElement(child) && child.listRole === 'number')
-      return isTextElement(number) ? number.defaultText : ''
+      return number && isTextElement(number) ? number.defaultText : ''
     })
     expect(labels).toEqual(['3', '5', '7'])
   })
@@ -271,8 +271,8 @@ describe('applyTocEntries', () => {
     }
     const detail = first.children.find((child) => isTextElement(child) && child.listRole === 'detail')
     const number = first.children.find((child) => isTextElement(child) && child.listRole === 'number')
-    expect(isTextElement(detail) && detail.visible && detail.defaultText).toBe('Первые годы')
-    expect(isTextElement(number) && number.defaultText).toBe('стр. 3')
+    expect(detail && isTextElement(detail) && detail.visible && detail.defaultText).toBe('Первые годы')
+    expect(number && isTextElement(number) && number.defaultText).toBe('стр. 3')
   })
 
   it('keeps the description hidden until the contents ask for it, then shows a sample without moving the other rows', () => {
@@ -284,7 +284,7 @@ describe('applyTocEntries', () => {
       throw new Error('row is not a group')
     }
     const hiddenDetail = hidden.children.find((child) => isTextElement(child) && child.listRole === 'detail')
-    expect(isTextElement(hiddenDetail) && hiddenDetail.visible).toBe(false)
+    expect(hiddenDetail && isTextElement(hiddenDetail) && hiddenDetail.visible).toBe(false)
 
     const withFlag = rows.map((row) => ({ ...row, list: { ...row.list!, showDescription: true } }))
     const seeded = seedTocDescriptionSamples(withFlag)
@@ -292,7 +292,7 @@ describe('applyTocEntries', () => {
     const detail = shown[0] && isGroupElement(shown[0])
       ? shown[0].children.find((child) => isTextElement(child) && child.listRole === 'detail')
       : null
-    expect(isTextElement(detail) && detail.visible && detail.defaultText).toBe('Описание раздела')
+    expect(detail && isTextElement(detail) && detail.visible && detail.defaultText).toBe('Описание раздела')
     expect(shown[1].position.y).toBe(rows[1].position.y)
     expect(shown[1].position.x).toBe(rows[1].position.x)
   })
@@ -328,7 +328,7 @@ describe('refreshTocRows', () => {
   it('does not rewrite a real page number', () => {
     const rows = createTocListRows(A4_PAGE_WIDTH, A4_PAGE_HEIGHT)
     const number = rows[0].children.find((child) => isTextElement(child) && child.listRole === 'number')
-    if (!isTextElement(number)) {
+    if (!number || !isTextElement(number)) {
       throw new Error('missing number')
     }
     number.defaultText = '12'
@@ -338,13 +338,13 @@ describe('refreshTocRows', () => {
       throw new Error('row is not a group')
     }
     const kept = first.children.find((child) => isTextElement(child) && child.listRole === 'number')
-    expect(isTextElement(kept) && kept.defaultText).toBe('12')
+    expect(kept && isTextElement(kept) && kept.defaultText).toBe('12')
   })
 })
 
 function titleOf(elements: PageElement[]): TextPlaceholder {
   const title = flattenTree(elements).find((leaf) => isTextElement(leaf) && leaf.listRole === 'item')
-  if (!isTextElement(title)) {
+  if (!title || !isTextElement(title)) {
     throw new Error('missing title')
   }
   return title

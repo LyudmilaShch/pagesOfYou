@@ -330,7 +330,7 @@ export function seedTocDescriptionSamples(elements: PageElement[]): PageElement[
   function visit(node: PageElement): PageElement {
     if (isGroupElement(node) && node.list?.source === 'toc' && node.list.showDescription === true) {
       const detail = node.children.find((child) => isTextElement(child) && child.listRole === 'detail')
-      if (isTextElement(detail)) {
+      if (detail && isTextElement(detail)) {
         if ((detail.defaultText ?? '').trim()) {
           return node
         }
@@ -425,16 +425,16 @@ export function stampTocSamplePages(elements: PageElement[]): PageElement[] {
     if (assigned.length > 0 && assigned.some((value) => value !== 3)) {
       continue
     }
-    rows.forEach((row, index) => {
+    for (const [index] of rows.entries()) {
       const text = numbers[index]
       if (!text) {
-        return
+        continue
       }
       const formatted = formatTocPageLabel(String(tocSamplePageNumber(index)), list.settings.numberFormat)
       if ((text.defaultText ?? '') !== formatted) {
         nextById.set(text.id, formatted)
       }
-    })
+    }
   }
   if (nextById.size === 0) {
     return elements
@@ -453,7 +453,7 @@ function rowNumber(row: PageElement): TextPlaceholder | null {
     return null
   }
   const number = row.children.find((child) => isTextElement(child) && child.listRole === 'number')
-  return isTextElement(number) ? number : null
+  return number && isTextElement(number) ? number : null
 }
 
 /** A long title either wraps (the box grows) or the font shrinks until the words fit one line. */
