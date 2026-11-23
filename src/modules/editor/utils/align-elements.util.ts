@@ -578,11 +578,6 @@ function sortByVisualVertical(elements: PageElement[]): PageElement[] {
   })
 }
 
-function axisValue(element: PageElement, axis: 'horizontal' | 'vertical'): number {
-  const box = layoutBox(element)
-  return axis === 'horizontal' ? box.x : box.y
-}
-
 function axisSize(element: PageElement, axis: 'horizontal' | 'vertical'): number {
   const box = layoutBox(element)
   return axis === 'horizontal' ? box.width : box.height
