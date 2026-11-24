@@ -17,11 +17,7 @@
       <div class="journal-review-page__topbar-inner">
         <router-link to="/" class="journal-review-page__brand">Вау, ми!</router-link>
 
-        <div class="journal-review-page__steps-label" aria-label="Шаг 4 из 5">
-          <span class="journal-review-page__steps-current">4</span>
-          <span class="journal-review-page__steps-sep">/</span>
-          <span class="journal-review-page__steps-total">5</span>
-        </div>
+        <ConstructorTopMeta />
       </div>
     </header>
 
@@ -69,7 +65,7 @@
     <main class="journal-review-page__main">
       <div class="journal-review-page__container">
         <header class="journal-review-page__intro">
-          <p class="journal-review-page__eyebrow text-caption text-secondary">Шаг 4 — Проверка</p>
+          <p class="journal-review-page__eyebrow text-caption text-secondary">Шаг 4 из 5 — Проверка</p>
           <h1 class="journal-review-page__title text-h2">Ваш журнал готов!</h1>
           <p class="journal-review-page__subtitle text-body text-secondary">
             Взгляните перед заказом — текст и фото можно поправить прямо здесь
@@ -227,6 +223,7 @@ import { computePhotoPageVisibleArea, type PhotoCropState } from '@/modules/edit
 import { useAuthStore } from '@/stores/auth.store'
 import AuthModal from '@/components/auth/AuthModal.vue'
 import AuthPromptModal from '@/components/auth/AuthPromptModal.vue'
+import ConstructorTopMeta from '../components/ConstructorTopMeta.vue'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
 import { getGalleryScope } from '../utils/photo-gallery-scope.util'
 import {
@@ -1006,10 +1003,6 @@ onBeforeUnmount(() => {
 // (both say "step 4 of 5"), same reasoning as QuestionnairePage.vue's own eyebrow removal.
 .journal-review-page__eyebrow {
   margin: 0 0 $spacing-2;
-
-  @include mobile-only {
-    display: none;
-  }
 }
 
 .journal-review-page__title {

@@ -164,6 +164,13 @@ export const ordersApi = {
     return data.data
   },
 
+  async setFulfillment(orderId: string, fulfillment: 'LAYOUT' | 'PRINT'): Promise<OrderDetail> {
+    const { data } = await http.patch<BackendResponse<OrderDetail>>(`/orders/${orderId}/fulfillment`, {
+      fulfillment,
+    })
+    return data.data
+  },
+
   async applyPromoCode(orderId: string, code: string): Promise<OrderDetail> {
     const { data } = await http.post<BackendResponse<OrderDetail>>(
       `/orders/${orderId}/promo-code`,

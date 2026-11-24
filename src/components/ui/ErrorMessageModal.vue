@@ -1,8 +1,8 @@
 <template>
-  <BaseModal v-model="open" :labelledby="titleId">
+  <BaseModal v-model="open" narrow :labelledby="titleId">
     <div class="error-message-modal">
       <div class="error-message-modal__icon" aria-hidden="true">
-        <v-icon size="28" color="error">mdi-alert-circle-outline</v-icon>
+        <v-icon size="22" color="error">mdi-alert-circle-outline</v-icon>
       </div>
 
       <h2 :id="titleId" class="error-message-modal__title">
@@ -12,6 +12,18 @@
       <p class="error-message-modal__text">
         {{ message }}
       </p>
+
+      <div v-if="facts?.length" class="error-message-modal__facts">
+        <div
+          v-for="fact in facts"
+          :key="fact.label"
+          class="error-message-modal__fact"
+          :class="{ 'error-message-modal__fact--target': fact.tone === 'target' }"
+        >
+          <span class="error-message-modal__fact-label">{{ fact.label }}</span>
+          <span class="error-message-modal__fact-value">{{ fact.value }}</span>
+        </div>
+      </div>
 
       <v-btn
         color="primary"
@@ -29,11 +41,13 @@
 import { computed, useId } from 'vue'
 
 import BaseModal from '@/components/ui/BaseModal.vue'
+import type { ErrorMessageFact } from '@/shared/composables/useErrorMessageModal'
 
 const props = defineProps<{
   modelValue: boolean
   title?: string
   message: string
+  facts?: ErrorMessageFact[] | null
 }>()
 
 const emit = defineEmits<{
@@ -59,10 +73,10 @@ function close(): void {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: $spacing-3;
-  width: min(100%, 420px);
+  gap: $spacing-2;
+  width: 100%;
   margin-inline: auto;
-  padding-top: $spacing-2;
+  padding-top: 0;
   text-align: center;
 }
 
@@ -70,8 +84,8 @@ function close(): void {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 3.5rem;
-  height: 3.5rem;
+  width: 2.75rem;
+  height: 2.75rem;
   border-radius: 9999px;
   background: rgba(var(--v-theme-error), 0.1);
 }
@@ -89,9 +103,48 @@ function close(): void {
   font-size: $font-size-body-sm;
   line-height: 1.5;
   color: $text-secondary;
+  white-space: pre-line;
+}
+
+.error-message-modal__facts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: $spacing-2;
+  width: 100%;
+  margin-top: $spacing-2;
+}
+
+.error-message-modal__fact {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-1;
+  min-width: 0;
+  padding: $spacing-3;
+  border-radius: $radius-md;
+  background: $bg-muted;
+  text-align: left;
+}
+
+.error-message-modal__fact--target {
+  background: $accent-tint;
+}
+
+.error-message-modal__fact-label {
+  font-size: $font-size-caption;
+  line-height: 1.3;
+  color: $text-secondary;
+}
+
+.error-message-modal__fact-value {
+  margin-top: auto;
+  font-size: $font-size-body;
+  font-weight: $font-weight-semibold;
+  line-height: 1.3;
+  color: $text-primary;
 }
 
 .error-message-modal__action {
+  align-self: flex-end;
   margin-top: $spacing-2;
   min-width: 140px;
 }

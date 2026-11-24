@@ -9,6 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import {
   DeliveryMethod,
   JournalSpreadLayout,
+  OrderFulfillment,
   OrderStatus,
   PageType,
   PlaceholderSource,
@@ -84,6 +85,10 @@ const ORDER_INCLUDE = {
       oldPrice: true,
       includedSpreads: true,
       pricePerExtraFourPages: true,
+      layoutPrice: true,
+      printPrice: true,
+      layoutPricePerExtraSpread: true,
+      printPricePerExtraSpread: true,
     },
   },
   promoCode: {
@@ -1355,7 +1360,11 @@ export class OrdersService {
       });
     }
 
-    if (!order.deliveryMethod) {
+    if (!order.fulfillment) {
+      throw new BadRequestException('Выберите макет или печать.');
+    }
+
+    if (order.fulfillment === OrderFulfillment.PRINT && !order.deliveryMethod) {
       throw new BadRequestException('Укажите способ и адрес доставки.');
     }
 
@@ -1415,7 +1424,7 @@ export class OrdersService {
 
     const SPREADS_PER_ADD = 1;
     const newSpreadCount = countSpreadSlots(order.journalPages) + SPREADS_PER_ADD;
-    const totalPrice = calculateJournalPrice(order.magazineType, newSpreadCount);
+    const totalPrice = calculateJournalPrice(order.magazineType, newSpreadCount, order.fulfillment);
 
     await this.prisma.$transaction(async (tx) => {
       await tx.journalPage.updateMany({
@@ -1549,7 +1558,11 @@ export class OrdersService {
     const remainingPages = order.journalPages
       .filter((page) => !removeIdSet.has(page.id))
       .sort((a, b) => a.sortOrder - b.sortOrder);
-    const totalPrice = calculateJournalPrice(order.magazineType, remainingSpreadCount);
+    const totalPrice = calculateJournalPrice(
+      order.magazineType,
+      remainingSpreadCount,
+      order.fulfillment,
+    );
 
     await this.prisma.$transaction([
       this.prisma.journalPage.updateMany({
@@ -1592,7 +1605,7 @@ export class OrdersService {
     const insertSortOrder =
       backCoverIndex === -1 ? order.journalPages.length : order.journalPages[backCoverIndex].sortOrder;
     const newSpreadCount = countSpreadSlots(order.journalPages) + 1;
-    const totalPrice = calculateJournalPrice(order.magazineType, newSpreadCount);
+    const totalPrice = calculateJournalPrice(order.magazineType, newSpreadCount, order.fulfillment);
 
     await this.prisma.$transaction([
       this.prisma.journalPage.updateMany({
@@ -1755,6 +1768,53 @@ export class OrdersService {
     });
 
     return this.withResolvedAssets(cancelled);
+  }
+
+  /** Last constructor step — «Только макет» or «С печатью». Stores the exact journal price
+   * for that choice and reprices a percent promo against it. A PDF layout does not keep a
+   * delivery charge. */
+  async setFulfillment(orderId: string, userId: string, fulfillment: OrderFulfillment) {
+    const order = await this.getOwnedOrderOrThrow(orderId, userId, ORDER_INCLUDE);
+
+    if (order.status !== OrderStatus.DRAFT) {
+      throw new BadRequestException('Вариант можно выбрать только у черновика.');
+    }
+
+    const quoteTotal = calculateJournalPrice(
+      order.magazineType,
+      countSpreadSlots(order.journalPages),
+      fulfillment,
+    );
+
+    const promo = order.promoCodeId
+      ? await this.prisma.promoCode.findUnique({ where: { id: order.promoCodeId } })
+      : null;
+    const discountAmount = promo
+      ? Math.min(quoteTotal, this.discountFor(quoteTotal, promo))
+      : order.discountAmount;
+
+    const updated = await this.prisma.order.update({
+      where: { id: orderId },
+      data: {
+        fulfillment,
+        totalPrice: quoteTotal,
+        discountAmount,
+        ...(fulfillment === OrderFulfillment.LAYOUT ? { deliveryPrice: null } : {}),
+      },
+      include: ORDER_INCLUDE,
+    });
+
+    return this.withResolvedAssets(updated);
+  }
+
+  private discountFor(
+    itemPrice: number,
+    promo: { discountPercent: number | null; discountAmount: Prisma.Decimal | null },
+  ): number {
+    if (promo.discountPercent != null) {
+      return Math.round((itemPrice * promo.discountPercent) / 100);
+    }
+    return Number(promo.discountAmount ?? 0);
   }
 
   /** Checkout step — stubbed CDEK: a fixed price/eta per delivery method, no real carrier API

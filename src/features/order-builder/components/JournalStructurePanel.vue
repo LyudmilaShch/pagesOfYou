@@ -99,7 +99,7 @@
         :disabled="store.isSaving"
         @click="handleAddSpread"
       >
-        Добавить 4 страницы
+        {{ addLabel }}
       </v-btn>
     </div>
 
@@ -126,7 +126,9 @@ import type { CanvasData } from '@/modules/editor/models/canvas-data.model'
 import type { PageElement } from '@/modules/editor/models'
 import { useEditorStore } from '@/modules/editor/store/editor.store'
 import JournalSpreadThumbnail from '@/modules/editor/components/JournalSpreadThumbnail.vue'
-import { getJournalPageDisplayName, tocEntriesForPage } from '../utils/journal-structure.util'
+import { countSpreadSlots, getJournalPageDisplayName, tocEntriesForPage } from '../utils/journal-structure.util'
+import { addPagesButtonLabel } from '../utils/price-copy.util'
+import { quoteJournal, resolveActivePricing } from '../utils/pricing.util'
 import { isFillableElement, isPlaceholderFilled } from '../utils/placeholder.utils'
 import { presentCustomerPageCanvas } from '../utils/missing-photos.util'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
@@ -161,6 +163,20 @@ const templatePicker = reactive<{
 const spreadCount = computed(
   () => store.order?.journalPages.filter((page) => page.slotType === 'SPREAD').length ?? 0,
 )
+
+const addLabel = computed(() => {
+  const type = resolveActivePricing(
+    store.order?.magazineType,
+    store.selectedMagazineType,
+    store.order?.magazineTypeId,
+  )
+  const pages = store.order?.journalPages
+  if (!type || !pages) {
+    return addPagesButtonLabel(0, 0)
+  }
+  const quote = quoteJournal(type, countSpreadSlots(pages))
+  return addPagesButtonLabel(quote.nextSpreadLayoutDelta, quote.nextSpreadPrintDelta)
+})
 
 const sidebarEntries = computed(() => {
   const pages = store.order?.journalPages ?? []

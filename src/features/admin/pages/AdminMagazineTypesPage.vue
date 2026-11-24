@@ -76,8 +76,11 @@
 
           <!-- basePrice -->
           <template #[`item.basePrice`]="{ item }">
-            <span v-if="item.basePrice != null" class="mt-table__price">
-              {{ formatPrice(item.basePrice) }}
+            <span v-if="item.layoutPrice != null || item.basePrice != null" class="mt-table__price">
+              {{ formatPrice(item.layoutPrice ?? item.basePrice) }}
+              <span v-if="item.printPrice != null" class="mt-table__price--extra">
+                + печать {{ formatPrice(item.printPrice) }}
+              </span>
             </span>
             <span v-else class="mt-table__price--empty">—</span>
           </template>
@@ -239,53 +242,77 @@
                 />
               </div>
 
-              <!-- Base price -->
-              <v-text-field
-                v-model.number="form.basePrice"
-                label="Базовая цена, ₽"
-                variant="outlined"
-                density="comfortable"
-                type="number"
-                min="0"
-                step="100"
-                placeholder="4900"
-                :hint="form.basePrice ? `Отображается как: от ${formatPrice(form.basePrice)}` : 'Оставьте пустым, если цена не задана'"
-                :rules="[minNum(0)]"
-                prepend-inner-icon="mdi-currency-rub"
-                hide-details="auto"
-              />
-
-              <!-- Dynamic per-4-pages pricing -->
               <div class="mt-form__row">
                 <v-text-field
-                  v-model.number="form.includedSpreads"
-                  label="Разворотов включено в базовую цену"
+                  v-model.number="form.layoutPrice"
+                  label="Макет (PDF) за базовый журнал, ₽"
                   variant="outlined"
                   density="comfortable"
                   type="number"
-                  min="2"
-                  step="2"
-                  :hint="form.includedSpreads ? `= ${form.includedSpreads * 2} страниц (включая обложку)` : 'Печать требует кратности 4 страницам'"
-                  persistent-hint
-                  :rules="[minNum(2), evenNum]"
+                  min="0"
+                  step="100"
+                  placeholder="1490"
+                  :rules="[minNum(0)]"
+                  prepend-inner-icon="mdi-currency-rub"
+                  hide-details="auto"
                   class="mt-form__price-field"
                 />
                 <v-text-field
-                  v-model.number="form.pricePerExtraFourPages"
-                  label="Цена за доп. 4 страницы, ₽"
+                  v-model.number="form.printPrice"
+                  label="Печать за базовый журнал, ₽"
+                  variant="outlined"
+                  density="comfortable"
+                  type="number"
+                  min="0"
+                  step="100"
+                  placeholder="1800"
+                  :rules="[minNum(0)]"
+                  prepend-inner-icon="mdi-currency-rub"
+                  hide-details="auto"
+                  class="mt-form__price-field"
+                />
+              </div>
+              <div class="mt-form__row">
+                <v-text-field
+                  v-model.number="form.layoutPricePerExtraSpread"
+                  label="Доп. разворот без печати, ₽"
                   variant="outlined"
                   density="comfortable"
                   type="number"
                   min="0"
                   step="50"
-                  placeholder="0"
-                  hint="Оставьте пустым, если доплаты за страницы сверх лимита нет"
+                  :rules="[minNum(0)]"
+                  prepend-inner-icon="mdi-currency-rub"
+                  hide-details="auto"
+                  class="mt-form__price-field"
+                />
+                <v-text-field
+                  v-model.number="form.printPricePerExtraSpread"
+                  label="Доп. разворот к печати, ₽"
+                  variant="outlined"
+                  density="comfortable"
+                  type="number"
+                  min="0"
+                  step="50"
+                  hint="0 — эту цену на кнопке добавления не показываем"
                   persistent-hint
                   :rules="[minNum(0)]"
                   prepend-inner-icon="mdi-currency-rub"
                   class="mt-form__price-field"
                 />
               </div>
+              <v-text-field
+                v-model.number="form.includedSpreads"
+                label="Разворотов включено в базовую цену"
+                variant="outlined"
+                density="comfortable"
+                type="number"
+                min="2"
+                step="2"
+                :hint="form.includedSpreads ? `= ${form.includedSpreads * 2} страниц (включая обложку)` : 'Печать требует кратности 4 страницам'"
+                persistent-hint
+                :rules="[minNum(2), evenNum]"
+              />
 
               <!-- Old price + badge type row -->
               <div class="mt-form__row mt-form__row--prices">
@@ -547,6 +574,10 @@ const emptyForm = () => ({
   oldPrice: null as number | null,
   includedSpreads: 8 as number | null,
   pricePerExtraFourPages: null as number | null,
+  layoutPrice: null as number | null,
+  printPrice: null as number | null,
+  layoutPricePerExtraSpread: null as number | null,
+  printPricePerExtraSpread: null as number | null,
   badgeType: null as BadgeType | null,
   badgeText: '',
   isActive: true,
@@ -595,10 +626,12 @@ async function submitForm() {
       slug: form.slug.trim(),
       description: form.description.trim() || undefined,
       coverImage: form.coverImage || undefined,
-      basePrice: validNum(form.basePrice),
+      layoutPrice: validNum(form.layoutPrice),
+      printPrice: validNum(form.printPrice),
+      layoutPricePerExtraSpread: validNum(form.layoutPricePerExtraSpread),
+      printPricePerExtraSpread: validNum(form.printPricePerExtraSpread),
       oldPrice: validNum(form.oldPrice),
       includedSpreads: validNum(form.includedSpreads),
-      pricePerExtraFourPages: validNum(form.pricePerExtraFourPages),
       badgeType: form.badgeType ?? undefined,
       badgeText: form.badgeText.trim() || undefined,
       isActive: form.isActive,
@@ -837,10 +870,18 @@ function extractErrorMessage(err: unknown): string {
 }
 
 .mt-table__price {
+  display: flex;
+  flex-direction: column;
   font-variant-numeric: tabular-nums;
   font-weight: $font-weight-medium;
   color: $text-primary;
   white-space: nowrap;
+}
+
+.mt-table__price--extra {
+  font-size: 12px;
+  font-weight: $font-weight-regular;
+  color: $text-secondary;
 }
 
 .mt-table__price--empty {

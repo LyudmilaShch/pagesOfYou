@@ -24,6 +24,10 @@ interface CatalogMagazineType {
   oldPrice: string | null
   includedSpreads: number
   pricePerExtraFourPages: string | null
+  layoutPrice: string | null
+  printPrice: string | null
+  layoutPricePerExtraSpread: string | null
+  printPricePerExtraSpread: string | null
   badgeType: string | null
   badgeText: string | null
   sortOrder: number
@@ -45,6 +49,10 @@ function toDomain(item: CatalogMagazineType): MagazineType {
     oldPrice: toNum(item.oldPrice),
     includedSpreads: item.includedSpreads,
     pricePerExtraFourPages: toNum(item.pricePerExtraFourPages),
+    layoutPrice: toNum(item.layoutPrice),
+    printPrice: toNum(item.printPrice),
+    layoutPricePerExtraSpread: toNum(item.layoutPricePerExtraSpread),
+    printPricePerExtraSpread: toNum(item.printPricePerExtraSpread),
     badgeType: item.badgeType as MagazineType['badgeType'],
     badgeText: item.badgeText,
     sortOrder: item.sortOrder,

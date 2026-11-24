@@ -5,6 +5,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { ApplyPromoCodeDto } from './dto/apply-promo-code.dto';
+import { SetFulfillmentDto } from './dto/set-fulfillment.dto';
 import { SuggestListItemsDto } from './dto/suggest-list-items.dto';
 import { CalculateDeliveryDto } from './dto/calculate-delivery.dto';
 import { CreateDraftOrderDto } from './dto/create-draft-order.dto';
@@ -180,6 +181,16 @@ export class OrdersController {
     @Body() body: ReorderJournalSpreadsDto,
   ) {
     return this.ordersService.reorderJournalSpreads(orderId, user.sub, body);
+  }
+
+  @Patch(':id/fulfillment')
+  @ApiOperation({ summary: 'Choose PDF layout or print and store the exact journal price' })
+  setFulfillment(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() body: SetFulfillmentDto,
+  ) {
+    return this.ordersService.setFulfillment(id, user.sub, body.fulfillment);
   }
 
   @Post(':id/delivery/calculate')

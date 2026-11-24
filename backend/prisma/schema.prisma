@@ -285,8 +285,22 @@ model MagazineType {
   includedSpreads Int @default(8)
 
   /// Цена за каждые дополнительные 4 страницы (= 2 разворота) сверх includedSpreads. `null`/0 —
-  /// доплаты за доп. страницы нет.
+  /// доплаты за доп. страницы нет. Устарело: конструктор считает доплату по разворотам
+  /// (`layoutPricePerExtraSpread` / `printPricePerExtraSpread`).
   pricePerExtraFourPages Decimal? @db.Decimal(10, 2)
+
+  /// Макет (PDF) за базовый журнал. В шапке конструктора не меняется при добавлении разворотов.
+  layoutPrice Decimal? @db.Decimal(10, 2)
+
+  /// Печать за базовый журнал — стартовая «печать от» в шапке конструктора.
+  printPrice Decimal? @db.Decimal(10, 2)
+
+  /// Доплата к макету за каждый разворот сверх includedSpreads. В шапку не попадает —
+  /// только в точную сумму «Только макет» на последнем шаге.
+  layoutPricePerExtraSpread Decimal? @db.Decimal(10, 2)
+
+  /// Доплата к печати за каждый разворот сверх includedSpreads.
+  printPricePerExtraSpread Decimal? @db.Decimal(10, 2)
 
   /// Тип маркетингового бейджа (TOP / NEW / SALE / POPULAR / LIMITED).
   badgeType BadgeType?
@@ -765,6 +779,9 @@ model Order {
   totalPrice Decimal? @db.Decimal(10, 2)
   currency   String   @default("RUB") @db.VarChar(3)
 
+  /// «Только макет» или «С печатью». Пусто, пока клиент не выбрал на последнем шаге.
+  fulfillment OrderFulfillment?
+
   magazineTypeSnapshot  Json?
   magazineStyleSnapshot Json?
 
@@ -820,6 +837,11 @@ model Order {
 enum DeliveryMethod {
   PICKUP_POINT
   COURIER
+}
+
+enum OrderFulfillment {
+  LAYOUT
+  PRINT
 }
 
 /// Validated server-side at checkout (`POST /orders/:id/promo-code`) — no admin CRUD yet, codes

@@ -3,6 +3,7 @@
     v-model="isOpen"
     :title="title"
     :message="message"
+    :facts="facts"
   />
 </template>
 
@@ -10,5 +11,5 @@
 import ErrorMessageModal from '@/components/ui/ErrorMessageModal.vue'
 import { useErrorMessageModal } from '@/shared/composables/useErrorMessageModal'
 
-const { isOpen, title, message } = useErrorMessageModal()
+const { isOpen, title, message, facts } = useErrorMessageModal()
 </script>

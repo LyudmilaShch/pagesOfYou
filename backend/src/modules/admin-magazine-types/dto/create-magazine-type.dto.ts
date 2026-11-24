@@ -82,6 +82,50 @@ export class CreateMagazineTypeDto {
   @Type(() => Number)
   pricePerExtraFourPages?: number;
 
+  @ApiPropertyOptional({
+    example: 1490,
+    description: 'PDF layout price for the base journal',
+    minimum: 0,
+  })
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Type(() => Number)
+  layoutPrice?: number;
+
+  @ApiPropertyOptional({
+    example: 1800,
+    description: 'Print price for the base journal',
+    minimum: 0,
+  })
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Type(() => Number)
+  printPrice?: number;
+
+  @ApiPropertyOptional({
+    example: 0,
+    description: 'Extra layout price per spread beyond includedSpreads',
+    minimum: 0,
+  })
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Type(() => Number)
+  layoutPricePerExtraSpread?: number;
+
+  @ApiPropertyOptional({
+    example: 300,
+    description: 'Extra print price per spread beyond includedSpreads',
+    minimum: 0,
+  })
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Type(() => Number)
+  printPricePerExtraSpread?: number;
+
   @ApiPropertyOptional({ enum: BadgeType, example: BadgeType.TOP })
   @IsOptional()
   @IsEnum(BadgeType)

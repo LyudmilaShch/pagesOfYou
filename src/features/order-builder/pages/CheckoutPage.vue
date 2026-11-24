@@ -7,11 +7,7 @@
           <span class="checkout-page__topbar-title">Оформление заказа</span>
         </div>
 
-        <div class="checkout-page__steps-label" aria-label="Шаг 5 из 5">
-          <span class="checkout-page__steps-current">5</span>
-          <span class="checkout-page__steps-sep">/</span>
-          <span class="checkout-page__steps-total">5</span>
-        </div>
+        <ConstructorTopMeta :order="order" />
       </div>
     </header>
 
@@ -60,8 +56,35 @@
 
       <div v-else-if="order" class="checkout-page__container">
         <div class="checkout-page__forms">
-          <!-- Доставка -->
           <section class="checkout-card">
+            <p class="checkout-page__eyebrow text-caption text-secondary">Шаг 5 из 5 — Оплата</p>
+            <h2 class="checkout-card__title">Вариант журнала</h2>
+            <div class="checkout-variant">
+              <button
+                type="button"
+                class="checkout-variant__option"
+                :class="{ 'checkout-variant__option--active': order.fulfillment === 'LAYOUT' }"
+                :disabled="choosingVariant"
+                @click="chooseFulfillment('LAYOUT')"
+              >
+                <span>Только макет</span>
+                <strong>{{ formatPrice(quote.layoutTotal) }}</strong>
+              </button>
+              <button
+                type="button"
+                class="checkout-variant__option"
+                :class="{ 'checkout-variant__option--active': order.fulfillment === 'PRINT' }"
+                :disabled="choosingVariant"
+                @click="chooseFulfillment('PRINT')"
+              >
+                <span>С печатью</span>
+                <strong>{{ formatPrice(quote.withPrintTotal) }}</strong>
+              </button>
+            </div>
+          </section>
+
+          <!-- Доставка — только для печатного журнала -->
+          <section v-if="order.fulfillment === 'PRINT'" class="checkout-card">
             <h2 class="checkout-card__title">Доставка</h2>
 
             <div class="checkout-card__method">
@@ -215,14 +238,14 @@
           <h3 class="checkout-summary__name">{{ order.magazineType.name }}</h3>
 
           <div class="checkout-summary__row">
-            <span>Журнал ({{ priceBreakdown.includedPages }} стр.)</span>
-            <span>{{ formatPrice(priceBreakdown.basePrice) }}</span>
+            <span>Макет</span>
+            <span>{{ formatPrice(quote.layoutTotal) }}</span>
           </div>
-          <div v-if="priceBreakdown.extraPages > 0" class="checkout-summary__row">
-            <span>Доп. страницы ({{ priceBreakdown.extraPages }} стр.)</span>
-            <span>{{ formatPrice(priceBreakdown.extraPagesPrice) }}</span>
+          <div v-if="order.fulfillment === 'PRINT'" class="checkout-summary__row">
+            <span>Печать</span>
+            <span>{{ formatPrice(quote.printFrom) }}</span>
           </div>
-          <div v-if="deliveryPrice != null" class="checkout-summary__row">
+          <div v-if="order.fulfillment === 'PRINT' && deliveryPrice != null" class="checkout-summary__row">
             <span>Доставка</span>
             <span>{{ formatPrice(deliveryPrice) }}</span>
           </div>
@@ -233,7 +256,7 @@
 
           <div class="checkout-summary__total">
             <span>Итого</span>
-            <span>{{ formatPrice(grandTotal) }}</span>
+            <span>{{ order.fulfillment ? formatPrice(grandTotal) : '—' }}</span>
           </div>
 
           <v-btn
@@ -241,13 +264,16 @@
             size="large"
             block
             class="checkout-summary__submit"
-            :disabled="!order.deliveryMethod"
+            :disabled="!canSubmit"
             :loading="submitting"
             @click="handleFinalSubmit"
           >
             Оформить заказ
           </v-btn>
-          <p v-if="!order.deliveryMethod" class="checkout-summary__hint">
+          <p v-if="!order.fulfillment" class="checkout-summary__hint">
+            Выберите макет или печать
+          </p>
+          <p v-else-if="order.fulfillment === 'PRINT' && !order.deliveryMethod" class="checkout-summary__hint">
             Сначала рассчитайте доставку
           </p>
         </aside>
@@ -266,6 +292,7 @@ import { useRoute, useRouter } from 'vue-router'
 
 import type { CanvasData } from '@/modules/editor/models/canvas-data.model'
 import JournalSpreadThumbnail from '@/modules/editor/components/JournalSpreadThumbnail.vue'
+import ConstructorTopMeta from '../components/ConstructorTopMeta.vue'
 import { loadScript } from '@/shared/utils/load-script.util'
 import {
   CDEK_WIDGET_SCRIPT_URL,
@@ -278,8 +305,8 @@ import { settingsApi } from '@/shared/api/settings.api'
 import { ordersApi } from '../api/orders.api'
 import { hasMissingCustomerPhotos, presentCustomerPageCanvas } from '../utils/missing-photos.util'
 import { countSpreadSlots } from '../utils/journal-structure.util'
-import { calculateJournalPriceBreakdown } from '../utils/pricing.util'
-import type { DeliveryMethod, OrderDetail } from '../types/order.types'
+import { quoteJournal } from '../utils/pricing.util'
+import type { DeliveryMethod, OrderDetail, OrderFulfillment } from '../types/order.types'
 
 const route = useRoute()
 const router = useRouter()
@@ -361,37 +388,50 @@ const coverCanvas = computed<CanvasData | null>(() => {
   return presentCustomerPageCanvas(cover)
 })
 
-/** Base price + extra-4-pages surcharge, broken out so the checkout summary can show the user
- * exactly what they're paying for (the journal's included pages vs. what they added beyond
- * that), rather than a single lump sum. Computed client-side from the magazine type's pricing
- * config + the order's actual spread count, mirroring the backend's
- * `calculateJournalPriceBreakdown` — kept in sync with `order.totalPrice` since the backend
- * recomputes that with the same formula on every spread add. */
-const priceBreakdown = computed(() => {
+const quote = computed(() => {
   if (!order.value) {
-    return { basePrice: 0, includedPages: 0, extraPages: 0, extraPagesPrice: 0, total: 0 }
+    return quoteJournal({ includedSpreads: 0 }, 0)
   }
-
-  const magazineType = order.value.magazineType
-  return calculateJournalPriceBreakdown(
-    {
-      basePrice: magazineType.basePrice != null ? Number(magazineType.basePrice) : null,
-      includedSpreads: magazineType.includedSpreads,
-      pricePerExtraFourPages:
-        magazineType.pricePerExtraFourPages != null ? Number(magazineType.pricePerExtraFourPages) : null,
-    },
-    countSpreadSlots(order.value.journalPages),
-  )
+  return quoteJournal(order.value.magazineType, countSpreadSlots(order.value.journalPages))
 })
 
-const itemPrice = computed(() => priceBreakdown.value.total)
+const choosingVariant = ref(false)
+
+const itemPrice = computed(() =>
+  order.value?.fulfillment === 'LAYOUT' ? quote.value.layoutTotal : quote.value.withPrintTotal,
+)
 const deliveryPrice = computed(() =>
-  order.value?.deliveryPrice != null ? Number(order.value.deliveryPrice) : null,
+  order.value?.fulfillment === 'PRINT' && order.value.deliveryPrice != null
+    ? Number(order.value.deliveryPrice)
+    : null,
 )
 const discountAmount = computed(() =>
   order.value?.discountAmount != null ? Number(order.value.discountAmount) : null,
 )
 const grandTotal = computed(() => itemPrice.value + (deliveryPrice.value ?? 0) - (discountAmount.value ?? 0))
+
+const canSubmit = computed(() => {
+  if (!order.value?.fulfillment) {
+    return false
+  }
+  return order.value.fulfillment === 'LAYOUT' || Boolean(order.value.deliveryMethod)
+})
+
+async function chooseFulfillment(fulfillment: OrderFulfillment): Promise<void> {
+  if (!order.value || choosingVariant.value || order.value.fulfillment === fulfillment) {
+    return
+  }
+  choosingVariant.value = true
+  try {
+    order.value = await ordersApi.setFulfillment(orderId.value, fulfillment)
+  } catch (err: unknown) {
+    snackbar.text = extractErrorMessage(err) ?? 'Не удалось сохранить вариант'
+    snackbar.color = 'error'
+    snackbar.show = true
+  } finally {
+    choosingVariant.value = false
+  }
+}
 
 function fillDeliveryForm(detail: OrderDetail): void {
   deliveryForm.method = detail.deliveryMethod ?? 'PICKUP_POINT'
@@ -866,6 +906,50 @@ function pluralizeDays(n: number): string {
   // at half-width. Stacked, each keeps a comfortable touch target and its label on one line.
   @include mobile-only {
     flex-direction: column;
+  }
+}
+
+.checkout-page__eyebrow {
+  margin: 0 0 $spacing-2;
+}
+
+.checkout-variant {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: $spacing-3;
+}
+
+.checkout-variant__option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: $spacing-3 $spacing-4;
+  border: 1px solid $border-default;
+  border-radius: $radius-md;
+  background: $bg-primary;
+  color: $text-primary;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease;
+
+  strong {
+    font-size: $font-size-body-lg;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &:hover:not(:disabled) {
+    border-color: $accent;
+  }
+
+  &--active {
+    border-color: $accent;
+    background: rgba($accent, 0.06);
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.7;
   }
 }
 
