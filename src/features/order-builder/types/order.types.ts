@@ -82,6 +82,8 @@ export interface TrashedJournalPage extends JournalPage {
 
 export type DeliveryMethod = 'PICKUP_POINT' | 'COURIER'
 
+export type OrderFulfillment = 'LAYOUT' | 'PRINT'
+
 export interface OrderDetail {
   id: string
   status: string
@@ -96,7 +98,13 @@ export interface OrderDetail {
     oldPrice: string | null
     includedSpreads: number
     pricePerExtraFourPages: string | null
+    layoutPrice: string | null
+    printPrice: string | null
+    layoutPricePerExtraSpread: string | null
+    printPricePerExtraSpread: string | null
   }
+  /** Пусто, пока на последнем шаге не выбран макет или печать. */
+  fulfillment: OrderFulfillment | null
   journalPages: JournalPage[]
   questionAnswers: QuestionAnswer[]
   deliveryMethod: DeliveryMethod | null

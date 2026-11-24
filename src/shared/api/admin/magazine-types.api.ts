@@ -17,6 +17,10 @@ export interface AdminMagazineType {
   oldPrice: string | null
   includedSpreads: number
   pricePerExtraFourPages: string | null
+  layoutPrice: string | null
+  printPrice: string | null
+  layoutPricePerExtraSpread: string | null
+  printPricePerExtraSpread: string | null
   badgeType: BadgeType | null
   badgeText: string | null
   isActive: boolean
@@ -57,6 +61,10 @@ export interface CreateMagazineTypePayload {
   oldPrice?: number
   includedSpreads?: number
   pricePerExtraFourPages?: number
+  layoutPrice?: number
+  printPrice?: number
+  layoutPricePerExtraSpread?: number
+  printPricePerExtraSpread?: number
   badgeType?: BadgeType
   badgeText?: string
   isActive?: boolean

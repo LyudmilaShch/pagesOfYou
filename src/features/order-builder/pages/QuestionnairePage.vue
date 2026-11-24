@@ -17,11 +17,7 @@
       <div class="questionnaire-page__topbar-inner">
         <router-link to="/" class="questionnaire-page__brand">Вау, ми!</router-link>
 
-        <div class="questionnaire-page__steps-label" aria-label="Шаг 3 из 5">
-          <span class="questionnaire-page__steps-current">3</span>
-          <span class="questionnaire-page__steps-sep">/</span>
-          <span class="questionnaire-page__steps-total">5</span>
-        </div>
+        <ConstructorTopMeta />
       </div>
     </header>
 
@@ -98,6 +94,7 @@
              desktop-only) plus a "Ваши вопросы" fill progress, same pattern as PhotoUploadPage.vue's
              own .photo-upload-page__intro-mobile/.photo-upload-page__mobile-stats. -->
         <header class="questionnaire-page__intro-mobile">
+          <p class="questionnaire-page__eyebrow text-caption text-secondary">Шаг 3 из 5 — Анкета</p>
           <h1 class="questionnaire-page__title text-h3">Заполните анкету журнала</h1>
           <p class="questionnaire-page__subtitle text-body text-secondary">
             Ответьте на несколько вопросов — мы используем ваши ответы, чтобы подготовить тексты и
@@ -133,7 +130,7 @@
 
             <div v-if="currentStep" :key="currentStep.journalPageId" class="questionnaire-page__question">
               <header class="questionnaire-page__intro">
-                <p class="questionnaire-page__eyebrow text-caption text-secondary">Шаг 3 — Анкета</p>
+                <p class="questionnaire-page__eyebrow text-caption text-secondary">Шаг 3 из 5 — Анкета</p>
                 <h1 class="questionnaire-page__title text-h3">{{ currentStepLabel }}</h1>
               </header>
 
@@ -398,6 +395,7 @@ import { listAnswerRowCount } from '../utils/sync-answers-to-placeholders.util'
 import type { AiTextPlaceholder, LengthConstraint } from '@/modules/editor/models'
 import { flattenTree } from '@/modules/editor/utils/element-tree.util'
 import { catalogApi } from '../api/catalog.api'
+import ConstructorTopMeta from '../components/ConstructorTopMeta.vue'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
 import { getGalleryScope } from '../utils/photo-gallery-scope.util'
 import { getJournalPageDisplayName, tocEntriesForPage } from '../utils/journal-structure.util'

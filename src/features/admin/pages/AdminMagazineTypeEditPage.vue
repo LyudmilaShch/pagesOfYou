@@ -53,7 +53,38 @@
         <v-window-item value="price">
           <v-card variant="outlined" class="mt-edit-page__card">
             <v-card-text class="mt-edit-page__form">
-              <v-text-field v-model.number="form.basePrice" label="Цена, ₽" type="number" variant="outlined" />
+              <v-text-field
+                v-model.number="form.layoutPrice"
+                label="Макет (PDF) за базовый журнал, ₽"
+                type="number"
+                min="0"
+                variant="outlined"
+              />
+              <v-text-field
+                v-model.number="form.printPrice"
+                label="Печать за базовый журнал, ₽"
+                type="number"
+                min="0"
+                variant="outlined"
+              />
+              <v-text-field
+                v-model.number="form.layoutPricePerExtraSpread"
+                label="Доп. разворот без печати, ₽"
+                type="number"
+                min="0"
+                hint="Доплата в варианте «Только макет». Первая цена на кнопке добавления разворота"
+                persistent-hint
+                variant="outlined"
+              />
+              <v-text-field
+                v-model.number="form.printPricePerExtraSpread"
+                label="Доп. разворот к печати, ₽"
+                type="number"
+                min="0"
+                hint="Сразу прибавляется к «печать от» в шапке. На кнопке складывается с ценой без печати: «+50 ₽ или +350 ₽ с печатью». 0 — вариант с печатью не показываем"
+                persistent-hint
+                variant="outlined"
+              />
               <v-text-field v-model.number="form.oldPrice" label="Старая цена, ₽" type="number" variant="outlined" />
               <v-text-field
                 v-model.number="form.includedSpreads"
@@ -64,15 +95,6 @@
                 :hint="form.includedSpreads ? `= ${form.includedSpreads * 2} страниц (включая обложку)` : 'Печать требует кратности 4 страницам'"
                 persistent-hint
                 :rules="[evenNum]"
-                variant="outlined"
-              />
-              <v-text-field
-                v-model.number="form.pricePerExtraFourPages"
-                label="Цена за доп. 4 страницы, ₽"
-                type="number"
-                min="0"
-                hint="Оставьте пустым, если доплаты за страницы сверх лимита нет"
-                persistent-hint
                 variant="outlined"
               />
               <v-btn color="primary" :loading="saving" @click="savePrice">Сохранить</v-btn>
@@ -201,6 +223,10 @@ const form = reactive({
   oldPrice: null as number | null,
   includedSpreads: 8 as number | null,
   pricePerExtraFourPages: null as number | null,
+  layoutPrice: null as number | null,
+  printPrice: null as number | null,
+  layoutPricePerExtraSpread: null as number | null,
+  printPricePerExtraSpread: null as number | null,
   badgeType: null as BadgeType | null,
   badgeText: '',
   isActive: true,
@@ -258,6 +284,12 @@ function fillForm(item: Awaited<ReturnType<typeof adminMagazineTypesApi.getOne>>
   form.oldPrice = item.oldPrice != null ? Number(item.oldPrice) : null
   form.includedSpreads = item.includedSpreads
   form.pricePerExtraFourPages = item.pricePerExtraFourPages != null ? Number(item.pricePerExtraFourPages) : null
+  form.layoutPrice = item.layoutPrice != null ? Number(item.layoutPrice) : form.basePrice
+  form.printPrice = item.printPrice != null ? Number(item.printPrice) : null
+  form.layoutPricePerExtraSpread =
+    item.layoutPricePerExtraSpread != null ? Number(item.layoutPricePerExtraSpread) : null
+  form.printPricePerExtraSpread =
+    item.printPricePerExtraSpread != null ? Number(item.printPricePerExtraSpread) : null
   form.badgeType = item.badgeType ?? null
   form.badgeText = item.badgeText ?? ''
   form.isActive = item.isActive
@@ -296,10 +328,12 @@ function saveGeneral(): Promise<void> {
 
 function savePrice(): Promise<void> {
   return savePatch({
-    basePrice: form.basePrice ?? undefined,
+    layoutPrice: form.layoutPrice ?? undefined,
+    printPrice: form.printPrice ?? undefined,
+    layoutPricePerExtraSpread: form.layoutPricePerExtraSpread ?? undefined,
+    printPricePerExtraSpread: form.printPricePerExtraSpread ?? undefined,
     oldPrice: form.oldPrice ?? undefined,
     includedSpreads: form.includedSpreads ?? undefined,
-    pricePerExtraFourPages: form.pricePerExtraFourPages ?? undefined,
   })
 }
 

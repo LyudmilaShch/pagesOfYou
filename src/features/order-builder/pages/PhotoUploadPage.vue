@@ -17,11 +17,7 @@
       <div class="photo-upload-page__topbar-inner">
         <router-link to="/" class="photo-upload-page__brand">Вау, ми!</router-link>
 
-        <div class="photo-upload-page__steps-label" aria-label="Шаг 2 из 5">
-          <span class="photo-upload-page__steps-current">2</span>
-          <span class="photo-upload-page__steps-sep">/</span>
-          <span class="photo-upload-page__steps-total">5</span>
-        </div>
+        <ConstructorTopMeta />
       </div>
     </header>
 
@@ -76,6 +72,7 @@
              column stack — the "real" intro further down (inside main) hides on mobile via CSS,
              see .photo-upload-page__intro. -->
         <header class="photo-upload-page__intro-mobile">
+          <p class="photo-upload-page__eyebrow text-caption text-secondary">Шаг 2 из 5 — Фото</p>
           <h1 class="photo-upload-page__title text-h3">Добавьте фотографии в журнал</h1>
           <p class="photo-upload-page__subtitle text-body text-secondary">
             {{ photoUploadIntro(photosToUpload) }}
@@ -175,7 +172,7 @@
           <div class="photo-upload-page__main-scroll">
           <div class="photo-upload-page__container">
             <header class="photo-upload-page__intro">
-              <p class="photo-upload-page__eyebrow text-caption text-secondary">Шаг 2 — Фото</p>
+              <p class="photo-upload-page__eyebrow text-caption text-secondary">Шаг 2 из 5 — Фото</p>
               <h1 class="photo-upload-page__title text-h3">Добавьте фотографии в журнал</h1>
               <p class="photo-upload-page__subtitle text-body text-secondary">
                 {{ photoUploadIntro(photosToUpload) }}
@@ -383,6 +380,7 @@ import { PHOTO_FILE_ACCEPT } from '@/shared/constants/photo-upload.constants'
 import { runPhotoUploads } from '@/shared/utils/photo-upload-error.util'
 import { computePhotoPageVisibleArea, type PhotoCropState } from '@/modules/editor/utils/photo-crop.util'
 import { photoGalleryApi, type GalleryPhoto } from '../api/photo-gallery.api'
+import ConstructorTopMeta from '../components/ConstructorTopMeta.vue'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
 import { getGalleryScope } from '../utils/photo-gallery-scope.util'
 import { getJournalPageDisplayName } from '../utils/journal-structure.util'

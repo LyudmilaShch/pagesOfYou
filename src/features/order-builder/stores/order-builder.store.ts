@@ -279,7 +279,18 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
           includedSpreads: magazineType.includedSpreads,
           pricePerExtraFourPages:
             magazineType.pricePerExtraFourPages != null ? String(magazineType.pricePerExtraFourPages) : null,
+          layoutPrice: magazineType.layoutPrice != null ? String(magazineType.layoutPrice) : null,
+          printPrice: magazineType.printPrice != null ? String(magazineType.printPrice) : null,
+          layoutPricePerExtraSpread:
+            magazineType.layoutPricePerExtraSpread != null
+              ? String(magazineType.layoutPricePerExtraSpread)
+              : null,
+          printPricePerExtraSpread:
+            magazineType.printPricePerExtraSpread != null
+              ? String(magazineType.printPricePerExtraSpread)
+              : null,
         },
+        fulfillment: null,
         journalPages,
         // A guest's local draft can't have answers yet — the questionnaire only ever saves
         // against a real backend order (converted from this draft on login).

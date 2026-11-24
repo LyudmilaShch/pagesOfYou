@@ -7,9 +7,8 @@
 
       <v-card-text>
         <v-alert v-if="!isSpreadCountValid" type="warning" variant="tonal" density="compact" class="mb-4 spread-reorder__banner">
-          Чтобы книгу можно было напечатать, количество разворотов должно быть нечётным — иначе
-          общее число страниц не кратно 4 (печать идёт тетрадями по 4 страницы). Добавьте или
-          удалите ещё один разворот.
+          Для печати журнала количество разворотов должно быть чётным.
+          Добавьте или удалите один разворот.
         </v-alert>
 
         <!-- `css` stays off for the whole touch drag. Otherwise every finger-move re-render makes
@@ -113,7 +112,10 @@
             <span class="spread-reorder__add-icon" aria-hidden="true">
               <v-icon size="20">mdi-plus</v-icon>
             </span>
-            <span class="spread-reorder__add-label">Добавить разворот</span>
+            <span class="spread-reorder__add-label">
+              Добавить 4 страницы
+              <span v-if="addPriceNote" class="spread-reorder__add-price">{{ addPriceNote }}</span>
+            </span>
           </button>
 
           <div key="back-cover" class="spread-reorder__item spread-reorder__item--fixed">
@@ -207,12 +209,16 @@
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 
 import ConfirmModal from '@/components/ui/ConfirmModal.vue'
+import { useErrorMessageModal } from '@/shared/composables/useErrorMessageModal'
+import { pluralize } from '@/shared/utils/pluralize.util'
 import JournalSpreadThumbnail from '@/modules/editor/components/JournalSpreadThumbnail.vue'
 import type { CanvasData } from '@/modules/editor/models/canvas-data.model'
 import type { SetJournalPageTemplatePayload } from '../../api/orders.api'
 import { useOrderBuilderStore } from '../../stores/order-builder.store'
 import type { JournalPage, TrashedJournalPage } from '../../types/order.types'
 import { countSpreadSlots, tocEntriesForPage } from '../../utils/journal-structure.util'
+import { spreadPriceNote } from '../../utils/price-copy.util'
+import { quoteJournal, resolveActivePricing } from '../../utils/pricing.util'
 import { presentCustomerPageCanvas } from '../../utils/missing-photos.util'
 import JournalTemplatePickerDialog from '../JournalTemplatePickerDialog.vue'
 
@@ -225,8 +231,25 @@ const props = defineProps<{
 const emit = defineEmits<{ close: [] }>()
 
 const store = useOrderBuilderStore()
+const { showErrorMessageModal } = useErrorMessageModal()
 
 const spreadPages = computed(() => props.pages.filter((page) => page.slotType === 'SPREAD'))
+
+const quote = computed(() => {
+  const type = resolveActivePricing(
+    store.order?.magazineType,
+    store.selectedMagazineType,
+    store.order?.magazineTypeId,
+  )
+  if (!type) {
+    return null
+  }
+  return quoteJournal(type, countSpreadSlots(props.pages))
+})
+
+const addPriceNote = computed(() =>
+  spreadPriceNote(quote.value?.nextSpreadLayoutDelta ?? 0, quote.value?.nextSpreadPrintDelta ?? 0),
+)
 
 // The admin-given template name, not an ordinal position — a spread's number already shifts as
 // others are added/removed/reordered, so it was never a stable label anyway. Same convention as
@@ -680,7 +703,20 @@ async function handleRestore(spreadId: string): Promise<void> {
 
 function handleDone(): void {
   if (!isSpreadCountValid.value) {
-    notify('Добавьте или удалите ещё один разворот, прежде чем закрыть менеджер', 'error')
+    // Each interior spread is 2 pages; the front and back cover add 2 more.
+    const pages = countSpreadSlots(props.pages) * 2 + 2
+    const less = pages - 2
+    const more = pages + 2
+    const nowNoun = pluralize(pages, 'страница', 'страницы', 'страниц')
+    const suitableNoun = pluralize(more, 'страница', 'страницы', 'страниц')
+    showErrorMessageModal(
+      'Для печати журнала количество разворотов должно быть чётным. Добавьте или удалите один разворот, чтобы продолжить.',
+      'Проверьте количество разворотов',
+      [
+        { label: 'Сейчас', value: `${pages} ${nowNoun}`, tone: 'current' },
+        { label: 'Подходящее количество', value: `${less} или ${more} ${suitableNoun}`, tone: 'target' },
+      ],
+    )
     return
   }
   emit('close')
@@ -847,7 +883,18 @@ async function handleAddSpread(): Promise<void> {
 }
 
 .spread-reorder__add-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  max-width: 168px;
   font-size: $font-size-caption;
+  line-height: 1.3;
+  color: inherit;
+  text-align: center;
+}
+
+.spread-reorder__add-price {
   color: inherit;
 }
 
@@ -1038,4 +1085,5 @@ async function handleAddSpread(): Promise<void> {
   flex-wrap: wrap;
   row-gap: $spacing-2;
 }
+
 </style>

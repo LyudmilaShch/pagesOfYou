@@ -312,8 +312,8 @@ const props = defineProps<{
   /** Today's AI generation allowance — forwarded to every `JournalSpreadThumbnail` for the
    * "regenerate" button's counter/disabled state. */
   aiUsage?: { remaining: number; isGuest: boolean } | null
-  /** Hides the per-spread "Сменить шаблон" button and the "Изменить порядок разворотов"/"Добавить
-   * 4 страницы" toolbar — for contexts where restructuring the journal would be a distraction from
+  /** Hides the per-spread "Сменить шаблон" button and the "Управление разворотами" toolbar — for
+   * contexts where restructuring the journal would be a distraction from
    * (or work against) the task at hand, e.g. MissingPhotosModal.vue, where adding more spreads
    * would only create more empty photo slots to fill. Defaults on, since every other caller wants
    * the full structure controls. */

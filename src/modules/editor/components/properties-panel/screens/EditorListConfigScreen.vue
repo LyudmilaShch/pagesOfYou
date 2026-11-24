@@ -491,7 +491,10 @@ watch(
     tocCapacity.value = {
       entries: spreads * perSpread,
       perBlock: 2,
-      extras: Number(type.pricePerExtraFourPages) > 0,
+      extras:
+        Number(type.printPricePerExtraSpread) > 0 ||
+        Number(type.layoutPricePerExtraSpread) > 0 ||
+        Number(type.pricePerExtraFourPages) > 0,
     }
   },
   { immediate: true },

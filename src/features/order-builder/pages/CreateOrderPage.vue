@@ -6,11 +6,7 @@
       <div class="create-order__topbar-inner">
         <router-link to="/" class="create-order__brand">Вау, ми!</router-link>
 
-        <div class="create-order__steps-label" aria-label="Шаг 1 из 5">
-          <span class="create-order__steps-current">1</span>
-          <span class="create-order__steps-sep">/</span>
-          <span class="create-order__steps-total">5</span>
-        </div>
+        <ConstructorTopMeta />
       </div>
     </header>
 
@@ -51,7 +47,7 @@
 
         <!-- Section heading -->
         <header class="create-order__intro">
-          <p class="create-order__eyebrow text-caption text-secondary">Шаг 1 — Тип журнала</p>
+          <p class="create-order__eyebrow text-caption text-secondary">Шаг 1 из 5 — Журнал</p>
           <h1 class="create-order__title text-h2">Выберите журнал</h1>
           <p class="create-order__subtitle text-body-lg text-secondary">
             Для кого вы хотите создать особенный журнал?
@@ -171,6 +167,7 @@ import { readLocalDraft, readLocalDrafts, type StoredLocalDraft } from '../utils
 import { resolveResumeRoute, resumeOrder } from '../utils/resume-order.util'
 import { hasMissingCustomerPhotos } from '../utils/missing-photos.util'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
+import ConstructorTopMeta from '../components/ConstructorTopMeta.vue'
 import MagazineTypeCard from '../components/MagazineTypeCard.vue'
 import ResumeDraftModal from '../components/ResumeDraftModal.vue'
 import LoadingModal from '@/components/ui/LoadingModal.vue'
@@ -577,10 +574,6 @@ async function handleNext(): Promise<void> {
 // "step 1 of 5"), same reasoning as QuestionnairePage.vue's own eyebrow removal.
 .create-order__eyebrow {
   margin-bottom: $spacing-2;
-
-  @include mobile-only {
-    display: none;
-  }
 }
 
 .create-order__title {
