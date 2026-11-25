@@ -962,6 +962,28 @@ model UploadedFile {
   @@map("uploaded_files")
 }
 
+/// Short-lived bridge from a phone to the gallery already open on step 2.
+/// The QR carries only `uploadToken`. `revokeToken` stays on the computer.
+model PhoneUploadSession {
+  id          String    @id @default(cuid())
+  uploadToken String    @unique
+  revokeToken String    @unique
+
+  /// Real order gallery. Set together with userId. Mutually exclusive with guestId.
+  orderId String?
+  /// Guest gallery token. Mutually exclusive with orderId.
+  guestId String?
+  /// Owner of the order, taken from the computer's session. Null for a guest gallery.
+  userId  String?
+
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+  @@map("phone_upload_sessions")
+}
+
 /// M2M: один файл может использоваться в нескольких полях/разворотах.
 model FieldValueFile {
   id                      String @id @default(cuid())

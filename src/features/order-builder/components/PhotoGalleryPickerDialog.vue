@@ -97,6 +97,9 @@ const emit = defineEmits<{
   /** A file just landed in the gallery. Parents that show their own strip should prepend it.
    * Choosing a slot is still a separate `select`. */
   uploaded: [photo: GalleryPhoto]
+  /** True while a computer upload from this dialog is in flight. Step 2 uses it so a phone-upload
+   * poll does not auto-place a photo the visitor is about to choose a slot for. */
+  busy: [active: boolean]
 }>()
 
 const photos = ref<GalleryPhoto[]>([])
@@ -145,6 +148,7 @@ async function handleFilesSelected(event: Event): Promise<void> {
 
   uploading.value = true
   uploadErrors.value = []
+  emit('busy', true)
   try {
     uploadErrors.value = await runPhotoUploads(files, async (file) => {
       const dimensions = await getImageDimensions(file).catch(() => undefined)
@@ -154,6 +158,7 @@ async function handleFilesSelected(event: Event): Promise<void> {
     })
   } finally {
     uploading.value = false
+    emit('busy', false)
   }
 }
 </script>
