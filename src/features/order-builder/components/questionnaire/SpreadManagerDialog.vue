@@ -7,7 +7,7 @@
 
       <v-card-text>
         <v-alert v-if="!isSpreadCountValid" type="warning" variant="tonal" density="compact" class="mb-4 spread-reorder__banner">
-          Для печати журнала количество разворотов должно быть чётным.
+          Для печати журнала количество страниц должно быть кратно 4.
           Добавьте или удалите один разворот.
         </v-alert>
 
@@ -710,7 +710,7 @@ function handleDone(): void {
     const nowNoun = pluralize(pages, 'страница', 'страницы', 'страниц')
     const suitableNoun = pluralize(more, 'страница', 'страницы', 'страниц')
     showErrorMessageModal(
-      'Для печати журнала количество разворотов должно быть чётным. Добавьте или удалите один разворот, чтобы продолжить.',
+      'Для печати журнала количество страниц должно быть кратно 4. Добавьте или удалите один разворот, чтобы продолжить.',
       'Проверьте количество разворотов',
       [
         { label: 'Сейчас', value: `${pages} ${nowNoun}`, tone: 'current' },
