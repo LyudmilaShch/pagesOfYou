@@ -210,6 +210,10 @@
             </div>
 
             <PhotoUploadFormatsHint />
+            <button type="button" class="photo-upload-page__phone" @click="openPhoneUpload">
+              <v-icon size="18">mdi-qrcode</v-icon>
+              С телефона
+            </button>
             <PhotoUploadErrorList :messages="uploadErrors" />
 
             <p class="photo-upload-page__stats">
@@ -322,7 +326,17 @@
       :cover-hint="pickerIsCover"
       @select="handlePickerSelect"
       @uploaded="handlePickerUploaded"
+      @busy="onPickerUploadBusy"
       @close="closePhotoPicker"
+    />
+
+    <PhoneUploadQrDialog
+      :open="phoneUpload.dialogOpen.value"
+      :upload-url="phoneUpload.uploadUrl.value"
+      :new-count="phoneUpload.newCount.value"
+      :creating="phoneUpload.creating.value"
+      :error-message="phoneUpload.errorMessage.value"
+      @close="phoneUpload.closeDialog()"
     />
 
     <v-dialog v-model="usageModalOpen" max-width="420">
@@ -370,7 +384,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 
 import { isPhotoElement, type PhotoFitMode } from '@/modules/editor/models'
 import { A4_PAGE_HEIGHT, A4_PAGE_WIDTH } from '@/modules/editor/constants/page.constants'
@@ -397,8 +411,10 @@ import PhotoTouchDragGhost from '../components/PhotoTouchDragGhost.vue'
 import { usePhotoTouchDrag } from '../composables/use-photo-touch-drag'
 import { photoUploadIntro } from '../utils/photo-upload-copy.util'
 import { prependUniqueById } from '../utils/gallery-list.util'
+import PhoneUploadQrDialog from '../components/PhoneUploadQrDialog.vue'
 import PhotoUploadFormatsHint from '../components/PhotoUploadFormatsHint.vue'
 import PhotoUploadErrorList from '../components/PhotoUploadErrorList.vue'
+import { usePhonePhotoUpload } from '../composables/use-phone-photo-upload'
 import PhotoGalleryPickerDialog from '../components/PhotoGalleryPickerDialog.vue'
 import PhotoCropModal from '../components/PhotoCropModal.vue'
 import IncompletePhotosModal from '../components/IncompletePhotosModal.vue'
@@ -439,6 +455,14 @@ const galleryScope = computed(() => getGalleryScope(store))
 const isLoading = ref(true)
 const loadErrorMessage = ref<string | null>(null)
 const photos = ref<GalleryPhoto[]>([])
+const phoneUpload = usePhonePhotoUpload({
+  getScope: () => galleryScope.value,
+  getPhotos: () => photos.value,
+  setPhotos: (next) => {
+    photos.value = next
+  },
+  onNewPhoto: (url) => autoPlacePhoto(url),
+})
 const uploading = ref(false)
 const uploadErrors = ref<string[]>([])
 const isDragActive = ref(false)
@@ -478,7 +502,20 @@ function closePhotoPicker(): void {
 }
 
 function handlePickerUploaded(photo: GalleryPhoto): void {
+  phoneUpload.noteFromDesktop(photo.id)
   photos.value = prependUniqueById(photos.value, photo)
+}
+
+function onPickerUploadBusy(active: boolean): void {
+  if (active) {
+    phoneUpload.holdAutoPlace()
+    return
+  }
+  phoneUpload.releaseAutoPlace()
+}
+
+function openPhoneUpload(): void {
+  void phoneUpload.openDialog()
 }
 
 async function handlePickerSelect(url: string): Promise<void> {
@@ -644,6 +681,8 @@ async function load(): Promise<void> {
       throw new Error('Заказ не найден.')
     }
     photos.value = await photoGalleryApi.list(galleryScope.value)
+    phoneUpload.noteAll(photos.value)
+    phoneUpload.restore()
     pendingFocusPageId = readFocusPageFromNavigation()
   } catch (err: unknown) {
     loadErrorMessage.value = err instanceof Error ? err.message : 'Не удалось загрузить страницу.'
@@ -695,15 +734,18 @@ async function uploadFiles(files: File[]): Promise<void> {
 
   uploading.value = true
   uploadErrors.value = []
+  phoneUpload.holdAutoPlace()
   try {
     uploadErrors.value = await runPhotoUploads(files, async (file) => {
       const dimensions = await getImageDimensions(file).catch(() => undefined)
       const uploaded = await photoGalleryApi.upload(galleryScope.value, file, dimensions)
-      photos.value = [uploaded, ...photos.value]
+      phoneUpload.noteFromDesktop(uploaded.id)
+      photos.value = prependUniqueById(photos.value, uploaded)
       await autoPlacePhoto(uploaded.url)
     })
   } finally {
     uploading.value = false
+    phoneUpload.releaseAutoPlace()
   }
 }
 
@@ -925,6 +967,10 @@ function continueWithoutPhotos(): void {
   incompletePhotosModalOpen.value = false
   void router.push({ name: 'order-questionnaire', params: { orderId: orderId.value } })
 }
+
+onBeforeRouteLeave(() => {
+  void phoneUpload.revoke()
+})
 
 onMounted(() => {
   void load()
@@ -1569,6 +1615,31 @@ onBeforeUnmount(() => {
 
 .photo-upload-page__dropzone-hint {
   margin: 0;
+}
+
+.photo-upload-page__phone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: $spacing-2;
+  width: 100%;
+  margin-top: $spacing-3;
+  padding: $spacing-3 $spacing-4;
+  border: 1px solid $border-default;
+  border-radius: $radius-lg;
+  background: $bg-elevated;
+  color: $text-primary;
+  font: inherit;
+  font-size: $font-size-body-sm;
+  font-weight: $font-weight-semibold;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+
+  &:hover {
+    border-color: $accent;
+    background: $accent-tint;
+  }
 }
 
 .photo-upload-page__stats {

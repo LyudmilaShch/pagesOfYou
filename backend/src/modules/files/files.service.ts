@@ -1,11 +1,12 @@
 import {
   BadRequestException,
+  GoneException,
   Injectable,
   Logger,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { randomUUID } from 'crypto';
+import { randomBytes, randomUUID } from 'crypto';
 import { extname } from 'path';
 import { PrismaService } from '../../database';
 import { YandexStorageProvider } from '../../shared/storage/yandex-storage.provider';
@@ -15,6 +16,7 @@ import {
   MAX_IMAGE_UPLOAD_SIZE_MB,
 } from '../../shared/constants/upload.constants';
 import { guestGalleryCutoff } from './guest-gallery-ttl.util';
+import { isPhoneUploadSessionActive, phoneUploadExpiresAt } from './phone-upload-session.util';
 
 export interface RequestUploadUrlDto {
   /** Original file name — stored for display purposes */
@@ -319,6 +321,114 @@ export class FilesService {
 
     this.logger.log(`Claimed ${result.count} guest photo(s) for order ${orderId}`);
     return { count: result.count };
+  }
+
+  /**
+   * Opens a one-hour phone upload link bound to the gallery the computer is already using.
+   * The upload token goes into the QR. The revoke token stays on the computer.
+   */
+  async createPhoneUploadSession(identity: GalleryIdentity, scope: GalleryScope) {
+    const hasOrder = Boolean(scope.orderId);
+    const hasGuest = Boolean(scope.guestId);
+    if (hasOrder === hasGuest) {
+      throw new BadRequestException('Укажите заказ или гостевую галерею.');
+    }
+
+    let orderId: string | null = null;
+    let guestId: string | null = null;
+    let userId: string | null = null;
+
+    if (scope.orderId) {
+      if (!identity.userId) {
+        throw new UnauthorizedException('Войдите, чтобы добавить фото в этот заказ.');
+      }
+      await this.assertOwnsOrder(scope.orderId, identity.userId);
+      orderId = scope.orderId;
+      userId = identity.userId;
+    } else if (scope.guestId) {
+      guestId = scope.guestId;
+    }
+
+    const session = await this.prisma.phoneUploadSession.create({
+      data: {
+        uploadToken: randomBytes(32).toString('base64url'),
+        revokeToken: randomBytes(32).toString('base64url'),
+        orderId,
+        guestId,
+        userId,
+        expiresAt: phoneUploadExpiresAt(),
+      },
+    });
+
+    return {
+      uploadToken: session.uploadToken,
+      revokeToken: session.revokeToken,
+      expiresAt: session.expiresAt,
+    };
+  }
+
+  /** Public check for the phone page. Does not reveal which gallery the link belongs to. */
+  async phoneUploadSessionStatus(uploadToken: string): Promise<{ valid: boolean; expiresAt: Date | null }> {
+    const session = await this.prisma.phoneUploadSession.findUnique({
+      where: { uploadToken },
+      select: { expiresAt: true, revokedAt: true },
+    });
+
+    if (!session) {
+      return { valid: false, expiresAt: null };
+    }
+
+    return {
+      valid: isPhoneUploadSessionActive(session),
+      expiresAt: session.expiresAt,
+    };
+  }
+
+  /** Phone upload. The token stands in for the computer's login or guest id. */
+  async uploadPhoneSessionImage(
+    uploadToken: string,
+    file: Express.Multer.File | undefined,
+    dimensions: { width?: number; height?: number },
+  ) {
+    const session = await this.prisma.phoneUploadSession.findUnique({
+      where: { uploadToken },
+    });
+
+    if (!session || !isPhoneUploadSessionActive(session)) {
+      throw new GoneException('Ссылка больше не действует.');
+    }
+
+    return this.registerLocalUpload(
+      file,
+      { userId: session.userId ?? undefined },
+      {
+        orderId: session.orderId ?? undefined,
+        guestId: session.guestId ?? undefined,
+        width: dimensions.width,
+        height: dimensions.height,
+      },
+    );
+  }
+
+  /** Called when the computer leaves step 2. Unknown tokens stay unknown. */
+  async revokePhoneUploadSession(revokeToken: string): Promise<{ revoked: true }> {
+    const session = await this.prisma.phoneUploadSession.findUnique({
+      where: { revokeToken },
+      select: { id: true, revokedAt: true },
+    });
+
+    if (!session) {
+      throw new NotFoundException('Phone upload session not found.');
+    }
+
+    if (!session.revokedAt) {
+      await this.prisma.phoneUploadSession.update({
+        where: { id: session.id },
+        data: { revokedAt: new Date() },
+      });
+    }
+
+    return { revoked: true };
   }
 
   /** Refreshes the 14-day window for every photo still owned by this guest gallery. */

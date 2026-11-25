@@ -21,7 +21,15 @@ import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
-import { ClaimGuestPhotosDto, SetFavoriteDto, TouchGuestGalleryDto, UploadImageDto } from './dto/gallery.dto';
+import {
+  ClaimGuestPhotosDto,
+  CreatePhoneUploadSessionDto,
+  PhoneUploadImageDto,
+  RevokePhoneUploadSessionDto,
+  SetFavoriteDto,
+  TouchGuestGalleryDto,
+  UploadImageDto,
+} from './dto/gallery.dto';
 
 @ApiTags('Files')
 @ApiBearerAuth()
@@ -127,5 +135,57 @@ export class FilesController {
   @ApiOperation({ summary: "Re-parent a guest's gallery photos onto a real order" })
   claimGuestPhotos(@CurrentUser() user: JwtPayload, @Body() body: ClaimGuestPhotosDto) {
     return this.filesService.claimGuestPhotos(body.guestId, body.orderId, user.sub);
+  }
+
+  @Public()
+  @UseGuards(OptionalJwtAuthGuard)
+  @Post('phone-sessions')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Start a phone QR upload session for the gallery open on this computer' })
+  createPhoneSession(
+    @CurrentUser() user: JwtPayload | undefined,
+    @Body() body: CreatePhoneUploadSessionDto,
+  ) {
+    return this.filesService.createPhoneUploadSession({ userId: user?.sub }, body);
+  }
+
+  @Public()
+  @Post('phone-sessions/revoke')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Revoke a phone upload session when the computer leaves step 2' })
+  revokePhoneSession(@Body() body: RevokePhoneUploadSessionDto) {
+    return this.filesService.revokePhoneUploadSession(body.revokeToken);
+  }
+
+  @Public()
+  @Get('phone-sessions/:uploadToken')
+  @ApiOperation({ summary: 'Check whether a phone upload link still accepts photos' })
+  phoneSessionStatus(@Param('uploadToken') uploadToken: string) {
+    return this.filesService.phoneUploadSessionStatus(uploadToken);
+  }
+
+  @Public()
+  @Post('phone-sessions/:uploadToken/image')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Upload a photo through a phone QR session' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', format: 'binary' },
+        width: { type: 'number' },
+        height: { type: 'number' },
+      },
+      required: ['file'],
+    },
+  })
+  @UseInterceptors(orderPhotoUploadInterceptor())
+  uploadPhoneImage(
+    @Param('uploadToken') uploadToken: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Body() body: PhoneUploadImageDto,
+  ) {
+    return this.filesService.uploadPhoneSessionImage(uploadToken, file, body);
   }
 }

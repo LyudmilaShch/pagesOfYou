@@ -192,6 +192,12 @@ export const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true },
   },
   {
+    // Opened from a QR on step 2. The token is the only credential — no account on the phone.
+    path: '/phone-upload/:token',
+    name: 'phone-upload',
+    component: () => import('@/features/order-builder/pages/PhoneUploadPage.vue'),
+  },
+  {
     path: '/:pathMatch(.*)*',
     name: 'not-found',
     component: () => import('@/pages/NotFoundPage.vue'),
