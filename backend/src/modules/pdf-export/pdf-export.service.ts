@@ -142,17 +142,42 @@ export class PdfExportService implements OnModuleDestroy {
 
     const page = await context.newPage();
     await page.setViewport({ width: viewportWidthPt, height: viewportHeightPt, deviceScaleFactor });
+    const exportToken = exportTokenFromUrl(url);
+    if (exportToken) {
+      // Runs before the app boots, so the first admin request already carries the export token
+      // even if the page URL loses the query on the static host's 404 fallback.
+      await page.evaluateOnNewDocument((token: string) => {
+        localStorage.setItem('adminAccessToken', token);
+      }, exportToken);
+      await page.setRequestInterception(true);
+      page.on('request', (request) => {
+        const headers = request.headers();
+        if (request.url().includes('/api/')) {
+          headers.authorization = `Bearer ${exportToken}`;
+        }
+        void request.continue({ headers }).catch(() => undefined);
+      });
+    }
     // domcontentloaded, not networkidle0: the print page keeps requesting fonts and photos, so
     // "no connections" often never happens and the export dies at 30s. Readiness is __printReady.
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
     try {
-      await page.waitForFunction('window.__printReady === true', { timeout: timeoutMs });
+      await page.waitForFunction(
+        'window.__printReady === true || typeof window.__printError === "string"',
+        { timeout: timeoutMs },
+      );
     } catch (error) {
       const pageText = await page
         .evaluate(() => document.body?.innerText?.replace(/\s+/g, ' ').trim().slice(0, 300) ?? '')
         .catch(() => '');
       const reason = error instanceof Error ? error.message : 'print page was not ready';
       throw new Error(pageText ? `${reason} Page said: ${pageText}` : reason);
+    }
+    const printError = await page.evaluate(
+      'typeof window.__printError === "string" ? window.__printError : ""',
+    );
+    if (typeof printError === 'string' && printError) {
+      throw new Error(printError);
     }
     return page;
   }
@@ -256,6 +281,14 @@ export class PdfExportService implements OnModuleDestroy {
     } finally {
       await context.close();
     }
+  }
+}
+
+function exportTokenFromUrl(url: string): string | null {
+  try {
+    return new URL(url).searchParams.get('token');
+  } catch {
+    return null;
   }
 }
 

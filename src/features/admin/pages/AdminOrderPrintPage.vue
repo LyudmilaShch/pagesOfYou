@@ -31,6 +31,8 @@ declare global {
      * Puppeteer `page.waitForFunction('window.__printReady === true')` — the signal that the
      * stage is fully laid out (fonts, every photo, zero zoom/pan drift) and safe to screenshot. */
     __printReady?: boolean
+    /** Set when the print page cannot load. The exporter reads it instead of waiting out the timeout. */
+    __printError?: string
   }
 }
 
@@ -110,6 +112,7 @@ onMounted(async () => {
       (err as { response?: { data?: { message?: string } } })?.response?.data?.message ??
       'Не удалось загрузить страницу'
     loadError.value = message
+    window.__printError = message
   }
 })
 
