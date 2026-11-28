@@ -135,6 +135,47 @@
         />
       </div>
 
+      <template v-if="isPhoto">
+        <p class="editor-properties__section-title">До обоих краёв</p>
+        <p class="editor-properties__hint-inline">{{ photoStretchHint }}</p>
+        <div class="editor-properties__align-row">
+          <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+            <template #activator="{ props: tooltipProps }">
+              <v-btn
+                v-bind="tooltipProps"
+                icon
+                rounded="circle"
+                size="small"
+                variant="outlined"
+                aria-label="От левого до правого края"
+                :disabled="store.previewMode || selected!.locked"
+                @click="stretchPhoto('horizontal')"
+              >
+                <v-icon size="20">mdi-arrow-expand-horizontal</v-icon>
+              </v-btn>
+            </template>
+            От левого до правого края
+          </v-tooltip>
+          <v-tooltip location="top" content-class="editor-tooltip--arrow-top">
+            <template #activator="{ props: tooltipProps }">
+              <v-btn
+                v-bind="tooltipProps"
+                icon
+                rounded="circle"
+                size="small"
+                variant="outlined"
+                aria-label="От верхнего до нижнего края"
+                :disabled="store.previewMode || selected!.locked"
+                @click="stretchPhoto('vertical')"
+              >
+                <v-icon size="20">mdi-arrow-expand-vertical</v-icon>
+              </v-btn>
+            </template>
+            От верхнего до нижнего края
+          </v-tooltip>
+        </div>
+      </template>
+
       <div
         v-for="(row, rowIndex) in frameAlignRows"
         :key="rowIndex"
@@ -176,7 +217,8 @@ import { useEditorStore } from '../store/editor.store'
 import type { ElementPatch } from '../store/editor.store'
 import EditorAngleField from './EditorAngleField.vue'
 import EditorSwitch from './EditorSwitch.vue'
-import type { FrameAlignMode, LayoutFrameTarget } from '../utils/align-elements.util'
+import type { FrameAlignMode, FrameStretchAxis, LayoutFrameTarget } from '../utils/align-elements.util'
+import { isPhotoPlaceholderElement } from '../utils/placeholder-display.util'
 import { A4_SPREAD_PAGE_HEIGHT, A4_SPREAD_PAGE_WIDTH } from '../constants/page.constants'
 import {
   getSpreadPageSide,
@@ -188,6 +230,8 @@ import { normalizeElementRotation } from '../utils/transformer.util'
 
 const store = useEditorStore()
 const { selectedElement: selected } = storeToRefs(store)
+
+const isPhoto = computed(() => Boolean(selected.value && isPhotoPlaceholderElement(selected.value)))
 
 const selectedSpreadSide = computed(() => {
   if (!store.isSpreadPage || !selected.value) {
@@ -310,6 +354,12 @@ const frameAlignRows: { mode: FrameAlignMode; label: string; icon: string }[][] 
   ],
 ]
 
+const photoStretchHint = computed(() =>
+  store.groupEditingId
+    ? 'Фото дотягивается до двух краёв группы.'
+    : 'Фото дотягивается до двух краёв кадра сразу. Снимите поле печати, чтобы дойти до края листа.',
+)
+
 const frameLayoutHint = computed(() => {
   if (store.groupEditingId) {
     return 'Кадр — рамка группы.'
@@ -332,6 +382,17 @@ function alignToFrame(mode: FrameAlignMode): void {
   }
 
   store.alignSelectionToFrame(mode, {
+    target: frameTarget.value,
+    safeMargin: useSafeMargin.value,
+  })
+}
+
+function stretchPhoto(axis: FrameStretchAxis): void {
+  if (!selected.value || store.previewMode || selected.value.locked || !isPhoto.value) {
+    return
+  }
+
+  store.stretchPhotosToFrame(axis, {
     target: frameTarget.value,
     safeMargin: useSafeMargin.value,
   })

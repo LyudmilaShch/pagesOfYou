@@ -50,6 +50,22 @@ export function readOuterTopLeft(node: Konva.Group): { x: number; y: number } {
   }
 }
 
+/**
+ * Top-left after a resize. The transformer keeps the edge opposite the dragged
+ * handle fixed by moving the center. The stored position is the top-left, so it
+ * has to follow that center — otherwise a shrink from the left snaps the box
+ * back to where it started.
+ */
+export function topLeftFromResizedCenter(
+  center: { x: number; y: number },
+  size: { width: number; height: number },
+): { x: number; y: number } {
+  return {
+    x: center.x - size.width / 2,
+    y: center.y - size.height / 2,
+  }
+}
+
 export function syncInnerTransformNode(
   node: Konva.Group,
   size: ElementPivotSize,
