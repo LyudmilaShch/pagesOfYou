@@ -683,6 +683,32 @@
                       <v-icon size="18">{{ action.icon }}</v-icon>
                     </button>
                   </div>
+                  <template v-if="isPhotoElement">
+                    <p class="mobile-dock__label-static">До обоих краёв</p>
+                    <p class="mobile-dock__hint">{{ photoStretchHint }}</p>
+                    <div class="mobile-dock__align-canvas-row">
+                      <button
+                        type="button"
+                        class="mobile-dock__align-canvas-btn"
+                        aria-label="От левого до правого края"
+                        title="От левого до правого края"
+                        :disabled="store.previewMode || selected.locked"
+                        @click="stretchPhoto('horizontal')"
+                      >
+                        <v-icon size="18">mdi-arrow-expand-horizontal</v-icon>
+                      </button>
+                      <button
+                        type="button"
+                        class="mobile-dock__align-canvas-btn"
+                        aria-label="От верхнего до нижнего края"
+                        title="От верхнего до нижнего края"
+                        :disabled="store.previewMode || selected.locked"
+                        @click="stretchPhoto('vertical')"
+                      >
+                        <v-icon size="18">mdi-arrow-expand-vertical</v-icon>
+                      </button>
+                    </div>
+                  </template>
                 </div>
 
                 <div class="mobile-dock__cluster-group">
@@ -835,7 +861,7 @@ import {
   spreadPageLocalXToGlobal,
 } from '../utils/spread.util'
 import { normalizeElementRotation } from '../utils/transformer.util'
-import type { FrameAlignMode, LayoutFrameTarget } from '../utils/align-elements.util'
+import type { FrameAlignMode, FrameStretchAxis, LayoutFrameTarget } from '../utils/align-elements.util'
 import EditorColorPicker from './EditorColorPicker.vue'
 import EditorBorderFields from './EditorBorderFields.vue'
 import EditorShapeStrokeFields from './EditorShapeStrokeFields.vue'
@@ -1543,6 +1569,12 @@ const frameAlignRows: { mode: FrameAlignMode; label: string; icon: string }[][] 
   ],
 ]
 
+const photoStretchHint = computed(() =>
+  store.groupEditingId
+    ? 'Фото дотягивается до двух краёв группы.'
+    : 'До двух краёв кадра. Снимите поле печати, чтобы дойти до края листа.',
+)
+
 const frameLayoutHint = computed(() => {
   if (store.groupEditingId) {
     return 'Кадр — рамка группы.'
@@ -1565,6 +1597,17 @@ function alignToFrame(mode: FrameAlignMode): void {
   }
 
   store.alignSelectionToFrame(mode, {
+    target: frameTarget.value,
+    safeMargin: useSafeMargin.value,
+  })
+}
+
+function stretchPhoto(axis: FrameStretchAxis): void {
+  if (!selected.value || store.previewMode || selected.value.locked || !isPhotoElement.value) {
+    return
+  }
+
+  store.stretchPhotosToFrame(axis, {
     target: frameTarget.value,
     safeMargin: useSafeMargin.value,
   })

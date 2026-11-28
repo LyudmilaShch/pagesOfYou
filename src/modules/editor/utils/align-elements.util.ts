@@ -558,6 +558,52 @@ export function alignGroupToFrame(
   return patches
 }
 
+export type FrameStretchAxis = 'horizontal' | 'vertical'
+
+export interface ElementBoxPatch {
+  x?: number
+  y?: number
+  width?: number
+  height?: number
+}
+
+/**
+ * One photo, both edges of the frame on a single axis. Alignment only slides
+ * the box toward one edge and leaves its size alone, so a photo cannot be
+ * placed from the left edge of the sheet to the right in one step.
+ */
+export function stretchElementToFrame(
+  element: PageElement,
+  frame: LayoutFrame,
+  axis: FrameStretchAxis,
+): ElementBoxPatch | null {
+  if (axis === 'horizontal') {
+    if (frame.width < 8) {
+      return null
+    }
+
+    const x = Math.round(frame.x)
+    const width = Math.round(frame.width)
+    if (x === element.position.x && width === element.size.width) {
+      return null
+    }
+
+    return { x, width }
+  }
+
+  if (frame.height < 8) {
+    return null
+  }
+
+  const y = Math.round(frame.y)
+  const height = Math.round(frame.height)
+  if (y === element.position.y && height === element.size.height) {
+    return null
+  }
+
+  return { y, height }
+}
+
 function sortByVisualHorizontal(elements: PageElement[]): PageElement[] {
   return [...elements].sort((a, b) => {
     const left = layoutBox(a).x - layoutBox(b).x

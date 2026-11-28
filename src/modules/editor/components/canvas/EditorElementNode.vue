@@ -210,6 +210,7 @@ import {
   getElementTransformNodeId,
   readOuterTopLeft,
   syncInnerTransformNode,
+  topLeftFromResizedCenter,
   type ElementPivotSize,
 } from '../../utils/element-pivot.util'
 import EditorElementVisuals from './EditorElementVisuals.vue'
@@ -1648,7 +1649,17 @@ function bakeListRowWidthFromNode(
 
 function bakeBoxTransformFromNode(
   inner: Konva.Group,
-): { width: number; height: number; rotation: number } | null {
+): {
+  width: number
+  height: number
+  rotation: number
+  position: { x: number; y: number }
+} | null {
+  const outer = getOuterNode()
+  if (!outer) {
+    return null
+  }
+
   const scaleX = inner.scaleX()
   const scaleY = inner.scaleY()
   const isResizing = Math.abs(scaleX - 1) >= 0.001 || Math.abs(scaleY - 1) >= 0.001
@@ -1660,13 +1671,32 @@ function bakeBoxTransformFromNode(
   const baseWidth = inner.width() > 0 ? inner.width() : props.element.size.width
   const baseHeight = inner.height() > 0 ? inner.height() : props.element.size.height
   const minHeight = props.element.type === 'shape-line' ? 0 : 8
-  const newWidth = Math.max(8, baseWidth * scaleX)
-  const newHeight = Math.max(minHeight, baseHeight * scaleY)
+  const newWidth = Math.max(8, Math.abs(baseWidth * scaleX))
+  const newHeight = Math.max(minHeight, Math.abs(baseHeight * scaleY))
   const rotation = inner.rotation()
+  // inner.x/y is the center in the outer group. A left-edge shrink moves it
+  // right so the right edge stays; writing the old top-left back would jump.
+  const nextTopLeft = topLeftFromResizedCenter(
+    { x: outer.x() + inner.x(), y: outer.y() + inner.y() },
+    { width: newWidth, height: newHeight },
+  )
+  const position = {
+    x:
+      props.parentId != null
+        ? nextTopLeft.x
+        : spreadVisualXToLogical(
+            nextTopLeft.x,
+            store.pageWidth,
+            store.pageHeight,
+            newWidth,
+          ),
+    y: nextTopLeft.y,
+  }
 
+  applyOuterTopLeftPosition(outer, nextTopLeft.x, nextTopLeft.y)
   syncInnerTransformNode(inner, { width: newWidth, height: newHeight }, rotation)
 
-  return { width: newWidth, height: newHeight, rotation }
+  return { width: newWidth, height: newHeight, rotation, position }
 }
 
 // Called once, on pointer-up. During the drag the transformer only changes scale — folding
@@ -1756,7 +1786,12 @@ function handleTransformEnd(event: Konva.KonvaEventObject<Event>): void {
 
     const isResizing =
       Math.abs(inner.scaleX() - 1) > 0.001 || Math.abs(inner.scaleY() - 1) > 0.001
-    let resizedBox: { width: number; height: number; rotation: number } | null = null
+    let resizedBox: {
+      width: number
+      height: number
+      rotation: number
+      position: { x: number; y: number }
+    } | null = null
     let bakedText: { width: number; height: number; position: { x: number; y: number } } | null =
       null
 
@@ -1794,7 +1829,9 @@ function handleTransformEnd(event: Konva.KonvaEventObject<Event>): void {
       isText ? (isTextRotation ? inner.rotation() : props.element.rotation) : inner.rotation(),
     )
 
-    let topLeft = bakedText ? bakedText.position : readLogicalTopLeftFromOuter(outer)
+    let topLeft = bakedText
+      ? bakedText.position
+      : (resizedBox?.position ?? readLogicalTopLeftFromOuter(outer))
 
     if (store.snapToGridEnabled && !isTextRotation) {
       topLeft = {

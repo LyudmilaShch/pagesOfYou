@@ -12,6 +12,7 @@ import {
 } from '../constants/page.constants'
 import {
   alignGroupToFrame,
+  stretchElementToFrame,
   distributeInFrame,
   packAndCenterInFrame,
   resolveLayoutGroups,
@@ -160,6 +161,34 @@ describe('alignGroupToFrame', () => {
 
     expect(patches.get('row')?.x).toBe(773)
     expect((patches.get('row')?.x ?? row.position.x) - 160).toBe(frame.x)
+  })
+})
+
+describe('stretchElementToFrame', () => {
+  it('meets both horizontal edges of the frame', () => {
+    const photo = box('photo', 40, 12, 80, 50)
+
+    expect(stretchElementToFrame(photo, PAGE, 'horizontal')).toEqual({ x: 0, width: 100 })
+  })
+
+  it('meets both vertical edges of the frame', () => {
+    const photo = box('photo', 10, 20, 40, 30)
+
+    expect(stretchElementToFrame(photo, PAGE, 'vertical')).toEqual({ y: 0, height: 80 })
+  })
+
+  it('leaves a photo that already spans the frame', () => {
+    const photo = box('photo', 0, 0, 100, 80)
+
+    expect(stretchElementToFrame(photo, PAGE, 'horizontal')).toBeNull()
+    expect(stretchElementToFrame(photo, PAGE, 'vertical')).toBeNull()
+  })
+
+  it('uses an inset frame when the print margin is on', () => {
+    const photo = box('photo', 30, 30, 40, 40)
+    const safe = { x: 12, y: 12, width: 76, height: 56 }
+
+    expect(stretchElementToFrame(photo, safe, 'horizontal')).toEqual({ x: 12, width: 76 })
   })
 })
 

@@ -43,7 +43,10 @@ import {
   packAndCenterInFrame,
   rectsIntersect,
   resolveLayoutGroups,
+  stretchElementToFrame,
+  type ElementBoxPatch,
   type FrameAlignMode,
+  type FrameStretchAxis,
   type LayoutFrame,
   type MultiAlignMode,
   type SelectionLayoutOptions,
@@ -2283,7 +2286,7 @@ export const useEditorStore = defineStore('editor', () => {
 
   function applyPositionPatches(
     targets: PageElement[],
-    patches: Map<string, { x?: number; y?: number }>,
+    patches: ReadonlyMap<string, ElementBoxPatch>,
     options?: { snap?: boolean },
   ): void {
     if (!document.value || targets.length === 0) {
@@ -2313,6 +2316,8 @@ export const useEditorStore = defineStore('editor', () => {
 
       let x = patch.x !== undefined ? patch.x : current.position.x
       let y = patch.y !== undefined ? patch.y : current.position.y
+      const width = patch.width !== undefined ? patch.width : current.size.width
+      const height = patch.height !== undefined ? patch.height : current.size.height
 
       if (shouldSnap) {
         const snapped = snapPosition({ x, y })
@@ -2320,13 +2325,19 @@ export const useEditorStore = defineStore('editor', () => {
         y = snapped.y
       }
 
-      if (x === current.position.x && y === current.position.y) {
+      if (
+        x === current.position.x &&
+        y === current.position.y &&
+        width === current.size.width &&
+        height === current.size.height
+      ) {
         return
       }
 
       location.siblings[index] = {
         ...current,
         position: { x, y },
+        size: { width, height },
       } as PageElement
     })
   }
@@ -2449,6 +2460,40 @@ export const useEditorStore = defineStore('editor', () => {
 
   function alignSelectionToFrame(mode: FrameAlignMode, options: SelectionLayoutOptions): void {
     applySelectionLayout(options, (elements, frame) => alignGroupToFrame(elements, frame, mode))
+  }
+
+  /** Photos only. Each selected photo grows on one axis until it meets both edges of its frame. */
+  function stretchPhotosToFrame(axis: FrameStretchAxis, options: SelectionLayoutOptions): void {
+    if (!document.value || previewMode.value) {
+      return
+    }
+
+    const targets = freshAlignableSelection().filter((element) => element.type === 'photo-placeholder')
+    if (targets.length === 0) {
+      return
+    }
+
+    const patches = new Map<string, ElementBoxPatch>()
+    for (const group of layoutGroupsForSelection(targets, options)) {
+      if (group.frame.width <= 0 || group.frame.height <= 0) {
+        continue
+      }
+
+      for (const element of group.elements) {
+        const patch = stretchElementToFrame(element, group.frame, axis)
+        if (patch) {
+          patches.set(element.id, patch)
+        }
+      }
+    }
+
+    if (patches.size === 0) {
+      return
+    }
+
+    pushHistoryImmediate()
+    applyPositionPatches(targets, patches, { snap: false })
+    isDirty.value = true
   }
 
   function distributeSelectionInFrame(
@@ -3605,6 +3650,7 @@ export const useEditorStore = defineStore('editor', () => {
     getRemovalImpactCount,
     alignSelectedElements,
     alignSelectionToFrame,
+    stretchPhotosToFrame,
     distributeSelectionInFrame,
     packSelectionInFrame,
     applyDistributionGap,
