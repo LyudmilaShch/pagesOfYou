@@ -43,22 +43,23 @@
         @drop.prevent="isPhotoElement(leaf) && leaf.defaultImageUrl && onDrop($event, leaf.id)"
       >
         <template v-if="isPhotoElement(leaf) && leaf.defaultImageUrl">
-          <img
-            class="spread-thumb__photo"
-            :class="{
-              'spread-thumb__photo--droppable': dropEnabled,
-              'spread-thumb__photo--drag-over': dropEnabled && dragOverElementId === leaf.id,
-            }"
-            :data-element-id="leaf.id"
-            :src="resolveAssetUrl(leaf.defaultImageUrl) ?? leaf.defaultImageUrl"
-            :style="photoImageStyle(leaf)"
-            alt=""
-          />
+          <div class="spread-thumb__photo-clip" :style="photoClipStyle(leaf)">
+            <img
+              class="spread-thumb__photo"
+              :class="{
+                'spread-thumb__photo--droppable': dropEnabled,
+                'spread-thumb__photo--drag-over': dropEnabled && dragOverElementId === leaf.id,
+              }"
+              :data-element-id="leaf.id"
+              :src="resolveAssetUrl(leaf.defaultImageUrl) ?? leaf.defaultImageUrl"
+              :style="photoImageStyle(leaf)"
+              alt=""
+            />
+          </div>
           <template v-for="badge in photoResolutionBadges(leaf)" :key="`${badge.level}-${badge.dpi}`">
             <span
               v-if="badgeFits(badge)"
               class="spread-thumb__resolution"
-              :style="resolutionBadgeStyle(badge)"
             >
               <PrintResolutionBadge :level="badge.level" :message="badge.message" />
             </span>
@@ -731,13 +732,6 @@ function badgeFits(badge: PhotoResolutionBadgeModel): boolean {
   return Math.min(badge.slotWidth, badge.slotHeight) * scale.value >= 28
 }
 
-function resolutionBadgeStyle(badge: PhotoResolutionBadgeModel): Record<string, string> {
-  return {
-    left: `${(badge.x + badge.radius) * scale.value}px`,
-    top: `${(badge.y - badge.radius) * scale.value}px`,
-  }
-}
-
 /** Absolute-positions the `<img>` per `computePhotoImageLayout` so a non-default crop
  * (cropX/cropY/imageScale, set via PhotoCropModal.vue) actually shows — plain `object-fit: cover`
  * (the CSS fallback below, used until the natural size resolves) can only ever render the
@@ -754,6 +748,15 @@ function photoImageRotationStyle(leaf: PhotoPlaceholder): Record<string, string>
     transform: `rotate(${rotation}deg)`,
     transformOrigin: 'center center',
   }
+}
+
+function photoClipStyle(leaf: PhotoPlaceholder): Record<string, string> | undefined {
+  const radius = leaf.borderRadius ?? 0
+  if ((leaf.imageRotation ?? 0) || radius <= 0) {
+    return undefined
+  }
+
+  return { borderRadius: `${radius * scale.value}px` }
 }
 
 function photoImageStyle(leaf: PhotoPlaceholder): Record<string, string> {
@@ -1052,6 +1055,14 @@ function shapeStyle(leaf: ShapeElement): Record<string, string> {
   object-fit: cover;
 }
 
+.spread-thumb__photo-clip {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
 .spread-thumb__photo {
   width: 100%;
   height: 100%;
@@ -1109,6 +1120,17 @@ function shapeStyle(leaf: ShapeElement): Record<string, string> {
 
   &:hover {
     transform: translate(-50%, -50%) scale(1.08);
+  }
+
+  @include mobile-only {
+    width: 13px;
+    height: 13px;
+
+    :deep(.v-icon) {
+      font-size: 7px !important;
+      width: 7px !important;
+      height: 7px !important;
+    }
   }
 }
 
@@ -1207,8 +1229,58 @@ function shapeStyle(leaf: ShapeElement): Record<string, string> {
 .spread-thumb__resolution {
   position: absolute;
   z-index: 2;
-  transform: translate(calc(-100% - 2px), 2px);
+  top: 6px;
+  right: 6px;
+  left: auto;
+  // Zero box: the quality tooltip's overlay is position:absolute with top and bottom
+  // set, and on the mobile book (a transformed layer) that stretches this wrapper
+  // to the photo height. The circle then sat at the bottom of that tall box.
+  width: 0;
+  height: 0;
+  overflow: visible;
+  transform: none;
+  pointer-events: none;
+}
+
+.spread-thumb__resolution :deep(.print-resolution-badge) {
+  position: absolute;
+  top: 0;
+  right: 0;
   pointer-events: auto;
+}
+
+@include mobile-only {
+  .spread-thumb__resolution {
+    top: 2px;
+    right: 2px;
+  }
+
+  .spread-thumb__photo-actions {
+    gap: 3px;
+  }
+
+  .spread-thumb__photo-action-btn {
+    width: 13px;
+    height: 13px;
+
+    :deep(.v-icon) {
+      font-size: 7px !important;
+      width: 7px !important;
+      height: 7px !important;
+    }
+  }
+
+  .spread-thumb__resolution :deep(.print-resolution-badge) {
+    width: 9px;
+    height: 9px;
+    border-width: 1px;
+
+    .v-icon {
+      font-size: 6px !important;
+      width: 6px !important;
+      height: 6px !important;
+    }
+  }
 }
 
 .spread-thumb__overflow-badge {

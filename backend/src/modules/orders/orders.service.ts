@@ -37,6 +37,10 @@ import {
 } from '../../shared/utils/ai-prompt-context.util';
 import { AiTextGenerationService } from '../ai-text-generation/ai-text-generation.service';
 import { AiUsageService, type AiUsageKind } from '../ai-text-generation/ai-usage.service';
+import {
+  DEFAULT_MAX_JOURNAL_DRAFTS_USER,
+  JOURNAL_DRAFT_LIMIT_CODE,
+} from './journal-draft-limit';
 import { aiAnswersSignature } from '../../shared/utils/ai-answers-signature.util';
 import { calculateJournalPrice } from '../../shared/utils/pricing.util';
 import {
@@ -203,7 +207,20 @@ export class OrdersService {
 
     const totalPrice = calculateJournalPrice(magazineType, countSpreadSlots(journalSlots));
 
+    const settings = await this.prisma.platformSettings.findUnique({
+      where: { id: 'default' },
+      select: { maxJournalDraftsUser: true },
+    });
+    const draftLimit = settings?.maxJournalDraftsUser ?? DEFAULT_MAX_JOURNAL_DRAFTS_USER;
+
     const order = await this.prisma.$transaction(async (tx) => {
+      const openDrafts = await tx.order.count({
+        where: { userId, status: OrderStatus.DRAFT, deletedAt: null },
+      });
+      if (openDrafts >= draftLimit) {
+        throw new BadRequestException(JOURNAL_DRAFT_LIMIT_CODE);
+      }
+
       const created = await tx.order.create({
         data: {
           userId,

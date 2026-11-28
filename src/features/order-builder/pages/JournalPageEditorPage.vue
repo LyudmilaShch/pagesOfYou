@@ -64,6 +64,7 @@ import { useOrderBuilderStore } from '../stores/order-builder.store'
 import { hasMissingCustomerPhotos, presentCustomerPageCanvas } from '../utils/missing-photos.util'
 import { tocEntriesForPage } from '../utils/journal-structure.util'
 import { ensureOrderForRoute } from '../utils/ensure-order-for-route.util'
+import { journalDraftLimitMessage } from '../utils/journal-draft-limit.util'
 import { getGalleryScope } from '../utils/photo-gallery-scope.util'
 import JournalStructurePanel from '../components/JournalStructurePanel.vue'
 import QuestionnaireEntryPanel from '../components/QuestionnaireEntryPanel.vue'
@@ -178,7 +179,17 @@ async function handleSubmitOrder(): Promise<void> {
     }
 
     if (orderBuilderStore.isLocalDraft) {
-      await orderBuilderStore.adoptAllGuestDrafts()
+      const adoption = await orderBuilderStore.adoptAllGuestDrafts()
+      if (orderBuilderStore.isLocalDraft) {
+        submitSnackbar.text = journalDraftLimitMessage({
+          mode: 'user',
+          limit: adoption.limit,
+          keptInBrowser: adoption.adopted > 0 && adoption.leftover > 0,
+        })
+        submitSnackbar.color = 'error'
+        submitSnackbar.show = true
+        return
+      }
     }
 
     if (!orderBuilderStore.order) {

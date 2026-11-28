@@ -226,6 +226,7 @@ import AuthPromptModal from '@/components/auth/AuthPromptModal.vue'
 import ConstructorTopMeta from '../components/ConstructorTopMeta.vue'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
 import { ensureOrderForRoute } from '../utils/ensure-order-for-route.util'
+import { journalDraftLimitMessage } from '../utils/journal-draft-limit.util'
 import { getGalleryScope } from '../utils/photo-gallery-scope.util'
 import {
   collectPhotoSlotPreview,
@@ -700,7 +701,15 @@ async function finish(): Promise<void> {
         return
       }
       try {
-        await store.adoptAllGuestDrafts()
+        const adoption = await store.adoptAllGuestDrafts()
+        if (store.isLocalDraft) {
+          submitErrorMessage.value = journalDraftLimitMessage({
+            mode: 'user',
+            limit: adoption.limit,
+            keptInBrowser: adoption.adopted > 0 && adoption.leftover > 0,
+          })
+          return
+        }
       } catch {
         submitErrorMessage.value =
           store.orderError ?? 'Не удалось перенести журнал в аккаунт. Попробуйте ещё раз.'

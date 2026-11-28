@@ -13,6 +13,7 @@
           class="base-modal__panel"
           :class="{
             'base-modal__panel--fit-viewport': fitViewport,
+            'base-modal__panel--fill-mobile': fillMobile,
             'base-modal__panel--wide': wide,
             'base-modal__panel--narrow': narrow,
             'base-modal__panel--bare': bare,
@@ -34,11 +35,48 @@
   </Teleport>
 </template>
 
+<script lang="ts">
+/** Shared across every open modal so closing one does not unlock the page while another remains. */
+let bodyLockCount = 0
+let lockedScrollY = 0
+
+export function lockBodyScroll(): void {
+  if (bodyLockCount === 0) {
+    lockedScrollY = window.scrollY
+    document.body.style.position = 'fixed'
+    document.body.style.top = `-${lockedScrollY}px`
+    document.body.style.left = '0'
+    document.body.style.right = '0'
+    document.body.style.width = '100%'
+    document.body.style.overflow = 'hidden'
+  }
+  bodyLockCount += 1
+}
+
+export function unlockBodyScroll(): void {
+  bodyLockCount = Math.max(0, bodyLockCount - 1)
+  if (bodyLockCount > 0) {
+    return
+  }
+  document.body.style.position = ''
+  document.body.style.top = ''
+  document.body.style.left = ''
+  document.body.style.right = ''
+  document.body.style.width = ''
+  document.body.style.overflow = ''
+  window.scrollTo(0, lockedScrollY)
+}
+</script>
+
 <script setup lang="ts">
-defineProps<{
+import { onUnmounted, watch } from 'vue'
+
+const props = defineProps<{
   modelValue: boolean
   labelledby?: string
   fitViewport?: boolean
+  /** On a phone, the panel fills the viewport so an inner list can scroll while a footer stays put. */
+  fillMobile?: boolean
   /** Raises the panel's max-width from 960px to 1200px — for content that's cramped at the
    * default size (e.g. a two-column layout with a live preview), rather than every modal. */
   wide?: boolean
@@ -54,6 +92,24 @@ defineProps<{
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
 }>()
+
+watch(
+  () => props.modelValue,
+  (open, wasOpen) => {
+    if (open) {
+      lockBodyScroll()
+    } else if (wasOpen) {
+      unlockBodyScroll()
+    }
+  },
+  { immediate: true },
+)
+
+onUnmounted(() => {
+  if (props.modelValue) {
+    unlockBodyScroll()
+  }
+})
 
 const close = () => {
   emit('update:modelValue', false)
@@ -105,6 +161,12 @@ const handleOverlayClick = () => {
 
       @include tablet-up {
         height: calc(100dvh - #{$spacing-6} * 2);
+      }
+    }
+
+    &--fill-mobile {
+      @include mobile-only {
+        height: calc(100dvh - #{$spacing-4} * 2);
       }
     }
 
@@ -177,6 +239,40 @@ const handleOverlayClick = () => {
 
   .base-modal__panel {
     transform: scale(0.96);
+  }
+}
+</style>
+
+<style lang="scss">
+// One mobile title size for every BaseModal. Beats each modal's own scoped heading size.
+@include mobile-only {
+  .base-modal .base-modal__panel :is(h1, h2) {
+    font-size: 16px;
+    line-height: 1.2;
+    margin-bottom: 4px;
+  }
+
+  // These stacks already separate children with flex gap. Keep that gap above the title,
+  // and leave 4px between the title and the block under it.
+  .base-modal .base-modal__panel :is(
+    .confirm-modal,
+    .incomplete-photos,
+    .missing-content,
+    .error-message-modal
+  ) > :is(h1, h2) {
+    margin-bottom: 0;
+  }
+
+  .base-modal .base-modal__panel :is(
+    .confirm-modal,
+    .incomplete-photos,
+    .missing-content
+  ) > :is(h1, h2) + * {
+    margin-top: -8px;
+  }
+
+  .base-modal .base-modal__panel .error-message-modal > :is(h1, h2) + * {
+    margin-top: -4px;
   }
 }
 </style>

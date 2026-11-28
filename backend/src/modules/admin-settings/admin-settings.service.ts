@@ -37,6 +37,8 @@ export class AdminSettingsService {
         aiDailyFillCapUser: dto.aiDailyFillCapUser ?? current.aiDailyFillCapUser,
         aiDailyFillCapGuest: dto.aiDailyFillCapGuest ?? current.aiDailyFillCapGuest,
         aiGuestAutoUpdatesPerText: dto.aiGuestAutoUpdatesPerText ?? current.aiGuestAutoUpdatesPerText,
+        maxJournalDraftsGuest: dto.maxJournalDraftsGuest ?? current.maxJournalDraftsGuest,
+        maxJournalDraftsUser: dto.maxJournalDraftsUser ?? current.maxJournalDraftsUser,
       },
     });
   }

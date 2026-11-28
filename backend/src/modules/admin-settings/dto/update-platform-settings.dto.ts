@@ -41,4 +41,22 @@ export class UpdatePlatformSettingsDto {
   @Min(0)
   @Max(100)
   aiGuestAutoUpdatesPerText?: number;
+
+  @ApiPropertyOptional({
+    description: 'Сколько незаконченных журналов гость может держать в браузере (0 — нельзя создать)',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(1000)
+  maxJournalDraftsGuest?: number;
+
+  @ApiPropertyOptional({
+    description: 'Сколько незаконченных журналов может держать вошедший пользователь (0 — нельзя создать)',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(1000)
+  maxJournalDraftsUser?: number;
 }
