@@ -17,6 +17,10 @@ import type { AdminJwtPayload } from '../admin-auth/interfaces/admin-jwt-payload
 // separately, with zero runtime effect.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const sharp: typeof SharpType = require('sharp');
+// libvips keeps a decoded-image cache that stacks on top of Chromium during an export and is
+// enough to push a small instance over its memory limit (the proxy then answers 502).
+sharp.cache(false);
+sharp.concurrency(1);
 
 /** Mirrors `src/modules/editor/constants/page.constants.ts` on the frontend — "logical editor
  * units" there are literally PDF points (72 DPI), so these double as both the print-view's CSS
@@ -73,7 +77,17 @@ export class PdfExportService implements OnModuleDestroy {
       .launch({
         headless: true,
         ...(executablePath ? { executablePath } : {}),
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+          // One renderer, no zygote: a 300 DPI page plus a second Chrome process does not fit
+          // the small Render instance, and the kernel kills the container (502, exit 137).
+          '--disable-extensions',
+          '--no-zygote',
+          '--renderer-process-limit=1',
+        ],
       })
       .catch((error: unknown) => {
         this.browserPromise = null;
@@ -206,24 +220,34 @@ export class PdfExportService implements OnModuleDestroy {
         this.logger.log(`Rendering journal page ${journalPage.id} (${journalPage.slotType}) for order ${order.id}`);
         const page = await this.loadPrintPage(context, printUrl, viewportWidth, A4_PAGE_HEIGHT);
 
+        // Chromium's bitmap and sharp's CMYK decode must not be live at the same time.
+        const shots: Buffer[] = [];
         try {
           if (isSpread) {
-            const left = await page.screenshot({
-              type: 'png',
-              clip: { x: 0, y: 0, width: A4_PAGE_WIDTH, height: A4_PAGE_HEIGHT },
-            });
-            const right = await page.screenshot({
-              type: 'png',
-              clip: { x: A4_PAGE_WIDTH, y: 0, width: A4_PAGE_WIDTH, height: A4_PAGE_HEIGHT },
-            });
-            await this.addImagePage(pdfDoc, Buffer.from(left), A4_PAGE_WIDTH, A4_PAGE_HEIGHT);
-            await this.addImagePage(pdfDoc, Buffer.from(right), A4_PAGE_WIDTH, A4_PAGE_HEIGHT);
+            shots.push(
+              Buffer.from(
+                await page.screenshot({
+                  type: 'png',
+                  clip: { x: 0, y: 0, width: A4_PAGE_WIDTH, height: A4_PAGE_HEIGHT },
+                }),
+              ),
+            );
+            shots.push(
+              Buffer.from(
+                await page.screenshot({
+                  type: 'png',
+                  clip: { x: A4_PAGE_WIDTH, y: 0, width: A4_PAGE_WIDTH, height: A4_PAGE_HEIGHT },
+                }),
+              ),
+            );
           } else {
-            const screenshot = await page.screenshot({ type: 'png' });
-            await this.addImagePage(pdfDoc, Buffer.from(screenshot), A4_PAGE_WIDTH, A4_PAGE_HEIGHT);
+            shots.push(Buffer.from(await page.screenshot({ type: 'png' })));
           }
         } finally {
           await page.close();
+        }
+        for (const shot of shots) {
+          await this.addImagePage(pdfDoc, shot, A4_PAGE_WIDTH, A4_PAGE_HEIGHT);
         }
       }
 

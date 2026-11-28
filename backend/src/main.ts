@@ -104,6 +104,11 @@ async function bootstrap() {
   // ---------------------------------------------------------------------------
   const port = process.env.PORT ?? 3000;
   await app.listen(port);
+  // Render's proxy reuses a connection for up to about 75s. Node closes an idle socket after 5s,
+  // and the next request on that socket comes back as 502 with nothing in the app log.
+  const server = app.getHttpServer() as { keepAliveTimeout: number; headersTimeout: number };
+  server.keepAliveTimeout = 120_000;
+  server.headersTimeout = 125_000;
 
   console.log(`\n🚀  Backend running at: http://localhost:${port}/api`);
   console.log(`📖  Swagger docs:       http://localhost:${port}/api/docs\n`);
