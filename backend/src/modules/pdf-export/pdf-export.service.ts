@@ -77,17 +77,7 @@ export class PdfExportService implements OnModuleDestroy {
       .launch({
         headless: true,
         ...(executablePath ? { executablePath } : {}),
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-gpu',
-          // One renderer, no zygote: a 300 DPI page plus a second Chrome process does not fit
-          // the small Render instance, and the kernel kills the container (502, exit 137).
-          '--disable-extensions',
-          '--no-zygote',
-          '--renderer-process-limit=1',
-        ],
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
       })
       .catch((error: unknown) => {
         this.browserPromise = null;
@@ -144,19 +134,10 @@ export class PdfExportService implements OnModuleDestroy {
     await page.setViewport({ width: viewportWidthPt, height: viewportHeightPt, deviceScaleFactor });
     const exportToken = exportTokenFromUrl(url);
     if (exportToken) {
-      // Runs before the app boots, so the first admin request already carries the export token
-      // even if the page URL loses the query on the static host's 404 fallback.
+      // Before the app boots, so the first admin request already has the export token.
       await page.evaluateOnNewDocument((token: string) => {
         localStorage.setItem('adminAccessToken', token);
       }, exportToken);
-      await page.setRequestInterception(true);
-      page.on('request', (request) => {
-        const headers = request.headers();
-        if (request.url().includes('/api/')) {
-          headers.authorization = `Bearer ${exportToken}`;
-        }
-        void request.continue({ headers }).catch(() => undefined);
-      });
     }
     // domcontentloaded, not networkidle0: the print page keeps requesting fonts and photos, so
     // "no connections" often never happens and the export dies at 30s. Readiness is __printReady.
