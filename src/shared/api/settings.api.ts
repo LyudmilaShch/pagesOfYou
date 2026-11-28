@@ -11,6 +11,10 @@ export interface PlatformSettings {
   aiDailyFillCapGuest: number
   /** How many times a guest's text updates itself after an answer change. */
   aiGuestAutoUpdatesPerText: number
+  /** Unfinished journals a guest may keep in this browser. 0 blocks creating a new one. */
+  maxJournalDraftsGuest: number
+  /** Unfinished journals (DRAFT orders) a signed-in user may keep. 0 blocks creating a new one. */
+  maxJournalDraftsUser: number
 }
 
 /** Public read of platform-wide settings — e.g. the checkout page's production-time notice. */

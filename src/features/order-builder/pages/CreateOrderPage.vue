@@ -147,10 +147,31 @@
       :mode="resumeModal.mode"
       :drafts="resumeModal.drafts"
       :guest-drafts="resumeModal.guestDrafts"
+      :can-start-new="canStartNew"
       @continue="onResumeContinue"
       @start-new="onResumeStartNew"
       @close="resumeModal.open = false"
     />
+
+    <JournalDraftLimitModal
+      :open="limitModal.open"
+      :mode="limitModal.mode"
+      :limit="limitModal.limit"
+      :kept-in-browser="limitModal.keptInBrowser"
+      :guest-drafts="limitGuestDrafts"
+      :user-drafts="limitUserDrafts"
+      :continuing="navigatingNext"
+      :deleting-id="deletingDraftId"
+      @close="onLimitClose"
+      @sign-in="onLimitSignIn"
+      @continue-new="onLimitContinueNew"
+      @continue-guest="onLimitContinueGuest"
+      @delete-guest="onDeleteGuestDraft"
+      @continue-user="onLimitContinueUser"
+      @delete-user="onDeleteUserDraft"
+    />
+
+    <AuthModal :open="authModalOpen" message="Чтобы хранить больше журналов, войдите в аккаунт" @success="onLimitAuthSuccess" @close="authModalOpen = false" />
 
     <LoadingModal :model-value="navigatingNext" />
   </div>
@@ -161,13 +182,23 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { useAuthStore } from '@/stores/auth.store'
+import AuthModal from '@/components/auth/AuthModal.vue'
 import { ordersApi } from '../api/orders.api'
 import type { OrderSummary } from '../types/order.types'
-import { readLocalDraft, readLocalDrafts, type StoredLocalDraft } from '../utils/local-draft-storage.util'
+import { readLocalDraft, readLocalDrafts, removeLocalDraft, type StoredLocalDraft } from '../utils/local-draft-storage.util'
+import {
+  listOpenDraftOrders,
+  DEFAULT_MAX_JOURNAL_DRAFTS_GUEST,
+  DEFAULT_MAX_JOURNAL_DRAFTS_USER,
+  isJournalDraftLimitError,
+  readJournalDraftLimits,
+  type JournalDraftLimits,
+} from '../utils/journal-draft-limit.util'
 import { resolveResumeRoute, resumeOrder } from '../utils/resume-order.util'
 import { hasMissingCustomerPhotos } from '../utils/missing-photos.util'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
 import ConstructorTopMeta from '../components/ConstructorTopMeta.vue'
+import JournalDraftLimitModal from '../components/JournalDraftLimitModal.vue'
 import MagazineTypeCard from '../components/MagazineTypeCard.vue'
 import ResumeDraftModal from '../components/ResumeDraftModal.vue'
 import LoadingModal from '@/components/ui/LoadingModal.vue'
@@ -247,7 +278,65 @@ const resumeModal = reactive<{
 onMounted(async () => {
   store.orderError = null
   store.fetchMagazineTypes()
+  await loadJournalLimits()
   await checkForDrafts()
+})
+
+const journalLimits = ref<JournalDraftLimits>({
+  guest: DEFAULT_MAX_JOURNAL_DRAFTS_GUEST,
+  user: DEFAULT_MAX_JOURNAL_DRAFTS_USER,
+})
+
+const limitModal = reactive({
+  open: false,
+  mode: 'guest' as 'guest' | 'user',
+  limit: DEFAULT_MAX_JOURNAL_DRAFTS_GUEST,
+  keptInBrowser: false,
+})
+
+const authModalOpen = ref(false)
+const limitGuestDrafts = ref<StoredLocalDraft[]>([])
+const limitUserDrafts = ref<OrderSummary[]>([])
+const deletingDraftId = ref<string | null>(null)
+
+async function loadJournalLimits(): Promise<void> {
+  journalLimits.value = await readJournalDraftLimits()
+}
+
+function rememberUserDrafts(drafts: OrderSummary[]): void {
+  resumeModal.mode = 'authenticated'
+  resumeModal.drafts = drafts
+  limitUserDrafts.value = drafts
+}
+
+/** Opens the shared limit modal. Pass `userDrafts` when the account list was just loaded, so the page does not ask for it again. */
+async function openLimitModal(
+  mode: 'guest' | 'user',
+  keptInBrowser = false,
+  userDrafts?: OrderSummary[],
+): Promise<void> {
+  if (mode === 'guest') {
+    limitGuestDrafts.value = readLocalDrafts()
+  } else if (userDrafts) {
+    rememberUserDrafts(userDrafts)
+  } else {
+    try {
+      rememberUserDrafts(await listOpenDraftOrders())
+    } catch {
+      limitUserDrafts.value = resumeModal.drafts
+    }
+  }
+  limitModal.mode = mode
+  limitModal.limit = mode === 'guest' ? journalLimits.value.guest : journalLimits.value.user
+  limitModal.keptInBrowser = keptInBrowser
+  limitModal.open = true
+}
+
+const canStartNew = computed(() => {
+  if (resumeModal.mode === 'guest') {
+    return true
+  }
+  return resumeModal.drafts.length < journalLimits.value.user
 })
 
 /** Runs once on mount — offers to resume an in-progress journal instead of always starting fresh.
@@ -261,26 +350,34 @@ async function checkForDrafts(): Promise<void> {
     const guestDrafts = readLocalDrafts()
 
     if (authStore.isAuthenticated) {
+      let keptInBrowser = false
       if (guestDrafts.length > 0) {
         try {
-          await store.adoptAllGuestDrafts()
+          const adoption = await store.adoptAllGuestDrafts()
+          keptInBrowser = adoption.leftover > 0 && adoption.adopted > 0
         } catch {
           store.orderError =
             'Не удалось перенести начатые журналы в аккаунт. Черновики сохранены в браузере — попробуйте ещё раз.'
         }
       }
 
-      const result = await ordersApi.list()
-      const drafts = result.items.filter((order) => order.status === 'DRAFT')
-      if (drafts.length > 0) {
-        resumeModal.mode = 'authenticated'
-        resumeModal.drafts = drafts
-        resumeModal.open = true
+      const drafts = await listOpenDraftOrders()
+      if (drafts.length >= journalLimits.value.user) {
+        await openLimitModal('user', keptInBrowser, drafts)
+      } else {
+        rememberUserDrafts(drafts)
+        if (drafts.length > 0) {
+          resumeModal.open = true
+        }
       }
     } else if (guestDrafts.length > 0) {
-      resumeModal.mode = 'guest'
-      resumeModal.guestDrafts = guestDrafts
-      resumeModal.open = true
+      if (guestDrafts.length >= journalLimits.value.guest) {
+        openLimitModal('guest')
+      } else {
+        resumeModal.mode = 'guest'
+        resumeModal.guestDrafts = guestDrafts
+        resumeModal.open = true
+      }
     }
   } finally {
     checkingDrafts.value = false
@@ -308,10 +405,134 @@ async function onResumeContinue(orderId?: string): Promise<void> {
 }
 
 function onResumeStartNew(): void {
-  resumeModal.open = false
-  // A new journal is an extra draft. The ones already in the list stay, each with its own gallery.
+  const atLimit =
+    resumeModal.mode === 'guest'
+      ? readLocalDrafts().length >= journalLimits.value.guest
+      : resumeModal.drafts.length >= journalLimits.value.user
+  if (atLimit) {
+    resumeModal.open = false
+    openLimitModal(resumeModal.mode === 'guest' ? 'guest' : 'user')
+    return
+  }
+  void startNewJournal()
+}
+
+/** Creates a journal and opens the photo step. Uses the type already chosen on this page, or the first one in the list. */
+async function startNewJournal(): Promise<void> {
+  if (navigatingNext.value) {
+    return
+  }
+
+  const magazineType = store.selectedMagazineType ?? store.magazineTypes[0]
+  if (!magazineType) {
+    return
+  }
+  if (!store.selectedMagazineType) {
+    store.selectMagazineType(magazineType)
+  }
+
   startingNew.value = true
-  store.resetOrderFlow()
+  resumeModal.open = false
+  limitModal.open = false
+  navigatingNext.value = true
+  try {
+    await store.startDraft(magazineType.id)
+    if (!store.order) {
+      return
+    }
+    await router.push({
+      name: 'order-photo-upload',
+      params: { orderId: store.order.id },
+    })
+  } catch (err: unknown) {
+    if (isJournalDraftLimitError(err)) {
+      openLimitModal(authStore.isAuthenticated ? 'user' : 'guest')
+    }
+  } finally {
+    navigatingNext.value = false
+  }
+}
+
+function onLimitClose(): void {
+  limitModal.open = false
+}
+
+function onDeleteGuestDraft(id: string): void {
+  try {
+    removeLocalDraft(id)
+  } catch {
+    store.orderError = 'Не удалось удалить черновик.'
+    return
+  }
+
+  const remaining = readLocalDrafts()
+  limitGuestDrafts.value = remaining
+  resumeModal.guestDrafts = remaining
+}
+
+async function onLimitContinueGuest(id: string): Promise<void> {
+  limitModal.open = false
+  store.orderError = null
+  const draft = readLocalDraft(id)
+  if (!draft) {
+    store.orderError = 'Не удалось открыть черновик.'
+    return
+  }
+  try {
+    await openGuestDraft(draft)
+  } catch {
+    store.orderError = 'Не удалось открыть черновик.'
+  }
+}
+
+async function onLimitContinueNew(): Promise<void> {
+  const atLimit =
+    limitModal.mode === 'guest'
+      ? readLocalDrafts().length >= journalLimits.value.guest
+      : limitUserDrafts.value.length >= journalLimits.value.user
+  if (atLimit) {
+    return
+  }
+  await startNewJournal()
+}
+
+async function onLimitContinueUser(id: string): Promise<void> {
+  limitModal.open = false
+  store.orderError = null
+  try {
+    await resumeOrder(router, id)
+  } catch {
+    store.orderError = 'Не удалось открыть черновик.'
+  }
+}
+
+async function onDeleteUserDraft(id: string): Promise<void> {
+  if (deletingDraftId.value) {
+    return
+  }
+  deletingDraftId.value = id
+  try {
+    await ordersApi.remove(id)
+  } catch {
+    store.orderError = 'Не удалось удалить черновик.'
+    return
+  } finally {
+    deletingDraftId.value = null
+  }
+
+  const remaining = limitUserDrafts.value.filter((draft) => draft.id !== id)
+  limitUserDrafts.value = remaining
+  resumeModal.drafts = remaining
+}
+
+function onLimitSignIn(): void {
+  limitModal.open = false
+  authModalOpen.value = true
+}
+
+async function onLimitAuthSuccess(): Promise<void> {
+  authModalOpen.value = false
+  await checkForDrafts()
 }
 
 async function openGuestDraft(draft: StoredLocalDraft): Promise<void> {
@@ -351,10 +572,31 @@ async function handleNext(): Promise<void> {
       return
     }
     if (matches.length > 1) {
-      resumeModal.mode = 'guest'
-      resumeModal.guestDrafts = matches
-      resumeModal.open = true
+      if (readLocalDrafts().length >= journalLimits.value.guest) {
+        openLimitModal('guest')
+      } else {
+        resumeModal.mode = 'guest'
+        resumeModal.guestDrafts = matches
+        resumeModal.open = true
+      }
       return
+    }
+  }
+
+  if (!authStore.isAuthenticated && readLocalDrafts().length >= journalLimits.value.guest) {
+    openLimitModal('guest')
+    return
+  }
+
+  if (authStore.isAuthenticated) {
+    try {
+      const drafts = await listOpenDraftOrders()
+      if (drafts.length >= journalLimits.value.user) {
+        await openLimitModal('user', false, drafts)
+        return
+      }
+    } catch {
+      // The server still rejects the create when the account is already full.
     }
   }
 
@@ -372,7 +614,10 @@ async function handleNext(): Promise<void> {
       name: 'order-photo-upload',
       params: { orderId: store.order.id },
     })
-  } catch {
+  } catch (err: unknown) {
+    if (isJournalDraftLimitError(err)) {
+      openLimitModal(authStore.isAuthenticated ? 'user' : 'guest')
+    }
     // orderError is set in the store
   } finally {
     navigatingNext.value = false

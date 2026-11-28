@@ -1630,6 +1630,10 @@ onBeforeUnmount(() => {
     border-color: $accent;
     background: $accent-tint;
   }
+
+  @include mobile-only {
+    display: none;
+  }
 }
 
 .photo-upload-page__stats {

@@ -55,6 +55,7 @@
       </div>
 
       <v-btn
+        v-if="canStartNew !== false"
         variant="outlined"
         color="secondary"
         class="resume-draft__start-new"
@@ -82,6 +83,8 @@ const props = defineProps<{
   mode: 'authenticated' | 'guest'
   drafts: OrderSummary[]
   guestDrafts: StoredLocalDraft[]
+  /** Hidden once the person already holds as many unfinished journals as the admin allows. */
+  canStartNew?: boolean
 }>()
 
 const several = computed(

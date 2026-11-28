@@ -29,6 +29,32 @@
 
           <v-divider />
 
+          <h2 class="settings-page__section-title">Незаконченные журналы</h2>
+          <p class="settings-page__hint">
+            Сколько черновиков можно держать одновременно. Оформленный заказ и удалённый черновик
+            место освобождают. 0 — новый журнал создать нельзя.
+          </p>
+          <v-text-field
+            v-model.number="form.maxJournalDraftsGuest"
+            label="Гость: журналов в этом браузере"
+            hint="Гость без входа хранит журналы только в браузере. Сверх этого числа новый не создаётся — предложим продолжить существующий или войти."
+            persistent-hint
+            type="number"
+            min="0"
+            variant="outlined"
+          />
+          <v-text-field
+            v-model.number="form.maxJournalDraftsUser"
+            label="Пользователь: журналов в аккаунте"
+            hint="Считаются только черновики. Сверх этого числа новый не создаётся — предложим продолжить существующий или удалить лишний в личном кабинете."
+            persistent-hint
+            type="number"
+            min="0"
+            variant="outlined"
+          />
+
+          <v-divider />
+
           <h2 class="settings-page__section-title">ИИ-тексты журнала</h2>
           <p class="settings-page__hint">
             Первый текст каждого блока журнала создаётся всегда — настройки ниже не мешают
@@ -110,6 +136,8 @@ const form = reactive({
   aiDailyFillCapUser: 300,
   aiDailyFillCapGuest: 150,
   aiGuestAutoUpdatesPerText: 2,
+  maxJournalDraftsGuest: 2,
+  maxJournalDraftsUser: 5,
 })
 
 const snackbar = reactive({
@@ -120,6 +148,10 @@ const snackbar = reactive({
 
 const maxNotLessThanMin = (v: number) =>
   v >= form.productionDaysMin || 'Не может быть меньше минимального срока'
+
+function isWholeLimit(value: number): boolean {
+  return Number.isInteger(value) && value >= 0
+}
 
 function notify(text: string, color: 'success' | 'error'): void {
   snackbar.text = text
@@ -135,11 +167,18 @@ async function load(): Promise<void> {
   form.aiDailyFillCapUser = item.aiDailyFillCapUser
   form.aiDailyFillCapGuest = item.aiDailyFillCapGuest
   form.aiGuestAutoUpdatesPerText = item.aiGuestAutoUpdatesPerText
+  form.maxJournalDraftsGuest = item.maxJournalDraftsGuest
+  form.maxJournalDraftsUser = item.maxJournalDraftsUser
 }
 
 async function save(): Promise<void> {
   if (form.productionDaysMax < form.productionDaysMin) {
     notify('Максимальный срок не может быть меньше минимального', 'error')
+    return
+  }
+
+  if (!isWholeLimit(form.maxJournalDraftsGuest) || !isWholeLimit(form.maxJournalDraftsUser)) {
+    notify('Лимит журналов — целое число от 0', 'error')
     return
   }
 
@@ -152,6 +191,8 @@ async function save(): Promise<void> {
       aiDailyFillCapUser: form.aiDailyFillCapUser,
       aiDailyFillCapGuest: form.aiDailyFillCapGuest,
       aiGuestAutoUpdatesPerText: form.aiGuestAutoUpdatesPerText,
+      maxJournalDraftsGuest: form.maxJournalDraftsGuest,
+      maxJournalDraftsUser: form.maxJournalDraftsUser,
     })
     notify('Сохранено', 'success')
   } catch {

@@ -48,6 +48,12 @@ import { collectEmptyAutoFillSlots } from '../utils/missing-photos.util'
 import { resolvePhotoGalleryScope } from '../utils/guest-gallery.util'
 import { calculateJournalPrice } from '../utils/pricing.util'
 import { useAuthStore } from '@/stores/auth.store'
+import {
+  countOpenDraftOrders,
+  isJournalDraftLimitError,
+  JOURNAL_DRAFT_LIMIT_CODE,
+  readJournalDraftLimits,
+} from '../utils/journal-draft-limit.util'
 import { useErrorMessageModal } from '@/shared/composables/useErrorMessageModal'
 import { MIN_JOURNAL_SPREADS } from '../constants/journal.constants'
 import { normalizeCanvasData, type CanvasData } from '@/modules/editor/models/canvas-data.model'
@@ -236,6 +242,11 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
   }
 
   async function loadLocalDraft(magazineTypeId: string): Promise<void> {
+    const limits = await readJournalDraftLimits()
+    if (readLocalDrafts().length >= limits.guest) {
+      throw new Error(JOURNAL_DRAFT_LIMIT_CODE)
+    }
+
     isLoadingOrder.value = true
     orderError.value = null
     isLocalDraft.value = true
@@ -311,7 +322,7 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
       trashedJournalPages.value = []
 
       persistLocalDraft()
-    } catch (err: unknown) {
+    } catch {
       if (!orderError.value) {
         orderError.value =
           err instanceof Error && err.message === 'MISSING_COVER_TEMPLATES'
@@ -379,7 +390,10 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
       }))
       order.value = await ordersApi.createDraft(magazineTypeId)
       return order.value
-    } catch {
+    } catch (err: unknown) {
+      if (isJournalDraftLimitError(err)) {
+        throw new Error(JOURNAL_DRAFT_LIMIT_CODE)
+      }
       orderError.value = 'Не удалось создать заказ. Попробуйте ещё раз.'
       throw new Error(orderError.value)
     } finally {
@@ -1588,24 +1602,48 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
     return order.value
   }
 
-  /** Turns every guest journal still stored in this browser into a real order. The one open in
-   * this tab is converted last, so it stays the current order afterwards. */
-  async function adoptAllGuestDrafts(): Promise<void> {
+  /** Turns guest journals still stored in this browser into real orders, up to the account's
+   * open-draft limit. The one open in this tab is converted last (a slot is kept for it), so it
+   * stays the current order afterwards. Journals that do not fit stay in the browser. */
+  async function adoptAllGuestDrafts(): Promise<{ leftover: number; limit: number; adopted: number }> {
     if (isLocalDraft.value && order.value && !persistLocalDraft()) {
       throw new Error(orderError.value ?? 'Не удалось сохранить черновик.')
     }
 
+    const limits = await readJournalDraftLimits()
+    const openDrafts = await countOpenDraftOrders()
+    let slots = Math.max(0, limits.user - openDrafts)
+
     const currentId = isLocalDraft.value ? order.value?.id ?? null : null
     const drafts = readLocalDrafts()
-    const ordered = [
-      ...drafts.filter((draft) => draft.id !== currentId && draft.order.id !== currentId),
-      ...drafts.filter((draft) => draft.id === currentId || draft.order.id === currentId),
-    ]
+    const others = drafts.filter((draft) => draft.id !== currentId && draft.order.id !== currentId)
+    const current = drafts.filter((draft) => draft.id === currentId || draft.order.id === currentId)
+    const reservedForCurrent = current.length > 0 ? Math.min(1, slots) : 0
+    slots -= reservedForCurrent
+    const before = drafts.length
+    const toAdopt = [...others.slice(0, slots), ...current.slice(0, reservedForCurrent)]
 
-    for (const draft of ordered) {
-      await restoreLocalDraft(draft)
-      await convertLocalDraftToOrder()
+    for (const draft of toAdopt) {
+      try {
+        await restoreLocalDraft(draft)
+        await convertLocalDraftToOrder()
+      } catch (err: unknown) {
+        if (isJournalDraftLimitError(err)) {
+          break
+        }
+        throw err
+      }
     }
+
+    const leftover = readLocalDrafts().length
+    if (currentId) {
+      const stillLocal = readLocalDraft(currentId)
+      const openId = order.value?.id
+      if (stillLocal && openId !== currentId && openId !== stillLocal.order.id) {
+        await restoreLocalDraft(stillLocal)
+      }
+    }
+    return { leftover: readLocalDrafts().length, limit: limits.user, adopted: before - leftover }
   }
 
   async function submitOrder(): Promise<OrderDetail> {

@@ -1080,6 +1080,13 @@ model PlatformSettings {
   aiDailyFillCapGuest       Int @default(150)
   aiGuestAutoUpdatesPerText Int @default(2)
 
+  /// Сколько незаконченных журналов (черновиков) можно держать одновременно.
+  /// 0 — новый журнал создать нельзя. Оформленный или удалённый черновик место освобождает.
+  /// Гостевые журналы живут в браузере, поэтому их число проверяет страница; заказы пользователя
+  /// со статусом DRAFT считает ещё и сервер при создании.
+  maxJournalDraftsGuest Int @default(2)
+  maxJournalDraftsUser  Int @default(5)
+
   updatedAt DateTime @updatedAt
 
   @@map("platform_settings")
