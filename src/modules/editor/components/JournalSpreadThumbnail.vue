@@ -744,9 +744,28 @@ function resolutionBadgeStyle(badge: PhotoResolutionBadgeModel): Record<string, 
  * centered, unzoomed crop. Coordinates from the util come back in the SAME unscaled page-point
  * space as `leaf.size`/`leaf.position` (matching the real Konva adapter's own convention), so the
  * result is scaled by `scale.value` here exactly like `elementStyle` does for the wrapping box. */
+function photoImageRotationStyle(leaf: PhotoPlaceholder): Record<string, string> {
+  const rotation = leaf.imageRotation ?? 0
+  if (!rotation) {
+    return {}
+  }
+
+  return {
+    transform: `rotate(${rotation}deg)`,
+    transformOrigin: 'center center',
+  }
+}
+
 function photoImageStyle(leaf: PhotoPlaceholder): Record<string, string> {
   const rawUrl = leaf.defaultImageUrl
-  const fallback = { width: '100%', height: '100%', objectFit: 'cover', borderRadius: `${(leaf.borderRadius ?? 0) * scale.value}px` }
+  const rotation = leaf.imageRotation ?? 0
+  const fallback = {
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover',
+    borderRadius: rotation ? '0' : `${(leaf.borderRadius ?? 0) * scale.value}px`,
+    ...photoImageRotationStyle(leaf),
+  }
   if (!rawUrl) {
     return fallback
   }
@@ -779,7 +798,8 @@ function photoImageStyle(leaf: PhotoPlaceholder): Record<string, string> {
     width: `${layout.width * scale.value}px`,
     height: `${layout.height * scale.value}px`,
     maxWidth: 'none',
-    borderRadius: `${(leaf.borderRadius ?? 0) * scale.value}px`,
+    borderRadius: rotation ? '0' : `${(leaf.borderRadius ?? 0) * scale.value}px`,
+    ...photoImageRotationStyle(leaf),
   }
 }
 
@@ -853,6 +873,7 @@ function elementStyle(leaf: LeafElement): Record<string, string> {
   }
 
   const isText = isTextElement(leaf) || isAiTextElement(leaf)
+  const photoImageRotation = isPhotoElement(leaf) ? leaf.imageRotation ?? 0 : 0
 
   return {
     position: 'absolute',
@@ -862,6 +883,11 @@ function elementStyle(leaf: LeafElement): Record<string, string> {
     height: `${leaf.size.height * scale.value}px`,
     transform: leaf.rotation ? `rotate(${leaf.rotation}deg)` : '',
     opacity: String(leaf.opacity ?? 1),
+    // A rotated photo is clipped by this box (overflow: hidden below). The radius has to live
+    // on the clipping element — on the <img> it would spin with the bitmap.
+    ...(photoImageRotation && isPhotoElement(leaf) && leaf.borderRadius
+      ? { borderRadius: `${leaf.borderRadius * scale.value}px` }
+      : {}),
     // Text boxes are sized to fit their content with almost no slack (TEXT_BOX_PADDING is 0 — see
     // text-auto-size.util.ts, which sizes the box from Konva's own text measurement plus a bare
     // 2px buffer). `textInnerStyle` below lays the text out at its natural, unscaled font size —
