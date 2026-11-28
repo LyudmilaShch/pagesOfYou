@@ -16,11 +16,13 @@
   <v-rect v-if="ctx.photoDropHighlightConfig.value" :config="ctx.photoDropHighlightConfig.value" />
 
   <v-group v-if="ctx.photoMaskClipConfig.value" :config="ctx.photoMaskClipConfig.value">
-    <v-image
-      v-if="ctx.photoImageConfig.value && ctx.loadedImage.value && !ctx.isPhotoCropEditing.value && !ctx.isPhotoDimmed.value"
-      ref="photoImageRef"
-      :config="{ ...ctx.photoImageConfig.value, image: ctx.loadedImage.value }"
-    />
+    <v-group :config="photoImageClipConfig">
+      <v-image
+        v-if="ctx.photoImageConfig.value && ctx.loadedImage.value && !ctx.isPhotoCropEditing.value && !ctx.isPhotoDimmed.value"
+        ref="photoImageRef"
+        :config="{ ...ctx.photoImageConfig.value, image: ctx.loadedImage.value }"
+      />
+    </v-group>
   </v-group>
 
   <template v-for="(borderNode, index) in ctx.photoBorderDrawNodes.value" :key="`photo-border-${index}`">
@@ -120,6 +122,13 @@ const ctx = inject(EDITOR_ELEMENT_VISUALS_KEY)
 if (!ctx) {
   throw new Error('EditorElementVisuals requires EDITOR_ELEMENT_VISUALS_KEY provider')
 }
+
+/** No clip. A fresh object on every read would make vue-konva rebuild the group. */
+const PHOTO_IMAGE_NO_CLIP = { listening: false }
+
+const photoImageClipConfig = computed(
+  () => ctx.photoFrameClipConfig.value ?? PHOTO_IMAGE_NO_CLIP,
+)
 
 const resolutionBadgeCircle = computed(() => {
   const badge = ctx.photoResolutionBadge.value

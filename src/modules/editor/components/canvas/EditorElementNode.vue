@@ -581,6 +581,17 @@ const isPhotoDimmed = computed(() => photoDimElementId.value === props.element.i
 
 const photoClipConfig = computed(() => getPhotoClipGroupConfig(props.element))
 
+/** Non-zero imageRotation is applied in display space, so the committed photo has to be clipped
+ * to the frame the same way crop mode clips its inside layer. Unrotated photos stay on the
+ * source-crop path and do not need this wrapper. */
+const photoFrameClipConfig = computed(() => {
+  if (props.element.type !== 'photo-placeholder' || Math.abs(props.element.imageRotation ?? 0) <= 0.001) {
+    return null
+  }
+
+  return photoClipConfig.value
+})
+
 const photoMaskClipConfig = computed(() => getPhotoMaskClipConfig(props.element))
 
 const photoRepositionOutsideConfig = computed(() => {
@@ -773,6 +784,7 @@ provide(EDITOR_ELEMENT_VISUALS_KEY, {
   isPhotoDimmed,
   photoRepositionOutsideConfig,
   photoClipConfig,
+  photoFrameClipConfig,
   photoMaskClipConfig,
   photoRepositionInsideConfig,
   photoDimBorderConfig,

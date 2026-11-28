@@ -603,6 +603,30 @@ export function getPhotoImageKonvaConfig(element: PageElement, image: HTMLImageE
 
   const photo = element as PhotoPlaceholder
   const box = getPhotoRenderBox(photo.frame, photo.size.width, photo.size.height)
+  const rotation = photo.imageRotation ?? 0
+
+  // imageRotation spins the bitmap in display space, around the cover layout's own center —
+  // the same placement crop mode already shows inside the frame. Konva's source `crop` is
+  // axis-aligned, so baking the frame into a box-sized tile and then rotating that tile throws
+  // the photo out of the placeholder (only the rotation survives, the crop does not). Draw the
+  // full cover layout instead and let the frame clip group cut it back to the box.
+  if (Math.abs(rotation) > 0.001) {
+    const layout = getPhotoCoverLayout(element, image)
+
+    if (!layout) {
+      return null
+    }
+
+    return {
+      ...getPhotoImageRotationAttrs(layout.x, layout.y, layout.width, layout.height, rotation),
+      width: layout.width,
+      height: layout.height,
+      cornerRadius: 0,
+      listening: false,
+      ...getPhotoFilterKonvaAttrs(photo.filter),
+    }
+  }
+
   const konvaLayout = computePhotoKonvaImageLayout(
     box.width,
     box.height,
@@ -622,7 +646,7 @@ export function getPhotoImageKonvaConfig(element: PageElement, image: HTMLImageE
       konvaLayout.y + box.y,
       konvaLayout.width,
       konvaLayout.height,
-      photo.imageRotation ?? 0,
+      0,
     ),
     width: konvaLayout.width,
     height: konvaLayout.height,

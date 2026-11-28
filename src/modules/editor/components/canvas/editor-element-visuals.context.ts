@@ -20,6 +20,9 @@ export interface EditorElementVisualsContext {
   isPhotoDimmed: Ref<boolean>
   photoRepositionOutsideConfig: Ref<Record<string, unknown> | null>
   photoClipConfig: Ref<Record<string, unknown> | null>
+  /** Box/mask clip for a photo whose imageRotation is non-zero. Null otherwise, so an
+   * unrotated photo keeps the source-crop render and is not wrapped in an extra group. */
+  photoFrameClipConfig: Ref<Record<string, unknown> | null>
   photoMaskClipConfig: Ref<Record<string, unknown> | null>
   photoRepositionInsideConfig: Ref<Record<string, unknown> | null>
   photoDimBorderConfig: Ref<Record<string, unknown> | null>
