@@ -36,9 +36,14 @@ adminHttp.interceptors.response.use(
   (res) => res,
   (error) => {
     if (error.response?.status === 401) {
-      clearAdminToken()
-      if (window.location.pathname !== '/admin/login') {
-        window.location.href = '/admin/login'
+      // The PDF print route authenticates with a one-off token. Sending it to the login page
+      // throws that token away and the screenshot becomes the login form.
+      const printing = window.location.pathname.includes('/print/')
+      if (!printing) {
+        clearAdminToken()
+        if (window.location.pathname !== '/admin/login') {
+          window.location.href = '/admin/login'
+        }
       }
     }
     return Promise.reject(error)
