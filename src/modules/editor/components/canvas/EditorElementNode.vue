@@ -162,6 +162,7 @@ import {
 } from '../../adapters/konva/element-node.adapter'
 
 import { resolveAssetUrl } from '@/shared/config/assets'
+import { textFontRevision } from '../../utils/custom-fonts.util'
 
 import { MIN_TEXT_BOX_HEIGHT, MIN_TEXT_BOX_WIDTH, TEXT_BOX_PADDING } from '../../constants/text.constants'
 import {
@@ -733,11 +734,16 @@ const shapeExtraNodesFront = computed(() =>
   shapeExtraNodes.value.filter((node) => node.layer === 'front'),
 )
 
-const textConfig = computed(() => getTextConfig(props.element, displayText.value))
+const textConfig = computed(() => {
+  // Fonts finishing their load must rebuild the wrap. The saved box does not move.
+  void textFontRevision.value
+  return getTextConfig(props.element, displayText.value)
+})
 
-const textEchoLayerConfigs = computed(() =>
-  getTextEchoLayerConfigs(props.element, displayText.value),
-)
+const textEchoLayerConfigs = computed(() => {
+  void textFontRevision.value
+  return getTextEchoLayerConfigs(props.element, displayText.value)
+})
 
 // Always returns a config (never null) whenever the element is text, toggling visible instead of
 // adding/removing the node later — see the comment on getTextEchoLayerConfigs for why: Konva's vue

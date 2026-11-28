@@ -1,6 +1,10 @@
 import { registerAs } from '@nestjs/config';
 
 export const pdfExportConfig = registerAs('pdfExport', () => ({
+  /** Origin Puppeteer opens for the print route. When unset, production skips localhost in
+   * FRONTEND_URL and uses the first public https origin — localhost is only reachable from a
+   * developer's machine, and opening it from Render fails the export. */
+  frontendUrl: process.env.PDF_EXPORT_FRONTEND_URL?.trim() || null,
   /** Target print resolution — 300 DPI is the standard minimum for photo-quality print. Puppeteer's
    * `deviceScaleFactor` is relative to the page's own 72-DPI CSS pixel grid (see
    * `A4_PAGE_WIDTH`/`A4_PAGE_HEIGHT` on the frontend), so this needs to be a multiple of 72, not a

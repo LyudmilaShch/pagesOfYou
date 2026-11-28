@@ -49,18 +49,59 @@ export class PdfExportService implements OnModuleDestroy {
   }
 
   /** One headless Chrome instance, reused across exports — launching fresh per request would add
-   * several seconds of pure startup overhead to every single-click admin export. */
-  private getBrowser(): Promise<Browser> {
-    if (!this.browserPromise) {
-      // --no-sandbox/--disable-setuid-sandbox: standard requirement for running Chromium as root
-      // inside most server containers (the usual deployment shape here) — Chrome's sandbox needs
-      // kernel namespace privileges a container typically doesn't grant.
-      this.browserPromise = puppeteer.launch({
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      });
+   * several seconds of pure startup overhead to every single-click admin export. A failed or
+   * already-disconnected browser is dropped so the next export can launch again. */
+  private async getBrowser(): Promise<Browser> {
+    if (this.browserPromise) {
+      const existing = await this.browserPromise.catch(() => null);
+      if (existing?.connected) {
+        return existing;
+      }
+      this.browserPromise = null;
     }
+
+    this.browserPromise = this.launchBrowser();
     return this.browserPromise;
+  }
+
+  private launchBrowser(): Promise<Browser> {
+    const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH?.trim();
+    // --no-sandbox/--disable-setuid-sandbox: Chromium as root in a container has no user namespace.
+    // --disable-dev-shm-usage: Docker's /dev/shm is 64MB, and a 300 DPI page crashes Chrome without
+    // this (the export then comes back as 500).
+    return puppeteer
+      .launch({
+        headless: true,
+        ...(executablePath ? { executablePath } : {}),
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+      })
+      .catch((error: unknown) => {
+        this.browserPromise = null;
+        throw error;
+      });
+  }
+
+  /** The print route lives on the public site. FRONTEND_URL often lists localhost first for local
+   * CORS; Puppeteer on the server cannot open that. */
+  private printFrontendUrl(): string {
+    const explicit = this.config.get<string>('pdfExport.frontendUrl')?.replace(/\/$/, '');
+    if (explicit) {
+      return explicit;
+    }
+
+    const urls = this.config.get<string[]>('app.frontendUrls') ?? [];
+    const production = this.config.get<string>('app.nodeEnv') === 'production';
+    const usable = production ? urls.filter((url) => !isLocalOrigin(url)) : urls;
+    const chosen = (usable.find((url) => url.startsWith('https://')) ?? usable[0] ?? '').replace(
+      /\/$/,
+      '',
+    );
+    if (!chosen) {
+      throw new Error(
+        'No public FRONTEND_URL for the print page. Set PDF_EXPORT_FRONTEND_URL to the site origin.',
+      );
+    }
+    return chosen;
   }
 
   /** A real admin JWT (same shape `AdminJwtStrategy` already validates), just short-lived and
@@ -87,11 +128,18 @@ export class PdfExportService implements OnModuleDestroy {
 
     const page = await context.newPage();
     await page.setViewport({ width: viewportWidthPt, height: viewportHeightPt, deviceScaleFactor });
-    await page.goto(url, { waitUntil: 'networkidle0', timeout: timeoutMs });
-    // Set by the print-view route (AdminOrderPrintPage.vue) once the stage is fully laid out —
-    // fonts loaded, every photo's <img> resolved, zero zoom/pan drift — rather than guessing a
-    // fixed settle delay that's either too short (half-loaded photos) or wastefully long.
-    await page.waitForFunction('window.__printReady === true', { timeout: timeoutMs });
+    // domcontentloaded, not networkidle0: the print page keeps requesting fonts and photos, so
+    // "no connections" often never happens and the export dies at 30s. Readiness is __printReady.
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
+    try {
+      await page.waitForFunction('window.__printReady === true', { timeout: timeoutMs });
+    } catch (error) {
+      const pageText = await page
+        .evaluate(() => document.body?.innerText?.replace(/\s+/g, ' ').trim().slice(0, 300) ?? '')
+        .catch(() => '');
+      const reason = error instanceof Error ? error.message : 'print page was not ready';
+      throw new Error(pageText ? `${reason} Page said: ${pageText}` : reason);
+    }
     return page;
   }
 
@@ -136,7 +184,7 @@ export class PdfExportService implements OnModuleDestroy {
    * second navigation), matching how the book is actually printed/bound rather than the editor's
    * own side-by-side convenience view. Every PDF page therefore ends up the same A4 size. */
   async buildPdf(order: OrderForPdfExport, admin: AdminJwtPayload): Promise<Buffer> {
-    const frontendUrl = this.config.get<string>('app.frontendUrl');
+    const frontendUrl = this.printFrontendUrl();
     const token = this.mintExportToken(admin);
     const browser = await this.getBrowser();
 
@@ -185,6 +233,10 @@ export class PdfExportService implements OnModuleDestroy {
       await context.close();
     }
   }
+}
+
+function isLocalOrigin(url: string): boolean {
+  return /:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(url);
 }
 
 async function fileExists(filePath: string): Promise<boolean> {

@@ -444,6 +444,8 @@ import {
   findPhotoPlaceholderAtPoint,
 } from '../../utils/photo-drop.util'
 import { MIN_TEXT_BOX_WIDTH } from '../../constants/text.constants'
+import { installTextFontWatch, textFontRevision } from '../../utils/custom-fonts.util'
+import { remeasureRenderedText } from '../../utils/text-measure.util'
 import { isTextPlaceholderType } from '../../utils/normalize-text-placeholder.util'
 import type { PageElement } from '../../models'
 import { isGroupElement } from '../../models'
@@ -1850,7 +1852,13 @@ function handleCanvasKeydown(event: KeyboardEvent): void {
   }
 }
 
+watch(textFontRevision, async () => {
+  await nextTick()
+  remeasureRenderedText()
+})
+
 onMounted(() => {
+  installTextFontWatch()
   store.repairTocRowFrames()
   updateStageSize()
   maybePlaySpreadIntro()

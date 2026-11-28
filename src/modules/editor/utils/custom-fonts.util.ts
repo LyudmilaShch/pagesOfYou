@@ -16,6 +16,81 @@ export type FontSelectItem = FontOption | { type: 'divider' } | { type: 'subhead
 const customFontOptions = ref<FontOption[]>([])
 let loadPromise: Promise<void> | null = null
 
+/** Bumped when a face finishes loading so Konva text configs measure again with the real font. */
+export const textFontRevision = ref(0)
+let fontWatchInstalled = false
+
+export function installTextFontWatch(): void {
+  if (fontWatchInstalled || typeof document === 'undefined' || !document.fonts) {
+    return
+  }
+
+  fontWatchInstalled = true
+  document.fonts.addEventListener('loadingdone', () => {
+    textFontRevision.value += 1
+  })
+}
+
+/** Font families used by text on a page, so the print view can request each face before Konva measures. */
+export function collectFontFamilies(value: unknown): string[] {
+  const families = new Set<string>()
+
+  const visit = (node: unknown): void => {
+    if (!node || typeof node !== 'object') {
+      return
+    }
+
+    if (Array.isArray(node)) {
+      for (const child of node) {
+        visit(child)
+      }
+      return
+    }
+
+    const record = node as Record<string, unknown>
+    if (typeof record.fontFamily === 'string' && record.fontFamily.trim()) {
+      families.add(record.fontFamily.trim())
+    }
+
+    if (Array.isArray(record.children)) {
+      visit(record.children)
+    }
+  }
+
+  visit(value)
+  return [...families]
+}
+
+function quoteFontFamily(family: string): string {
+  const cleaned = family.replace(/"/g, '').trim()
+  return /[\s,]/.test(cleaned) ? `"${cleaned}"` : cleaned
+}
+
+/** Asks the browser to fetch every face Konva will measure, including bold and italic. */
+export async function loadFontFamiliesForMeasure(families: string[]): Promise<void> {
+  installTextFontWatch()
+
+  if (typeof document === 'undefined' || !document.fonts || families.length === 0) {
+    textFontRevision.value += 1
+    return
+  }
+
+  await Promise.all(
+    families.map(async (family) => {
+      const quoted = quoteFontFamily(family)
+      const specs = [
+        `16px ${quoted}`,
+        `bold 16px ${quoted}`,
+        `italic 16px ${quoted}`,
+        `bold italic 16px ${quoted}`,
+      ]
+      await Promise.all(specs.map((spec) => document.fonts.load(spec).catch(() => [])))
+    }),
+  )
+  await document.fonts.ready
+  textFontRevision.value += 1
+}
+
 interface FontVariant {
   url: string | null
   weight: '400' | '700'
@@ -94,6 +169,9 @@ async function doLoad(): Promise<void> {
   if (typeof document !== 'undefined' && document.fonts) {
     await document.fonts.ready
   }
+
+  installTextFontWatch()
+  textFontRevision.value += 1
 }
 
 /** Fetches + registers all active custom fonts (via the FontFace API), once — safe to call from
