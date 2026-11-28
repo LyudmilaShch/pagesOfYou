@@ -322,7 +322,7 @@ export const useOrderBuilderStore = defineStore('orderBuilder', () => {
       trashedJournalPages.value = []
 
       persistLocalDraft()
-    } catch {
+    } catch (err: unknown) {
       if (!orderError.value) {
         orderError.value =
           err instanceof Error && err.message === 'MISSING_COVER_TEMPLATES'
