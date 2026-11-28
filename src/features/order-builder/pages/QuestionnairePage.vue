@@ -397,6 +397,7 @@ import { flattenTree } from '@/modules/editor/utils/element-tree.util'
 import { catalogApi } from '../api/catalog.api'
 import ConstructorTopMeta from '../components/ConstructorTopMeta.vue'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
+import { ensureOrderForRoute } from '../utils/ensure-order-for-route.util'
 import { getGalleryScope } from '../utils/photo-gallery-scope.util'
 import { getJournalPageDisplayName, tocEntriesForPage } from '../utils/journal-structure.util'
 import {
@@ -478,21 +479,10 @@ interface LocalAnswer {
 
 const answers = reactive<Record<string, LocalAnswer>>({})
 
-/** Mirrors JournalPageEditorPage.vue's ensureOrderLoaded 1-1: a local draft only exists once the
- * user has already gone through CreateOrderPage in this session — a cold URL hit for a guest has
- * nothing to load. */
+/** A guest `local-*` URL is restored from localStorage after a reload. A real order is fetched
+ * from the server. */
 async function ensureOrderLoaded(): Promise<void> {
-  if (store.order?.id === orderId.value) {
-    return
-  }
-
-  if (orderId.value.startsWith('local-')) {
-    throw new Error(
-      'Черновик заказа был потерян (например, из-за обновления страницы) — начните заново.',
-    )
-  }
-
-  await store.loadOrder(orderId.value)
+  await ensureOrderForRoute(orderId.value, store)
 }
 
 function seedAnswersFromOrder(): void {

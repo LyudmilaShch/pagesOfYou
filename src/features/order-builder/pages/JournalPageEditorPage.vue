@@ -63,6 +63,7 @@ import { ordersApi } from '../api/orders.api'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
 import { hasMissingCustomerPhotos, presentCustomerPageCanvas } from '../utils/missing-photos.util'
 import { tocEntriesForPage } from '../utils/journal-structure.util'
+import { ensureOrderForRoute } from '../utils/ensure-order-for-route.util'
 import { getGalleryScope } from '../utils/photo-gallery-scope.util'
 import JournalStructurePanel from '../components/JournalStructurePanel.vue'
 import QuestionnaireEntryPanel from '../components/QuestionnaireEntryPanel.vue'
@@ -317,19 +318,10 @@ provideEditorPlaceholderSync({
 
 /** Ensures order-builder.store holds the order this route points at — it's the single source of
  * truth both this editor and the "Структура" rail panel read/write, regardless of entry path
- * (fresh local draft carried over from CreateOrderPage, or a real order opened by direct URL). */
+ * (a guest draft carried over in this tab, the same draft restored from localStorage after a
+ * reload, or a real order opened by direct URL). */
 async function ensureOrderLoaded(): Promise<void> {
-  if (orderBuilderStore.order?.id === orderId.value) {
-    return
-  }
-
-  if (orderId.value.startsWith('local-')) {
-    throw new Error(
-      'Черновик заказа был потерян (например, из-за обновления страницы) — начните заново.',
-    )
-  }
-
-  await orderBuilderStore.loadOrder(orderId.value)
+  await ensureOrderForRoute(orderId.value, orderBuilderStore)
 }
 
 async function fetchDocument(): Promise<EditorSourceDocument> {
