@@ -225,6 +225,7 @@ import AuthModal from '@/components/auth/AuthModal.vue'
 import AuthPromptModal from '@/components/auth/AuthPromptModal.vue'
 import ConstructorTopMeta from '../components/ConstructorTopMeta.vue'
 import { useOrderBuilderStore } from '../stores/order-builder.store'
+import { ensureOrderForRoute } from '../utils/ensure-order-for-route.util'
 import { getGalleryScope } from '../utils/photo-gallery-scope.util'
 import {
   collectPhotoSlotPreview,
@@ -273,21 +274,10 @@ const galleryScope = computed(() => getGalleryScope(store))
 const isLoading = ref(true)
 const loadErrorMessage = ref<string | null>(null)
 
-/** Mirrors PhotoUploadPage.vue's/QuestionnairePage.vue's own ensureOrderLoaded 1-1: a local draft
- * only exists once the user has already gone through CreateOrderPage in this session — a cold URL
- * hit for a guest has nothing to load. */
+/** A guest `local-*` URL is restored from localStorage after a reload. A real order is fetched
+ * from the server. */
 async function ensureOrderLoaded(): Promise<void> {
-  if (store.order?.id === orderId.value) {
-    return
-  }
-
-  if (orderId.value.startsWith('local-')) {
-    throw new Error(
-      'Черновик заказа был потерян (например, из-за обновления страницы) — начните заново.',
-    )
-  }
-
-  await store.loadOrder(orderId.value)
+  await ensureOrderForRoute(orderId.value, store)
 }
 
 async function load(): Promise<void> {
