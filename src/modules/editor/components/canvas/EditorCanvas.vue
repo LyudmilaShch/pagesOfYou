@@ -403,7 +403,8 @@ import {
   spreadLogicalXToVisual,
 } from '../../utils/spread.util'
 import type { SpreadPageSide } from '../../utils/spread.util'
-import { selectionOutlineBounds } from '../../utils/selection-outline.util'
+import { selectionOutlineBounds, type SelectionOutlineRect } from '../../utils/selection-outline.util'
+import { getPhotoRenderBox } from '../../utils/photo-frame.util'
 import {
   getElementPivotSize,
   prepareInnerNodeForTransformer,
@@ -1297,18 +1298,32 @@ function transformedLocalRect(
 
 const originalClientRects = new WeakMap<Konva.Group, Konva.Group['getClientRect']>()
 
-function installOutlineClientRect(node: Konva.Group, element: PageElement): void {
+function installOutlineClientRect(
+  node: Konva.Group,
+  element: PageElement,
+  bounds: SelectionOutlineRect = selectionOutlineBounds(element),
+): void {
   if (!originalClientRects.has(node)) {
     originalClientRects.set(node, node.getClientRect)
   }
 
-  const bounds = selectionOutlineBounds(element)
   node.getClientRect = (config: { relativeTo?: Konva.Node; skipTransform?: boolean } = {}) => {
     if (config.skipTransform) {
       return { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height }
     }
     return transformedLocalRect(node, bounds, config.relativeTo)
   }
+}
+
+/** Rotated photo bitmap sticks out of the frame. The frame clip hides that overflow, but
+ * Konva's own client rect still measures it, so the selection box grows past what is visible. */
+function visiblePhotoSelectionBounds(element: PageElement): SelectionOutlineRect | null {
+  if (element.type !== 'photo-placeholder' || Math.abs(element.imageRotation ?? 0) <= 0.001) {
+    return null
+  }
+
+  const box = getPhotoRenderBox(element.frame, element.size.width, element.size.height)
+  return { x: box.x, y: box.y, width: box.width, height: box.height }
 }
 
 function restoreClientRect(node: Konva.Group): void {
@@ -1343,6 +1358,11 @@ function prepareNodeForTransformer(
     element.type === 'shape-line' ? 0 : 1,
   )
   prepareInnerNodeForTransformer(node, size)
+
+  const visiblePhoto = visiblePhotoSelectionBounds(element)
+  if (visiblePhoto) {
+    installOutlineClientRect(node, element, visiblePhoto)
+  }
 }
 
 function getTransformerNodes(): Konva.Node[] {
