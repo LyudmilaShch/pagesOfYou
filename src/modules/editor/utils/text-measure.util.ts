@@ -162,6 +162,22 @@ export function measureKonvaText(input: TextMeasureInput): TextMeasureResult {
   }
 }
 
+/**
+ * Konva caches line breaks on the node the first time it measures. If that happened before the
+ * face was available, a later draw uses the real glyphs on the fallback breaks. Call this once
+ * the fonts are loaded so every text node lays out again.
+ */
+export function remeasureRenderedText(): void {
+  for (const stage of Konva.stages) {
+    const texts = stage.find('Text')
+    for (const node of texts) {
+      const text = node as Konva.Text & { _setTextData?: () => void }
+      text._setTextData?.()
+    }
+    stage.batchDraw()
+  }
+}
+
 export interface TextMeasureSnapshot {
   /** Single-line width (Konva `getTextWidth`, no wrap). */
   naturalWidth: number
